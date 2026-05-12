@@ -1,34 +1,14 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import LoginScreen from './app/screens/login';
-import SignupScreen from './app/screens/signup';
-import IntroScreen from './app/intro-final';
+import './global.css';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 
-const Stack = createStackNavigator();
-
-function App() {
+export default function App() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="Intro">
-        <Stack.Screen 
-          name="Intro" 
-          component={IntroScreen} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="Login" 
-          component={LoginScreen} 
-          options={{ title: 'Login' }}
-        />
-        <Stack.Screen 
-          name="Signup" 
-          component={SignupScreen} 
-          options={{ title: 'Sign Up' }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <>
+      <StatusBar hidden={true} />
+      <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+      </Stack>
+    </>
   );
 }
-
-export default App;

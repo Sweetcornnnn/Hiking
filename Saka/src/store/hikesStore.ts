@@ -1,22 +1,14 @@
 import { create } from 'zustand';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from './authStore';
-
-export interface Hike {
-  id: string;
-  user_id: string;
-  date: string;
-  start_time: string;
-  end_time: string;
-  tagalongs: number;
-  contact_number: string;
-  emergency_contact: string;
-  created_at: string;
-}
+import { Hike } from '../types';
+import { API_BASE_URL } from '../config/api';
 
 interface HikesState {
   hikes: Hike[];
   allHikes: Hike[]; // For admin view
+  adminStats: { total_hikes: number; total_users: number } | null; // Admin statistics
   isLoading: boolean;
   isDemoMode: boolean;
   demoHikes: Hike[]; // Local storage for demo mode
@@ -24,6 +16,7 @@ interface HikesState {
   // Actions
   fetchHikes: () => Promise<void>;
   fetchAllHikes: () => Promise<void>; // Admin only
+  fetchAdminStats: () => Promise<void>; // Admin only
   createHike: (hike: Omit<Hike, 'id' | 'user_id' | 'created_at'>) => Promise<{ error: string | null }>;
   updateHike: (id: string, hike: Partial<Hike>) => Promise<{ error: string | null }>;
   deleteHike: (id: string) => Promise<{ error: string | null }>;
@@ -33,6 +26,7 @@ interface HikesState {
 export const useHikesStore = create<HikesState>((set, get) => ({
   hikes: [],
   allHikes: [],
+  adminStats: null,
   isLoading: false,
   isDemoMode: false,
   demoHikes: [],
@@ -79,16 +73,70 @@ export const useHikesStore = create<HikesState>((set, get) => ({
       return;
     }
     
-    const { data, error } = await supabase
-      .from('hikes')
-      .select('*, profiles(email, name)')
-      .order('date', { ascending: true });
+    try {
+      let token = authState.authToken;
+      if (!token) {
+        token = await SecureStore.getItemAsync('authToken');
+      }
+      if (!token) {
+        set({ isLoading: false });
+        return;
+      }
 
-    if (!error && data) {
-      set({ allHikes: data });
+      const response = await fetch(`${API_BASE_URL}/api/admin/hikes`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Failed to fetch hikes:', data.error);
+        set({ isLoading: false });
+        return;
+      }
+
+      set({ allHikes: data.hikes });
+    } catch (error) {
+      console.error('Network error fetching hikes:', error);
     }
     
     set({ isLoading: false });
+  },
+
+  fetchAdminStats: async () => {
+    try {
+      const authState = useAuthStore.getState();
+      let token = authState.authToken;
+      if (!token) {
+        token = await SecureStore.getItemAsync('authToken');
+      }
+      if (!token) {
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/stats`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Failed to fetch admin stats:', data.error);
+        return;
+      }
+
+      set({ adminStats: data });
+    } catch (error) {
+      console.error('Network error fetching admin stats:', error);
+    }
   },
 
   createHike: async (hikeData) => {

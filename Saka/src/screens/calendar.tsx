@@ -12,7 +12,8 @@ import {
 import { Calendar, DateData } from 'react-native-calendars';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useHikesStore, Hike } from '../store/hikesStore';
+import { useHikesStore } from '../store/hikesStore';
+import { Hike } from '../types';
 import { useAuthStore } from '../store/authStore';
 
 interface HikeFormData {

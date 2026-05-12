@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../src/store/authStore';
+import { useAuthStore } from '../store/authStore';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -31,7 +31,13 @@ export default function LoginScreen() {
     if (error) {
       Alert.alert('Error', error);
     } else {
-      router.replace('/home');
+      // Check if user is admin and redirect accordingly
+      const authState = useAuthStore.getState();
+      if (authState.user?.is_admin) {
+        router.replace('/drawer/admin/admin');
+      } else {
+        router.replace('/drawer/home');
+      }
     }
   };
 
@@ -75,7 +81,7 @@ export default function LoginScreen() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push('/screens/signup')}>
+        <TouchableOpacity onPress={() => router.push('/signup')}>
           <Text style={styles.link}>Don't have an account? Sign Up</Text>
         </TouchableOpacity>
 
@@ -86,7 +92,7 @@ export default function LoginScreen() {
             style={styles.demoButton}
             onPress={() => {
               useAuthStore.getState().demoLogin();
-              router.replace('/home');
+              router.replace('/drawer/home');
             }}
           >
             <Text style={styles.demoButtonText}>Try Demo Mode</Text>

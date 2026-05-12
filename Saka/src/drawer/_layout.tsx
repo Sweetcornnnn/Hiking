@@ -33,7 +33,7 @@ export default function DrawerLayout() {
           }}
         />
         <Drawer.Screen 
-          name="admin" 
+          name="../admin/admin" 
           options={{
             drawerLabel: 'Admin Dashboard',
             title: 'Admin',

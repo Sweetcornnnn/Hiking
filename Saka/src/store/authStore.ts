@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
+import { API_BASE_URL } from '../config/api';
 
 interface User {
   id: string;
@@ -10,12 +12,14 @@ interface User {
 
 interface AuthState {
   user: User | null;
+  authToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isDemoMode: boolean;
   
   // Actions
   setUser: (user: User | null) => void;
+  setAuthToken: (token: string | null) => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -25,78 +29,90 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  authToken: null,
   isLoading: false,
   isAuthenticated: false,
   isDemoMode: false,
 
   setUser: (user) => set({ user, isAuthenticated: !!user }),
+  setAuthToken: (token) => set({ authToken: token }),
 
   signIn: async (email, password) => {
     set({ isLoading: true });
     
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      console.log(`Attempting login to ${API_BASE_URL}/api/login`);
+      const response = await fetch(`${API_BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (error) {
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
+
+      if (!response.ok) {
+        set({ isLoading: false });
+        return { error: data.error || 'Login failed' };
+      }
+
+      set({
+        user: {
+          id: String(data.user.id),
+          email: data.user.email,
+          name: data.user.name,
+          is_admin: Boolean(data.user.is_admin),
+        },
+        authToken: data.token,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+
+      // Store token for future requests
+      await SecureStore.setItemAsync('authToken', data.token);
+
+      return { error: null };
+    } catch (error: any) {
+      console.log('Login error:', error.message);
       set({ isLoading: false });
-      return { error: error.message };
+      return { error: error.message || 'Network error' };
     }
-
-    // Fetch user profile
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', data.user.id)
-      .single();
-
-    set({
-      user: profile ? {
-        id: profile.id,
-        email: profile.email,
-        name: profile.name,
-        is_admin: profile.is_admin,
-      } : null,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    return { error: null };
   },
 
   signUp: async (email, password, name) => {
     set({ isLoading: true });
+    
+    try {
+      console.log(`Attempting signup to ${API_BASE_URL}/api/register`);
+      const response = await fetch(`${API_BASE_URL}/api/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name }),
+      });
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
 
-    if (error) {
+      if (!response.ok) {
+        set({ isLoading: false });
+        return { error: data.error || 'Signup failed' };
+      }
+
       set({ isLoading: false });
-      return { error: error.message };
+      return { error: null };
+    } catch (error: any) {
+      console.log('Signup error:', error.message);
+      set({ isLoading: false });
+      return { error: error.message || 'Network error' };
     }
-
-    // Create profile
-    if (data.user) {
-      await supabase.from('profiles').insert([
-        {
-          id: data.user.id,
-          email,
-          name,
-          is_admin: false,
-        },
-      ]);
-    }
-
-    set({ isLoading: false });
-    return { error: null };
   },
 
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ user: null, isAuthenticated: false });
+    await SecureStore.deleteItemAsync('authToken');
+    set({ user: null, authToken: null, isAuthenticated: false });
   },
 
   checkAuth: async () => {

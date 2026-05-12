@@ -28,7 +28,7 @@ export default function IntroScreen() {
     // Auto navigate to login after 3 seconds
     const timer = setTimeout(() => {
       console.log('Navigating to login...');
-      router.push('/screens/login');
+      router.push('/login');
     }, 3000);
 
     return () => {

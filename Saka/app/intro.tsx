@@ -1,66 +1,59 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-
-const { width, height } = Dimensions.get('window');
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function IntroScreen() {
-  const navigation = useNavigation();
+  const router = useRouter();
+  
+  // Animation values using useRef to prevent recreation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Fade in animation
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 1000,
-      useNativeDriver: true,
-    }).start();
+    // Start entrance animations
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 1500,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
-    // Text slide animation
-    Animated.timing(textAnim, {
-      toValue: 1,
-      duration: 1500,
-      useNativeDriver: true,
-    }).start();
-
-    // Auto navigate to signup after 3 seconds
+    // Auto navigate to login after 3 seconds
     const timer = setTimeout(() => {
-      navigation.navigate('Signup' as any);
+      console.log('Navigating to login...');
+      router.push('/login');
     }, 3000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, []);
 
   return (
     <View style={styles.container}>
-      <Animated.View 
-        style={[
-          styles.background,
-          {
-            opacity: fadeAnim,
-          }
-        ]}
-      >
-        <View style={styles.overlay}>
-          <Animated.View
-            style={[
-              styles.titleContainer,
-              {
-                transform: [
-                  {
-                    translateX: textAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-50, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <Animated.Text style={styles.title}>Hiking Adventures</Animated.Text>
-            <Animated.Text style={styles.subtitle}>Discover Amazing Trails</Animated.Text>
-          </Animated.View>
-        </View>
-      </Animated.View>
+      <View style={styles.overlay}>
+        <Animated.View 
+          style={[
+            styles.titleContainer,
+            {
+              opacity: fadeAnim,
+              transform: [
+                { scale: scaleAnim }
+              ]
+            }
+          ]}
+        >
+          <Text style={styles.title}>Hiking Adventures</Text>
+          <Text style={styles.subtitle}>Discover Amazing Trails</Text>
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -70,14 +63,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  background: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: '#F5E6D3',
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   overlay: {
     justifyContent: 'center',
@@ -98,5 +86,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#6B7280',
     textAlign: 'center',
+    marginBottom: 20,
   },
 });

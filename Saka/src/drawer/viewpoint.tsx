@@ -1,4 +1,4 @@
-import ViewpointScreen from '../../src/screens/ViewpointScreen';
+import ViewpointScreen from '../screens/viewpoint';
 
 export default function ViewpointRoute() {
   return <ViewpointScreen />;

@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthStore } from '../../src/store/authStore';
+import { useAuthStore } from '../src/store/authStore';
 
-export default function SignupScreen() {
+export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [name, setName] = useState('');
-  const { signUp, isLoading } = useAuthStore();
+  const { signIn, isLoading } = useAuthStore();
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -22,29 +20,18 @@ export default function SignupScreen() {
     }).start();
   }, []);
 
-  const handleSignup = async () => {
-    if (!email || !password || !confirmPassword || !name) {
-      Alert.alert('Error', 'Please fill in all fields');
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter both email and password');
       return;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
-
-    const { error } = await signUp(email, password, name);
+    const { error } = await signIn(email, password);
 
     if (error) {
       Alert.alert('Error', error);
     } else {
-      Alert.alert('Success', 'Account created! Please sign in.');
-      router.replace('/screens/login');
+      router.replace('/drawer/home');
     }
   };
 
@@ -52,20 +39,11 @@ export default function SignupScreen() {
     <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: '#F5E6D3' }]}>
       <View style={styles.leftPanel}>
         <Text style={styles.logo}>🏔️</Text>
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join the hiking community</Text>
+        <Text style={styles.title}>Welcome Back</Text>
+        <Text style={styles.subtitle}>Sign in to continue</Text>
       </View>
       
       <View style={styles.rightPanel}>
-        <TextInput
-          style={styles.input}
-          placeholder="Full name"
-          placeholderTextColor="#8B7355"
-          value={name}
-          onChangeText={setName}
-          editable={!isLoading}
-        />
-
         <TextInput
           style={styles.input}
           placeholder="Email address"
@@ -87,29 +65,34 @@ export default function SignupScreen() {
           editable={!isLoading}
         />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Confirm password"
-          placeholderTextColor="#8B7355"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-          editable={!isLoading}
-        />
-
         <TouchableOpacity 
           style={[styles.button, isLoading && styles.buttonDisabled]} 
-          onPress={handleSignup}
+          onPress={handleLogin}
           disabled={isLoading}
         >
           <Text style={styles.buttonText}>
-            {isLoading ? 'Creating Account...' : 'Sign Up'}
+            {isLoading ? 'Signing In...' : 'Sign In'}
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push('/screens/login')}>
-          <Text style={styles.link}>Already have an account? Sign In</Text>
+        <TouchableOpacity onPress={() => router.push('/signup')}>
+          <Text style={styles.link}>Don't have an account? Sign Up</Text>
         </TouchableOpacity>
+
+        <View style={styles.demoSection}>
+          <View style={styles.divider} />
+          <Text style={styles.orText}>or</Text>
+          <TouchableOpacity 
+            style={styles.demoButton}
+            onPress={() => {
+              useAuthStore.getState().demoLogin();
+              router.replace('/drawer/home');
+            }}
+          >
+            <Text style={styles.demoButtonText}>Try Demo Mode</Text>
+          </TouchableOpacity>
+          <Text style={styles.demoHint}>No login required • All features enabled</Text>
+        </View>
       </View>
     </Animated.View>
   );
@@ -180,5 +163,37 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
     fontSize: 14,
     textAlign: 'center',
+  },
+  demoSection: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  divider: {
+    width: 100,
+    height: 1,
+    backgroundColor: '#D4A574',
+    marginBottom: 8,
+  },
+  orText: {
+    color: '#8B7355',
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  demoButton: {
+    backgroundColor: '#8B7355',
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  demoButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  demoHint: {
+    color: '#8B7355',
+    fontSize: 11,
+    marginTop: 8,
   },
 });
