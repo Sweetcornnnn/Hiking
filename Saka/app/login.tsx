@@ -31,7 +31,18 @@ export default function LoginScreen() {
     if (error) {
       Alert.alert('Error', error);
     } else {
-      router.replace('/drawer/home');
+      // Check if user is admin and redirect accordingly
+      const authState = useAuthStore.getState();
+      console.log('Login successful, user:', authState.user);
+      console.log('Is admin:', authState.user?.is_admin);
+      
+      if (authState.user?.is_admin) {
+        console.log('Redirecting to admin screen...');
+        router.replace('/drawer/admin/[...admin]');
+      } else {
+        console.log('Redirecting to home screen...');
+        router.replace('/drawer/home');
+      }
     }
   };
 
@@ -86,7 +97,7 @@ export default function LoginScreen() {
             style={styles.demoButton}
             onPress={() => {
               useAuthStore.getState().demoLogin();
-              router.replace('/drawer/home');
+              router.replace('/drawer/admin/[...admin]');
             }}
           >
             <Text style={styles.demoButtonText}>Try Demo Mode</Text>

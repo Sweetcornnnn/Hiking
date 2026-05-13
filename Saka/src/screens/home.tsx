@@ -7,6 +7,7 @@ import {
   Dimensions,
   Animated,
   StyleSheet,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,7 +59,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'Famous for its knife-edge ridge and technical rock formations. A challenging climb for experienced hikers.',
     elevation: '2,058 m',
     difficulty: 'Expert',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800' },
+    imageSource: require('../../assets/images/Mt. Guiting-Guiting.jpg'),
     viewpoints: [
       { id: 'v4', name: 'Base Camp', x: 30, y: 75 },
       { id: 'v5', name: 'Kiss the Wall', x: 55, y: 40 },
@@ -70,7 +71,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The third highest mountain in the Philippines, famous for its "sea of clouds" sunrise views.',
     elevation: '2,926 m',
     difficulty: 'Moderate',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800' },
+    imageSource: require('../../assets/images/Mt. Pulag.jpg'),
     viewpoints: [
       { id: 'v6', name: 'Ambangeg Trail', x: 35, y: 60 },
       { id: 'v7', name: 'Summit', x: 50, y: 20 },
@@ -83,7 +84,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The highest mountain in the Philippines. An active volcano with hot springs and diverse ecosystems.',
     elevation: '2,954 m',
     difficulty: 'Hard',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?w=800' },
+    imageSource: require('../../assets/images/Mt. Apo.jpg'),
     viewpoints: [
       { id: 'v9', name: 'Lake Venado', x: 40, y: 50 },
       { id: 'v10', name: 'Boulders', x: 55, y: 30 },
@@ -96,7 +97,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The most perfectly cone-shaped volcano in the world. A challenging hike with breathtaking views.',
     elevation: '2,463 m',
     difficulty: 'Hard',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=800' },
+    imageSource: require('../../assets/images/Mt. Mayon.jpg'),
     viewpoints: [
       { id: 'v12', name: 'Base Camp', x: 30, y: 70 },
       { id: 'v13', name: 'Crater Rim', x: 50, y: 35 },
@@ -108,7 +109,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'A beginner-friendly mountain with rolling hills and scenic views of Batangas. Perfect for first-timers.',
     elevation: '811 m',
     difficulty: 'Easy',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800' },
+    imageSource: require('../../assets/images/Mt.Batulao.jpg'),
     viewpoints: [
       { id: 'v14', name: 'Old Trail', x: 25, y: 55 },
       { id: 'v15', name: 'New Trail', x: 75, y: 60 },
@@ -121,7 +122,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'Known for its famous Rockies viewpoint overlooking Taal Lake. A popular day hike near Manila.',
     elevation: '930 m',
     difficulty: 'Easy',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800' },
+    imageSource: require('../../assets/images/Mt. Maculot.jpg'),
     viewpoints: [
       { id: 'v17', name: 'Rockies', x: 60, y: 40 },
       { id: 'v18', name: 'Summit', x: 40, y: 35 },
@@ -134,7 +135,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'Famous for its scenic grassland ridges and pine tree forests. The famous Gungal Rock is here.',
     elevation: '2,086 m',
     difficulty: 'Moderate',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1542662565-7e4b66bbe529?w=800' },
+    imageSource: require('../../assets/images/Mt. Ulap.jpg'),
     viewpoints: [
       { id: 'v20', name: 'Ambanao Ridge', x: 35, y: 50 },
       { id: 'v21', name: 'Gungal Rock', x: 55, y: 45 },
@@ -147,7 +148,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'A dormant volcano famous for its stunning crater lake formed after the 1991 eruption.',
     elevation: '1,486 m',
     difficulty: 'Moderate',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800' },
+    imageSource: require('../../assets/images/Mt. Pinatubo.jpg'),
     viewpoints: [
       { id: 'v23', name: 'Crater Lake', x: 50, y: 40 },
       { id: 'v24', name: 'Lahar Valley', x: 30, y: 70 },
@@ -159,7 +160,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The highest peak in Negros and one of the most active volcanoes in the Philippines.',
     elevation: '2,465 m',
     difficulty: 'Hard',
-    imageSource: { uri: 'https://images.unsplash.com/photo-1486870591958-9b9d0d1dd99e?w=800' },
+    imageSource: require('../../assets/images/Mt. Kanlaon.jpg'),
     viewpoints: [
       { id: 'v25', name: 'Sulphur Vent', x: 40, y: 55 },
       { id: 'v26', name: 'Summit Crater', x: 50, y: 30 },
@@ -242,6 +243,12 @@ export default function HomeScreen() {
         <View style={styles.videoWrapper}>
           {mountain.videoSource ? (
             <VideoViewPlayer source={mountain.videoSource} isActive={isActive} />
+          ) : mountain.imageSource ? (
+            <Image 
+              source={mountain.imageSource} 
+              style={styles.fullScreenImage}
+              resizeMode="contain"
+            />
           ) : (
             <View style={styles.fullScreenImagePlaceholder}>
               <Ionicons name="image-outline" size={80} color="#8B7355" />
@@ -339,16 +346,7 @@ export default function HomeScreen() {
           <Text style={[styles.floatingNavText, isPortrait && styles.floatingNavTextPortrait]}>My Hikes</Text>
         </TouchableOpacity>
         
-        {user?.is_admin && (
-          <TouchableOpacity
-            onPress={() => router.push('./admin')}
-            style={[styles.floatingNavButton, isPortrait && styles.floatingNavButtonPortrait]}
-          >
-            <Ionicons name="settings" size={isPortrait ? 20 : 24} color="#FFF" />
-            <Text style={[styles.floatingNavText, isPortrait && styles.floatingNavTextPortrait]}>Admin</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+              </View>
     </View>
   );
 }
@@ -370,7 +368,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#000',
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fullScreenVideo: {
     position: 'absolute',
@@ -381,6 +381,12 @@ const styles = StyleSheet.create({
   },
   hiddenVideo: {
     opacity: 0,
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+    maxWidth: '100%',
+    maxHeight: '100%',
   },
   fullScreenImagePlaceholder: {
     position: 'absolute',
