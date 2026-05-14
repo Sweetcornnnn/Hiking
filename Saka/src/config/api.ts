@@ -10,7 +10,7 @@ const getApiUrl = () => {
       return 'http://localhost:3000';
     } else {
       // For physical devices, use your computer's IP address
-      return 'http://10.0.6.50:3000';
+      return 'http://192.168.1.51:3000';
     }
   }
   
