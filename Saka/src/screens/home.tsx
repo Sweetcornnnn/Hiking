@@ -8,6 +8,7 @@ import {
   Animated,
   StyleSheet,
   Image,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -174,6 +175,7 @@ export default function HomeScreen() {
   const { user, signOut } = useAuthStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
+  const [menuVisible, setMenuVisible] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
 
   const isPortrait = dimensions.height > dimensions.width;
@@ -192,16 +194,8 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const handleViewpointPress = (viewpoint: Viewpoint, mountain: Mountain) => {
-    router.push({
-      pathname: './viewpoint',
-      params: { 
-        viewpointId: viewpoint.id, 
-        mountainId: mountain.id,
-        viewpointName: viewpoint.name,
-      },
-    });
-  };
+  const openMenu = () => setMenuVisible(true);
+  const closeMenu = () => setMenuVisible(false);
 
   // Video Player Component - Always mounted, controlled by isActive
   const VideoViewPlayer = ({ source, isActive }: { source: any; isActive: boolean }) => {
@@ -259,31 +253,9 @@ export default function HomeScreen() {
         {/* Dark Gradient Overlay for text readability */}
         <View style={styles.fullScreenGradient} />
 
-        {/* Floating Viewpoints on Video */}
-        {mountain.viewpoints.map((viewpoint) => (
-          <TouchableOpacity
-            key={viewpoint.id}
-            style={[
-              styles.floatingViewpoint,
-              { left: `${viewpoint.x}%`, top: `${viewpoint.y}%` }
-            ]}
-            onPress={() => handleViewpointPress(viewpoint, mountain)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.viewpointDot} />
-            <View style={styles.viewpointLabelFloat}>
-              <Text style={styles.viewpointTextFloat}>{viewpoint.name}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-
         {/* Floating Mountain Info - Bottom */}
         <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
           <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}>{mountain.name}</Text>
-          <Text style={styles.floatingElevation}>⛰️ {mountain.elevation}</Text>
-          <View style={styles.floatingDifficultyBadge}>
-            <Text style={styles.floatingDifficultyText}>{mountain.difficulty}</Text>
-          </View>
         </View>
       </View>
     );
@@ -318,12 +290,29 @@ export default function HomeScreen() {
             Welcome, {user?.name || 'Hiker'}
           </Text>
         </View>
-        <TouchableOpacity onPress={signOut} style={styles.transparentLogout}>
-          <Ionicons name="log-out-outline" size={22} color="#FFF" />
+        <TouchableOpacity onPress={openMenu} style={styles.transparentMenu}>
+          <Ionicons name="menu" size={24} color="#FFF" />
         </TouchableOpacity>
       </View>
 
-      {/* Floating Pagination - Minimal */}
+      <Modal transparent visible={menuVisible} animationType="fade" onRequestClose={closeMenu}>
+        <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPressOut={closeMenu}>
+          <View style={styles.menuContent}>
+            <Text style={styles.menuTitle}>Menu</Text>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); router.push('./calendar'); }}>
+              <Text style={styles.menuItemText}>My Hikes</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={closeMenu}>
+              <Text style={styles.menuItemText}>Explore Mountains</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); signOut(); }}>
+              <Text style={styles.menuItemText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Floating Pagination - Right of Mountain Name */}
       <View style={[styles.floatingPagination, isPortrait && styles.floatingPaginationPortrait]}>
         {MOUNTAINS.map((_, index) => (
           <View
@@ -336,17 +325,6 @@ export default function HomeScreen() {
         ))}
       </View>
 
-      {/* Floating Navigation Buttons - Bottom - Orientation Aware */}
-      <View style={[styles.floatingNavContainer, isPortrait && styles.floatingNavContainerPortrait]}>
-        <TouchableOpacity
-          onPress={() => router.push('./calendar')}
-          style={[styles.floatingNavButton, isPortrait && styles.floatingNavButtonPortrait]}
-        >
-          <Ionicons name="calendar" size={isPortrait ? 20 : 24} color="#FFF" />
-          <Text style={[styles.floatingNavText, isPortrait && styles.floatingNavTextPortrait]}>My Hikes</Text>
-        </TouchableOpacity>
-        
-              </View>
     </View>
   );
 }
@@ -433,24 +411,25 @@ const styles = StyleSheet.create({
   // Floating Info at Bottom
   floatingInfoContainer: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 20,
     left: 24,
-    right: 24,
     zIndex: 30,
+    maxWidth: '70%',
   },
   floatingInfoContainerPortrait: {
-    bottom: 130,
+    bottom: 25,
   },
   floatingMountainName: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 58,
+    fontWeight: '900',
     color: '#FFF',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    lineHeight: 62,
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
   },
   floatingMountainNamePortrait: {
-    fontSize: 32,
+    fontSize: 68,
   },
   floatingElevation: {
     fontSize: 14,
@@ -514,30 +493,65 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     borderRadius: 20,
   },
+  transparentMenu: {
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 18,
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  menuContent: {
+    backgroundColor: '#111827',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+  },
+  menuTitle: {
+    color: '#F9FAFB',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  menuItem: {
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  menuItemText: {
+    color: '#F9FAFB',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   
   // Floating Pagination
   floatingPagination: {
     position: 'absolute',
-    top: 110,
-    left: 24,
+    bottom: 20,
+    right: 24,
     flexDirection: 'row',
     zIndex: 100,
-    gap: 8,
+    gap: 6,
+    alignSelf: 'flex-start',
   },
   floatingPaginationPortrait: {
-    top: 140,
+    bottom: 25,
   },
   floatingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   floatingDotActive: {
     backgroundColor: '#FFF',
-    width: 24,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   floatingDotInactive: {
-    backgroundColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
   
   // Floating Navigation Buttons
