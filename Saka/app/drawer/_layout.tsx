@@ -39,6 +39,13 @@ export default function DrawerLayout() {
             title: 'Admin',
           }}
         />
+        <Drawer.Screen 
+          name="wildtrack" 
+          options={{
+            drawerLabel: 'WildTrack',
+            title: 'WildTrack - Biodiversity Explorer',
+          }}
+        />
       </Drawer>
     </GestureHandlerRootView>
   );

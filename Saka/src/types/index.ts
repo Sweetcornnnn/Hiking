@@ -37,6 +37,39 @@ export interface Viewpoint {
   description: string;
 }
 
+export interface Species {
+  id: number;
+  scientific_name: string;
+  common_name: string;
+  category: string;
+  conservation_status?: string;
+  gbif_id?: number;
+  inaturalist_id?: number;
+  image_url?: string;
+  description?: string;
+  habitat?: string;
+  fun_facts?: string;
+  is_endemic?: boolean;
+  mountain_id?: string;
+  discovered?: boolean;
+}
+
+export interface Discovery {
+  id: number;
+  user_id: number;
+  species_id: number;
+  mountain_id: string;
+  discovered_at: string;
+  latitude?: number;
+  longitude?: number;
+  notes?: string;
+  scientific_name?: string;
+  common_name?: string;
+  category?: string;
+  image_url?: string;
+  conservation_status?: string;
+}
+
 export interface RootStackParamList {
   Intro: undefined;
   Login: undefined;
@@ -46,4 +79,7 @@ export interface RootStackParamList {
   Calendar: undefined;
   AddHike: { hike?: Hike };
   Admin: undefined;
+  WildTrack: undefined;
+  SpeciesDetail: { speciesId: number };
+  MyDiscoveries: undefined;
 }

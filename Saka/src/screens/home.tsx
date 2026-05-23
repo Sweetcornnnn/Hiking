@@ -302,6 +302,9 @@ export default function HomeScreen() {
             <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); router.push('./calendar'); }}>
               <Text style={styles.menuItemText}>My Hikes</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); router.push('./wildtrack'); }}>
+              <Text style={styles.menuItemText}>WildTrack</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={closeMenu}>
               <Text style={styles.menuItemText}>Explore Mountains</Text>
             </TouchableOpacity>
