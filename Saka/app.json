@@ -8,6 +8,11 @@
     "scheme": "saka",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "permissions": [
+      "android.permission.ACCESS_FINE_LOCATION",
+      "android.permission.ACCESS_COARSE_LOCATION",
+      "android.permission.ACCESS_BACKGROUND_LOCATION"
+    ],
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "cover",
@@ -15,7 +20,15 @@
     },
     "ios": {
       "supportsTablet": true,
-      "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
+      "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "We need your location to track hiking progress and ensure your safety on trails.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "We need continuous location access to provide real-time safety monitoring and emergency assistance.",
+        "NSLocationAlwaysUsageDescription": "We need continuous location access for background safety tracking.",
+        "UIBackgroundModes": [
+          "location"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
