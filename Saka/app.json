@@ -14,7 +14,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +25,9 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo",
+      "package": "com.anonymous.Saka"
     },
     "web": {
       "output": "static",

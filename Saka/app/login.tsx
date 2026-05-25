@@ -7,6 +7,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const { signIn, isLoading } = useAuthStore();
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -72,9 +73,20 @@ export default function LoginScreen() {
           placeholderTextColor="#8B7355"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
+          secureTextEntry={!showPassword}
           editable={!isLoading}
         />
+
+        <TouchableOpacity
+          style={styles.showPasswordRow}
+          onPress={() => setShowPassword((prev) => !prev)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.checkbox, showPassword && styles.checkboxChecked]}>
+            {showPassword && <Text style={styles.checkboxTick}>✓</Text>}
+          </View>
+          <Text style={styles.showPasswordLabel}>Show password</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.button, isLoading && styles.buttonDisabled]} 
@@ -86,24 +98,15 @@ export default function LoginScreen() {
           </Text>
         </TouchableOpacity>
 
+        <TouchableOpacity onPress={() => router.push('/forgot')}>
+          <Text style={styles.forgotLink}>Forgot password?</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity onPress={() => router.push('/signup')}>
           <Text style={styles.link}>Don't have an account? Sign Up</Text>
         </TouchableOpacity>
 
-        <View style={styles.demoSection}>
-          <View style={styles.divider} />
-          <Text style={styles.orText}>or</Text>
-          <TouchableOpacity 
-            style={styles.demoButton}
-            onPress={() => {
-              useAuthStore.getState().demoLogin();
-              router.replace('/drawer/admin/[...admin]');
-            }}
-          >
-            <Text style={styles.demoButtonText}>Try Demo Mode</Text>
-          </TouchableOpacity>
-          <Text style={styles.demoHint}>No login required • All features enabled</Text>
-        </View>
+        {/* Demo mode removed */}
       </View>
     </Animated.View>
   );
@@ -175,6 +178,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
+  forgotLink: {
+    color: '#8B7355',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  showPasswordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: '#2C3E50',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  checkboxChecked: {
+    backgroundColor: '#2C3E50',
+  },
+  checkboxTick: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  showPasswordLabel: {
+    color: '#2C3E50',
+    fontSize: 14,
+  },
   demoSection: {
     marginTop: 20,
     alignItems: 'center',
@@ -190,21 +226,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 12,
   },
-  demoButton: {
-    backgroundColor: '#8B7355',
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  demoButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  demoHint: {
-    color: '#8B7355',
-    fontSize: 11,
-    marginTop: 8,
-  },
+  // demo styles removed
 });

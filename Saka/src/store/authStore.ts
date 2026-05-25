@@ -15,7 +15,6 @@ interface AuthState {
   authToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  isDemoMode: boolean;
   
   // Actions
   setUser: (user: User | null) => void;
@@ -24,7 +23,7 @@ interface AuthState {
   signUp: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   checkAuth: () => Promise<void>;
-  demoLogin: () => void;
+  // (demo mode removed)
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -32,7 +31,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   authToken: null,
   isLoading: false,
   isAuthenticated: false,
-  isDemoMode: false,
+  // demo mode removed
 
   setUser: (user) => set({ user, isAuthenticated: !!user }),
   setAuthToken: (token) => set({ authToken: token }),
@@ -136,19 +135,5 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
     }
   },
-
-  demoLogin: () => {
-    // Demo user for testing without Supabase
-    set({
-      user: {
-        id: 'demo-user-123',
-        email: 'demo@saka.app',
-        name: 'Demo Hiker',
-        is_admin: true, // Admin access in demo mode
-      },
-      isAuthenticated: true,
-      isDemoMode: true,
-      isLoading: false,
-    });
-  },
+  // demoLogin removed
 }));

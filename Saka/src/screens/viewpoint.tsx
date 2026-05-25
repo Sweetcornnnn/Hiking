@@ -1,326 +1,502 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Dimensions,
+  StatusBar,
+  Image,
+  ImageSourcePropType,
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuthStore } from '../store/authStore';
 import { Ionicons } from '@expo/vector-icons';
+import { VIEWPOINTS_DATA, ViewpointsDataType } from '../data/viewpointsData';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Map imageKey → local asset. Replace with your actual image imports.
+const IMAGE_MAP: Record<string, ImageSourcePropType> = {
+  trailhead: require('../../assets/viewpoints/placeholder.png'),
+  bantang_river: require('../../assets/viewpoints/placeholder.png'),
+  camp1: require('../../assets/viewpoints/placeholder.png'),
+  waterfall: require('../../assets/viewpoints/placeholder.png'),
+  mossy_forest: require('../../assets/viewpoints/placeholder.png'),
+  camp2: require('../../assets/viewpoints/placeholder.png'),
+  camp3: require('../../assets/viewpoints/placeholder.png'),
+  crown_shyness: require('../../assets/viewpoints/placeholder.png'),
+  summit_ridge: require('../../assets/viewpoints/placeholder.png'),
+  summit: require('../../assets/viewpoints/placeholder.png'),
+};
+
+interface LocalSearchParams {
+  viewpointId?: string;
+  mountainId?: string;
+}
+
+interface StatChipProps {
+  icon: string;
+  label: string;
+  value: string;
+  accent: string;
+}
 
 export default function ViewpointScreen() {
   const router = useRouter();
-  const { viewpointId, mountainId, viewpointName } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const viewpointId = params.viewpointId as string | undefined;
+  const mountainId = params.mountainId as string | undefined;
+
+  const data = VIEWPOINTS_DATA[(viewpointId as keyof ViewpointsDataType) || 'v1'];
+
+  // Fallback if viewpointId doesn't match
+  if (!data) {
+    return (
+      <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle-outline" size={48} color="#8B7355" />
+        <Text style={styles.errorText}>Viewpoint not found.</Text>
+        <TouchableOpacity
+          onPress={() => {
+            if (mountainId) {
+              router.push({
+                pathname: '/MountainTop',
+                params: { mountainId },
+              });
+            } else {
+              router.back();
+            }
+          }}
+          style={styles.errorButton}
+        >
+          <Text style={styles.errorButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const heroImage = IMAGE_MAP[data.imageKey];
+  const accent = data.accentColor;
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#2C3E50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{viewpointName}</Text>
-        <View style={styles.placeholder} />
-      </View>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Hero Image Placeholder */}
-        <View style={styles.heroContainer}>
-          <View style={styles.heroImage}>
-            <Ionicons name="images-outline" size={80} color="#8B7355" />
-            <Text style={styles.heroText}>360° Panoramic View</Text>
+      {/* ── HERO IMAGE ── */}
+      <View style={styles.heroWrapper}>
+        {heroImage ? (
+          <Image source={heroImage} style={styles.heroImage} resizeMode="cover" />
+        ) : (
+          <View style={[styles.heroPlaceholder, { backgroundColor: accent + '33' }]}>
+            <Ionicons name="image-outline" size={64} color={accent} />
+            <Text style={[styles.heroPlaceholderText, { color: accent }]}>
+              {data.name}
+            </Text>
           </View>
-          
-          {/* Gradient Overlay */}
-          <View style={styles.gradientOverlay} />
-          
-          {/* Floating Stats */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statBadge}>
-              <Ionicons name="eye-outline" size={16} color="#FFF" />
-              <Text style={styles.statText}>Amazing View</Text>
-            </View>
-          </View>
+        )}
+
+        {/* Dark gradient at bottom of hero */}
+        <View style={styles.heroGradient} />
+
+        {/* Back button */}
+        <TouchableOpacity
+          onPress={() => {
+            if (mountainId) {
+              router.push({
+                pathname: '/MountainTop',
+                params: { mountainId },
+              });
+            } else {
+              router.back();
+            }
+          }}
+          style={styles.backBtn}
+        >
+          <Ionicons name="chevron-back" size={22} color="#FFF" />
+        </TouchableOpacity>
+
+        {/* Elevation badge — top right */}
+        <View style={[styles.elevationBadge, { backgroundColor: accent }]}>
+          <Ionicons name="trending-up-outline" size={13} color="#FFF" />
+          <Text style={styles.elevationText}>{data.elevation}</Text>
         </View>
 
-        {/* Content Card */}
-        <View style={styles.contentCard}>
-          <View style={styles.titleRow}>
-            <View>
-              <Text style={styles.viewpointName}>{viewpointName}</Text>
-              <Text style={styles.subtitle}>Scenic Viewpoint</Text>
+        {/* Hero title block */}
+        <View style={styles.heroTitleBlock}>
+          <Text style={styles.heroSubtitle}>{data.subtitle}</Text>
+          <Text style={styles.heroTitle}>{data.name}</Text>
+        </View>
+      </View>
+
+      {/* ── SCROLLABLE CONTENT ── */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── QUICK STATS ROW ── */}
+        <View style={styles.statsRow}>
+          <StatChip icon="walk-outline" label="Distance" value={data.distanceFromStart} accent={accent} />
+          <StatChip icon="time-outline" label="Est. hike" value={data.estimatedHike} accent={accent} />
+          <StatChip icon="sunny-outline" label="Best time" value={data.bestTime.split(' ')[0]} accent={accent} />
+        </View>
+
+        {/* ── TAGS ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tagsScroll}
+          contentContainerStyle={styles.tagsContent}
+        >
+          {data.tags.map((tag) => (
+            <View key={tag} style={[styles.tag, { borderColor: accent + '55', backgroundColor: accent + '15' }]}>
+              <Text style={[styles.tagText, { color: accent }]}>{tag}</Text>
             </View>
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={14} color="#FFD700" />
-              <Text style={styles.ratingText}>4.9</Text>
-            </View>
+          ))}
+        </ScrollView>
+
+        {/* ── DESCRIPTION ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionAccent, { backgroundColor: accent }]} />
+            <Text style={styles.sectionTitle}>About this Stop</Text>
           </View>
+          <Text style={styles.description}>{data.description}</Text>
+        </View>
 
-          {/* Info Tags */}
-          <View style={styles.tagsContainer}>
-            <View style={styles.tag}>
-              <Ionicons name="camera-outline" size={14} color="#8B7355" />
-              <Text style={styles.tagText}>Photo Spot</Text>
-            </View>
-            <View style={styles.tag}>
-              <Ionicons name="sunny-outline" size={14} color="#8B7355" />
-              <Text style={styles.tagText}>Best at Sunrise</Text>
-            </View>
-            <View style={styles.tag}>
-              <Ionicons name="time-outline" size={14} color="#8B7355" />
-              <Text style={styles.tagText}>30 min stop</Text>
-            </View>
+        {/* ── BEST TIME ── */}
+        <View style={[styles.bestTimeCard, { backgroundColor: accent + '18', borderColor: accent + '40' }]}>
+          <Ionicons name="alarm-outline" size={18} color={accent} />
+          <Text style={[styles.bestTimeText, { color: accent }]}>{data.bestTime}</Text>
+        </View>
+
+        {/* ── FEATURES ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionAccent, { backgroundColor: accent }]} />
+            <Text style={styles.sectionTitle}>What to Expect</Text>
           </View>
-
-          {/* Description */}
-          <Text style={styles.sectionTitle}>About this Viewpoint</Text>
-          <Text style={styles.description}>
-            Experience breathtaking panoramic views from {viewpointName}. This stunning 
-            location offers hikers a perfect spot to rest, take photos, and appreciate 
-            the natural beauty of the surrounding landscape. The viewpoint is accessible 
-            via well-marked trails and provides an excellent vantage point for sunrise 
-            photography and wildlife observation.
-          </Text>
-
-          {/* Features List */}
-          <Text style={styles.sectionTitle}>Features</Text>
           <View style={styles.featuresList}>
-            {[
-              { icon: 'checkmark-circle-outline', text: 'Safe viewing platform' },
-              { icon: 'checkmark-circle-outline', text: 'Rest area with benches' },
-              { icon: 'checkmark-circle-outline', text: 'Trail markers nearby' },
-              { icon: 'warning-outline', text: 'Steep drop-off - stay cautious' },
-            ].map((feature, index) => (
-              <View key={index} style={styles.featureItem}>
-                <Ionicons 
-                  name={feature.icon as any} 
-                  size={18} 
-                  color={feature.icon === 'warning-outline' ? '#E74C3C' : '#27AE60'} 
-                />
-                <Text style={[styles.featureText, feature.icon === 'warning-outline' && styles.warningText]}>
-                  {feature.text}
+            {data.features.map((f, i) => (
+              <View key={i} style={styles.featureItem}>
+                <View
+                  style={[
+                    styles.featureIcon,
+                    { backgroundColor: f.safe ? '#E8F5E9' : '#FFEBEE' },
+                  ]}
+                >
+                  <Ionicons
+                    name={f.icon as any}
+                    size={16}
+                    color={f.safe ? '#2E7D32' : '#C62828'}
+                  />
+                </View>
+                <Text style={[styles.featureText, !f.safe && styles.featureWarn]}>
+                  {f.text}
                 </Text>
               </View>
             ))}
           </View>
+        </View>
 
-          {/* Action Buttons */}
-          <View style={styles.actionsContainer}>
-            <TouchableOpacity
-              onPress={() => router.push('./calendar')}
-              style={styles.primaryButton}
-            >
-              <Ionicons name="calendar-outline" size={20} color="#FFF" />
-              <Text style={styles.primaryButtonText}>Schedule Hike</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.secondaryButton}
-            >
-              <Ionicons name="map-outline" size={20} color="#2C3E50" />
-              <Text style={styles.secondaryButtonText}>Back to Map</Text>
-            </TouchableOpacity>
-          </View>
+        {/* ── ACTIONS ── */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: accent }]}
+            onPress={() => router.push('./calendar')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="calendar-outline" size={18} color="#FFF" />
+            <Text style={styles.primaryBtnText}>Schedule Hike</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => router.back()}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="map-outline" size={18} color="#2C3E50" />
+            <Text style={styles.secondaryBtnText}>Back to Map</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
   );
 }
 
+/* ── Small reusable stat chip ── */
+function StatChip({ icon, label, value, accent }: StatChipProps) {
+  return (
+    <View style={styles.statChip}>
+      <Ionicons name={icon as any} size={18} color={accent} />
+      <Text style={styles.statChipLabel}>{label}</Text>
+      <Text style={styles.statChipValue}>{value}</Text>
+    </View>
+  );
+}
+
+/* ─────────────────────── STYLES ─────────────────────── */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5E6D3',
+    backgroundColor: '#F8F4EF',
   },
-  header: {
-    flexDirection: 'row',
+
+  /* Error */
+  errorContainer: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+    justifyContent: 'center',
+    gap: 16,
+    backgroundColor: '#F8F4EF',
   },
-  backButton: {
-    padding: 8,
-    backgroundColor: 'rgba(139,115,85,0.1)',
+  errorText: { fontSize: 16, color: '#8B7355', fontWeight: '600' },
+  errorButton: {
+    backgroundColor: '#2C3E50',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 12,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-  },
-  placeholder: {
-    width: 40,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  heroContainer: {
-    height: 320,
-    marginHorizontal: 20,
-    borderRadius: 24,
-    overflow: 'hidden',
+  errorButtonText: { color: '#FFF', fontWeight: '600' },
+
+  /* Hero */
+  heroWrapper: {
+    height: SCREEN_HEIGHT * 0.42,
+    width: '100%',
     position: 'relative',
+    backgroundColor: '#D4C4B0',
   },
   heroImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#D4A574',
+  },
+  heroPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
+    gap: 12,
   },
-  heroText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#8B7355',
-    fontWeight: '600',
+  heroPlaceholderText: {
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
-  gradientOverlay: {
+  heroGradient: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderBottomWidth: 0,
+    top: '40%',
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  statsContainer: {
+  backBtn: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-  },
-  statBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(44,62,80,0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    top: 52,
+    left: 20,
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  statText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  contentCard: {
-    marginTop: -30,
-    marginHorizontal: 20,
-    backgroundColor: '#FFF',
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-    marginBottom: 30,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  viewpointName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#8B7355',
-    marginTop: 4,
-  },
-  ratingBadge: {
+  elevationBadge: {
+    position: 'absolute',
+    top: 52,
+    right: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF9E6',
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 12,
-    gap: 4,
+    borderRadius: 20,
   },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2C3E50',
+  elevationText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  tagsContainer: {
+  heroTitleBlock: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    right: 20,
+  },
+  heroSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '600',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  heroTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFF',
+    lineHeight: 32,
+  },
+
+  /* Scroll */
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 40 },
+
+  /* Stats row */
+  statsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    marginHorizontal: 16,
+    marginTop: 20,
+    gap: 10,
+  },
+  statChip: {
+    flex: 1,
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  statChipLabel: {
+    fontSize: 10,
+    color: '#9E9E9E',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statChipValue: {
+    fontSize: 11,
+    color: '#2C3E50',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  /* Tags */
+  tagsScroll: { marginTop: 14 },
+  tagsContent: {
+    paddingHorizontal: 16,
     gap: 8,
-    marginBottom: 20,
   },
   tag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(139,115,85,0.1)',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
+    borderRadius: 20,
+    borderWidth: 1,
   },
   tagText: {
     fontSize: 12,
-    color: '#8B7355',
+    fontWeight: '600',
+  },
+
+  /* Section */
+  section: {
+    marginHorizontal: 16,
+    marginTop: 22,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionAccent: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#2C3E50',
-    marginBottom: 10,
-    marginTop: 4,
+    letterSpacing: 0.3,
   },
   description: {
     fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 22,
-    marginBottom: 20,
+    color: '#555',
+    lineHeight: 23,
   },
-  featuresList: {
-    gap: 10,
-    marginBottom: 24,
-  },
-  featureItem: {
+
+  /* Best time card */
+  bestTimeCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  bestTimeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+
+  /* Features */
+  featuresList: { gap: 10 },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  featureIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   featureText: {
     fontSize: 14,
     color: '#2C3E50',
+    flex: 1,
   },
-  warningText: {
-    color: '#E74C3C',
+  featureWarn: {
+    color: '#C62828',
   },
-  actionsContainer: {
+
+  /* Actions */
+  actionsRow: {
     flexDirection: 'row',
     gap: 12,
+    marginHorizontal: 16,
+    marginTop: 28,
   },
-  primaryButton: {
+  primaryBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2C3E50',
-    paddingVertical: 14,
-    borderRadius: 16,
     gap: 8,
+    paddingVertical: 15,
+    borderRadius: 16,
   },
-  primaryButtonText: {
+  primaryBtnText: {
     color: '#FFF',
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
-  secondaryButton: {
+  secondaryBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F5E6D3',
-    paddingVertical: 14,
-    borderRadius: 16,
     gap: 8,
+    paddingVertical: 15,
+    borderRadius: 16,
+    backgroundColor: '#ECDEC8',
   },
-  secondaryButtonText: {
+  secondaryBtnText: {
     color: '#2C3E50',
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

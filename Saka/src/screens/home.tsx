@@ -2,17 +2,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  ScrollView,
-  TouchableOpacity,
   Dimensions,
   Animated,
   StyleSheet,
   Image,
+  TouchableOpacity,
   Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
@@ -23,6 +23,10 @@ interface Viewpoint {
   name: string;
   x: number;
   y: number;
+  latitude?: number;
+  longitude?: number;
+  elevation?: string;
+  notes?: string;
 }
 
 interface Mountain {
@@ -49,9 +53,9 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Hard',
     videoSource: require('../../assets/Mt.Majaas.mp4'),
     viewpoints: [
-      { id: 'v1', name: 'Camp 1', x: 25, y: 65 },
-      { id: 'v2', name: 'Summit', x: 50, y: 25 },
-      { id: 'v3', name: 'Lake View', x: 70, y: 55 },
+      { id: 'v1', name: 'Camp 1', x: 25, y: 65, latitude: 11.3717, longitude: 122.1088 },
+      { id: 'v2', name: 'Summit', x: 50, y: 25, latitude: 11.3892, longitude: 122.1629 },
+      { id: 'v3', name: 'Lake View', x: 70, y: 55, latitude: 11.3781, longitude: 122.1556 },
     ],
   },
   {
@@ -62,8 +66,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Expert',
     imageSource: require('../../assets/images/Mt. Guiting-Guiting.jpg'),
     viewpoints: [
-      { id: 'v4', name: 'Base Camp', x: 30, y: 75 },
-      { id: 'v5', name: 'Kiss the Wall', x: 55, y: 40 },
+      { id: 'v4', name: 'Bontoc Trailhead', x: 30, y: 75, latitude: 11.7350, longitude: 121.8350, elevation: '~500m', notes: 'Start point, guides required' },
+      { id: 'v5', name: 'Lower Ridge Camp', x: 40, y: 65, latitude: 11.7420, longitude: 121.8420, elevation: '~1,200m', notes: 'First camp, 4-5 hours' },
+      { id: 'v6', name: 'Mid Ridge Section', x: 50, y: 50, latitude: 11.7483, longitude: 121.8483, elevation: '~1,600m', notes: 'Knife-edge ridge, technical' },
+      { id: 'v7', name: 'Kiss The Wall', x: 55, y: 40, latitude: 11.7550, longitude: 121.8550, elevation: '~1,850m', notes: 'Famous rock feature' },
+      { id: 'v8', name: 'Summit Camp', x: 60, y: 30, latitude: 11.7600, longitude: 121.8600, elevation: '~2,000m', notes: 'Final camp before summit' },
+      { id: 'v9', name: 'Mt. Guiting-Guiting Summit', x: 65, y: 20, latitude: 11.7650, longitude: 121.8650, elevation: '~2,058m', notes: 'Technical peak, rope assist' },
     ],
   },
   {
@@ -74,9 +82,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Moderate',
     imageSource: require('../../assets/images/Mt. Pulag.jpg'),
     viewpoints: [
-      { id: 'v6', name: 'Ambangeg Trail', x: 35, y: 60 },
-      { id: 'v7', name: 'Summit', x: 50, y: 20 },
-      { id: 'v8', name: 'Camp 2', x: 65, y: 45 },
+      { id: 'v10', name: 'Ambangeg Trailhead', x: 35, y: 60, latitude: 16.5900, longitude: 121.0200, elevation: '~1,500m', notes: 'Main route, permits at ranger station' },
+      { id: 'v11', name: 'First Campsite', x: 40, y: 50, latitude: 16.5930, longitude: 121.0240, elevation: '~1,800m', notes: '2-3 hours from trailhead' },
+      { id: 'v12', name: 'Pagoo Ridge', x: 45, y: 40, latitude: 16.5970, longitude: 121.0290, elevation: '~2,300m', notes: 'Open ridgeline with views' },
+      { id: 'v13', name: 'Eddet Camp', x: 50, y: 30, latitude: 16.6000, longitude: 121.0320, elevation: '~2,600m', notes: 'Famous sea of clouds spot' },
+      { id: 'v14', name: 'Summit Ridge', x: 55, y: 20, latitude: 16.6011, longitude: 121.0306, elevation: '~2,900m', notes: 'Final push to summit' },
+      { id: 'v15', name: 'Mt. Pulag Summit', x: 60, y: 15, latitude: 16.6020, longitude: 121.0315, elevation: '~2,926m', notes: 'Monument peak, 360° views' },
     ],
   },
   {
@@ -87,9 +98,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Hard',
     imageSource: require('../../assets/images/Mt. Apo.jpg'),
     viewpoints: [
-      { id: 'v9', name: 'Lake Venado', x: 40, y: 50 },
-      { id: 'v10', name: 'Boulders', x: 55, y: 30 },
-      { id: 'v11', name: 'Summit Crater', x: 45, y: 25 },
+      { id: 'v16', name: 'Kapatagan Trailhead', x: 35, y: 70, latitude: 6.9700, longitude: 125.3300, elevation: '~600m', notes: 'Main jump-off, gov permits required' },
+      { id: 'v17', name: 'Lake Venado Camp', x: 40, y: 60, latitude: 6.9800, longitude: 125.3350, elevation: '~1,500m', notes: 'Alpine lake, 5-6 hours' },
+      { id: 'v18', name: 'Rainforest Junction', x: 45, y: 50, latitude: 6.9850, longitude: 125.3400, elevation: '~1,800m', notes: 'Rich biodiversity zone' },
+      { id: 'v19', name: 'Crater Rim Trail', x: 55, y: 40, latitude: 6.9950, longitude: 125.3475, elevation: '~2,500m', notes: 'Crater views and geothermal features' },
+      { id: 'v20', name: 'Boulders Camp', x: 60, y: 30, latitude: 7.0000, longitude: 125.3520, elevation: '~2,800m', notes: 'Rocky alpine landscape' },
+      { id: 'v21', name: 'Mt. Apo Summit', x: 68, y: 18, latitude: 7.0060, longitude: 125.3561, elevation: '~2,954m', notes: 'Highest peak in Philippines, active volcano' },
     ],
   },
   {
@@ -100,8 +114,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Hard',
     imageSource: require('../../assets/images/Mt. Mayon.jpg'),
     viewpoints: [
-      { id: 'v12', name: 'Base Camp', x: 30, y: 70 },
-      { id: 'v13', name: 'Crater Rim', x: 50, y: 35 },
+      { id: 'v22', name: 'Cagsawa Trailhead', x: 30, y: 75, latitude: 13.2400, longitude: 123.6800, elevation: '~500m', notes: 'Most popular route, permits needed' },
+      { id: 'v23', name: 'Base Camp', x: 35, y: 65, latitude: 13.2450, longitude: 123.6850, elevation: '~1,200m', notes: '3-4 hours, water available' },
+      { id: 'v24', name: 'Mid Slope Marker', x: 42, y: 50, latitude: 13.2500, longitude: 123.6880, elevation: '~1,700m', notes: 'Steep terrain begins' },
+      { id: 'v25', name: 'Crater Rim', x: 50, y: 35, latitude: 13.2573, longitude: 123.6911, elevation: '~2,300m', notes: 'Final push, volcanic ash' },
+      { id: 'v26', name: 'Mt. Mayon Summit', x: 55, y: 25, latitude: 13.2600, longitude: 123.6940, elevation: '~2,463m', notes: 'Perfect cone, scenic views' },
+      { id: 'v27', name: 'Crater Lake Viewpoint', x: 52, y: 42, latitude: 13.2545, longitude: 123.6883, elevation: '~2,400m', notes: 'Alternative descent route' },
     ],
   },
   {
@@ -112,9 +130,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Easy',
     imageSource: require('../../assets/images/Mt.Batulao.jpg'),
     viewpoints: [
-      { id: 'v14', name: 'Old Trail', x: 25, y: 55 },
-      { id: 'v15', name: 'New Trail', x: 75, y: 60 },
-      { id: 'v16', name: 'Summit View', x: 50, y: 30 },
+      { id: 'v28', name: 'Old Trail Junction', x: 25, y: 55, latitude: 13.7750, longitude: 120.8750, elevation: '~300m', notes: 'Beginner-friendly route' },
+      { id: 'v29', name: 'Forest Section', x: 35, y: 45, latitude: 13.7800, longitude: 120.8800, elevation: '~500m', notes: 'Shaded trail, 1-2 hours' },
+      { id: 'v30', name: 'Open Plateau', x: 45, y: 35, latitude: 13.7840, longitude: 120.8840, elevation: '~700m', notes: 'Grassland with views' },
+      { id: 'v31', name: 'New Trail Route', x: 70, y: 50, latitude: 13.7900, longitude: 120.8900, elevation: '~550m', notes: 'Scenic alternate descent' },
+      { id: 'v32', name: 'Summit Rest Point', x: 50, y: 25, latitude: 13.7867, longitude: 120.8867, elevation: '~811m', notes: 'Two peaks, Batangas views' },
+      { id: 'v33', name: 'Sunset Viewpoint', x: 48, y: 30, latitude: 13.7860, longitude: 120.8860, elevation: '~800m', notes: 'Popular photo spot' },
     ],
   },
   {
@@ -125,9 +146,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Easy',
     imageSource: require('../../assets/images/Mt. Maculot.jpg'),
     viewpoints: [
-      { id: 'v17', name: 'Rockies', x: 60, y: 40 },
-      { id: 'v18', name: 'Summit', x: 40, y: 35 },
-      { id: 'v19', name: 'Grotto', x: 25, y: 65 },
+      { id: 'v34', name: 'Sto. Tomas Trailhead', x: 25, y: 70, latitude: 13.8640, longitude: 120.9850, elevation: '~200m', notes: 'Easy starting point' },
+      { id: 'v35', name: 'Grotto Shrine', x: 25, y: 60, latitude: 13.8650, longitude: 120.9860, elevation: '~400m', notes: 'Religious site, 30 mins' },
+      { id: 'v36', name: 'Mid Trail Camp', x: 35, y: 50, latitude: 13.8680, longitude: 120.9880, elevation: '~650m', notes: '1 hour from Grotto' },
+      { id: 'v37', name: 'Cable Bridge Area', x: 42, y: 42, latitude: 13.8700, longitude: 120.9890, elevation: '~800m', notes: 'Famous adventure spot' },
+      { id: 'v38', name: 'The Rockies', x: 60, y: 40, latitude: 13.8747, longitude: 120.9917, elevation: '~920m', notes: 'Rock formations, Taal Lake view' },
+      { id: 'v39', name: 'Mt. Maculot Summit', x: 40, y: 35, latitude: 13.8694, longitude: 120.9894, elevation: '~930m', notes: 'Monument peak, day hike' },
     ],
   },
   {
@@ -138,9 +162,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Moderate',
     imageSource: require('../../assets/images/Mt. Ulap.jpg'),
     viewpoints: [
-      { id: 'v20', name: 'Ambanao Ridge', x: 35, y: 50 },
-      { id: 'v21', name: 'Gungal Rock', x: 55, y: 45 },
-      { id: 'v22', name: 'Mt. Ulap Summit', x: 45, y: 25 },
+      { id: 'v40', name: 'Dakak Trailhead', x: 30, y: 60, latitude: 16.5650, longitude: 120.8980, elevation: '~1,200m', notes: 'Mountain tourism area' },
+      { id: 'v41', name: 'Ambanao Ridge Start', x: 35, y: 50, latitude: 16.5728, longitude: 120.9061, elevation: '~1,400m', notes: 'Grassland begins, 2-3 hours' },
+      { id: 'v42', name: 'Pine Forest Section', x: 45, y: 42, latitude: 16.5765, longitude: 120.9095, elevation: '~1,600m', notes: 'Beautiful forest zone' },
+      { id: 'v43', name: 'Gungal Rock', x: 55, y: 45, latitude: 16.5795, longitude: 120.9128, elevation: '~1,850m', notes: 'Famous boulder formation' },
+      { id: 'v44', name: 'Upper Ridge Camp', x: 60, y: 35, latitude: 16.5830, longitude: 120.9160, elevation: '~2,000m', notes: 'Alpine meadows' },
+      { id: 'v45', name: 'Mt. Ulap Summit', x: 45, y: 25, latitude: 16.5850, longitude: 120.9183, elevation: '~2,086m', notes: 'Twin peaks, Cordillera views' },
     ],
   },
   {
@@ -151,8 +178,12 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Moderate',
     imageSource: require('../../assets/images/Mt. Pinatubo.jpg'),
     viewpoints: [
-      { id: 'v23', name: 'Crater Lake', x: 50, y: 40 },
-      { id: 'v24', name: 'Lahar Valley', x: 30, y: 70 },
+      { id: 'v46', name: 'Santa Juliana Trailhead', x: 25, y: 75, latitude: 15.1200, longitude: 120.3300, elevation: '~500m', notes: 'Jeepney access available' },
+      { id: 'v47', name: 'Lahar Valley Start', x: 30, y: 70, latitude: 15.1250, longitude: 120.3350, elevation: '~700m', notes: 'Gray volcanic sand' },
+      { id: 'v48', name: 'Mid Valley Marker', x: 40, y: 65, latitude: 15.1300, longitude: 120.3400, elevation: '~1,000m', notes: '2-3 hours of hiking' },
+      { id: 'v49', name: 'Crater Approach', x: 50, y: 55, latitude: 15.1350, longitude: 120.3450, elevation: '~1,300m', notes: 'Steep final push' },
+      { id: 'v50', name: 'Crater Lake', x: 50, y: 40, latitude: 15.1383, longitude: 120.3500, elevation: '~1,486m', notes: 'Crater lake, post-eruption' },
+      { id: 'v51', name: 'Crater Rim Overlook', x: 48, y: 50, latitude: 15.1370, longitude: 120.3475, elevation: '~1,450m', notes: 'Best crater views' },
     ],
   },
   {
@@ -163,9 +194,13 @@ const MOUNTAINS: MountainData[] = [
     difficulty: 'Hard',
     imageSource: require('../../assets/images/Mt. Kanlaon.jpg'),
     viewpoints: [
-      { id: 'v25', name: 'Sulphur Vent', x: 40, y: 55 },
-      { id: 'v26', name: 'Summit Crater', x: 50, y: 30 },
-      { id: 'v27', name: 'Margaja Valley', x: 65, y: 60 },
+      { id: 'v52', name: 'Mananaon Trailhead', x: 35, y: 70, latitude: 10.3900, longitude: 123.1200, elevation: '~600m', notes: 'Main route, guides required' },
+      { id: 'v53', name: 'Forest Zone Camp', x: 40, y: 60, latitude: 10.3950, longitude: 123.1250, elevation: '~1,300m', notes: '4-5 hours, shade available' },
+      { id: 'v54', name: 'Alpine Transition', x: 48, y: 50, latitude: 10.4000, longitude: 123.1300, elevation: '~1,800m', notes: 'Temperature drops, open view' },
+      { id: 'v55', name: 'Sulphur Vent Area', x: 40, y: 55, latitude: 10.4025, longitude: 123.1319, elevation: '~2,100m', notes: 'Geothermal features' },
+      { id: 'v56', name: 'Summit Crater Camp', x: 50, y: 30, latitude: 10.4056, longitude: 123.1350, elevation: '~2,400m', notes: 'Final camp before summit' },
+      { id: 'v57', name: 'Mt. Kanlaon Summit', x: 55, y: 22, latitude: 10.4080, longitude: 123.1370, elevation: '~2,465m', notes: 'Active crater, highest in Negros' },
+      { id: 'v58', name: 'Margaja Valley', x: 65, y: 60, latitude: 10.4100, longitude: 123.1394, elevation: '~2,300m', notes: 'Scenic crater valley' },
     ],
   },
 ];
@@ -176,26 +211,43 @@ export default function HomeScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [menuVisible, setMenuVisible] = useState(false);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
   const isPortrait = dimensions.height > dimensions.width;
 
   useEffect(() => {
-    // Allow all orientations programmatically
-    ScreenOrientation.unlockAsync();
+    // Force landscape orientation for the home screen
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     
     const subscription = Dimensions.addEventListener('change', ({ screen }) => {
       setDimensions(screen);
     });
     return () => {
       subscription?.remove();
-      // Lock back to default on unmount
+      // Restore default orientation on unmount
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT);
     };
   }, []);
 
   const openMenu = () => setMenuVisible(true);
   const closeMenu = () => setMenuVisible(false);
+
+  const pickProfileImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    
+  };
 
   // Video Player Component - Always mounted, controlled by isActive
   const VideoViewPlayer = ({ source, isActive }: { source: any; isActive: boolean }) => {
@@ -227,7 +279,8 @@ export default function HomeScreen() {
   const renderMountainScreen = (mountain: MountainData, index: number) => {
     const isActive = index === activeIndex;
     const { width, height } = dimensions;
-    
+    const locked = mountain.id !== '1';
+
     return (
       <View 
         key={mountain.id} 
@@ -241,7 +294,7 @@ export default function HomeScreen() {
             <Image 
               source={mountain.imageSource} 
               style={styles.fullScreenImage}
-              resizeMode="contain"
+              resizeMode="cover"
             />
           ) : (
             <View style={styles.fullScreenImagePlaceholder}>
@@ -249,14 +302,30 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
-        
-        {/* Dark Gradient Overlay for text readability */}
-        <View style={styles.fullScreenGradient} />
 
-        {/* Floating Mountain Info - Bottom */}
-        <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
-          <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}>{mountain.name}</Text>
-        </View>
+        <View style={[styles.fullScreenGradient, locked && styles.fullScreenGradientLocked]} />
+
+        {!locked && (
+          <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
+            <TouchableOpacity
+              style={styles.logoRow}
+              onPress={() => router.push('/MountainTop')}
+            >
+              <View style={styles.logoPlaceholder}>
+                <Text style={styles.logoPlaceholderText}>Logo</Text>
+              </View>
+              <Text style={styles.openMapButtonText}>Tara, Saka</Text>
+            </TouchableOpacity>
+            <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}>{mountain.name}</Text>
+          </View>
+        )}
+
+        {locked && (
+          <View style={styles.lockOverlay}>
+            <Ionicons name="lock-closed" size={84} color="#FFF" />
+            <Text style={styles.lockedText}>Locked</Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -283,13 +352,20 @@ export default function HomeScreen() {
       </Animated.ScrollView>
 
       {/* Floating Transparent Header - Orientation Aware */}
-      <View style={[styles.transparentHeader, isPortrait && styles.transparentHeaderPortrait]}>
-        <View>
-          <Text style={styles.transparentTitle}>Explore</Text>
-          <Text style={styles.transparentSubtitle}>
-            Welcome, {user?.name || 'Hiker'}
-          </Text>
-        </View>
+      <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
+        <TouchableOpacity onPress={pickProfileImage} style={styles.profileButton}>
+          <View style={styles.profileAvatar}>
+            {profileImage ? (
+              <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
+            ) : (
+              <Text style={styles.profileInitials}>{user?.name?.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'H'}</Text>
+            )}
+          </View>
+          <View style={styles.profileTextContainer}>
+            <Text style={styles.profileGreeting}>Hi,</Text>
+            <Text style={styles.profileName}>{user?.name || 'Hiker'}</Text>
+          </View>
+        </TouchableOpacity>
         <TouchableOpacity onPress={openMenu} style={styles.transparentMenu}>
           <Ionicons name="menu" size={24} color="#FFF" />
         </TouchableOpacity>
@@ -297,16 +373,31 @@ export default function HomeScreen() {
 
       <Modal transparent visible={menuVisible} animationType="fade" onRequestClose={closeMenu}>
         <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPressOut={closeMenu}>
-          <View style={styles.menuContent}>
+          <View style={styles.menuContent}> 
             <Text style={styles.menuTitle}>Menu</Text>
             <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); router.push('./calendar'); }}>
-              <Text style={styles.menuItemText}>My Hikes</Text>
+              <View style={styles.menuItemRow}>
+                <Ionicons name="book" size={20} color="#F9FAFB" />
+                <Text style={styles.menuItemText}>My Hikes</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); router.push('/MountainTop'); }}>
+              <View style={styles.menuItemRow}>
+                <Ionicons name="map" size={20} color="#F9FAFB" />
+                <Text style={styles.menuItemText}>Mt. Madja-as Map</Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={closeMenu}>
-              <Text style={styles.menuItemText}>Explore Mountains</Text>
+              <View style={styles.menuItemRow}>
+                <Ionicons name="compass" size={20} color="#F9FAFB" />
+                <Text style={styles.menuItemText}>Explore Mountains</Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); signOut(); }}>
-              <Text style={styles.menuItemText}>Logout</Text>
+              <View style={styles.menuItemRow}>
+                <Ionicons name="log-out" size={20} color="#F9FAFB" />
+                <Text style={styles.menuItemText}>Logout</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -314,15 +405,32 @@ export default function HomeScreen() {
 
       {/* Floating Pagination - Right of Mountain Name */}
       <View style={[styles.floatingPagination, isPortrait && styles.floatingPaginationPortrait]}>
-        {MOUNTAINS.map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.floatingDot,
-              index === activeIndex ? styles.floatingDotActive : styles.floatingDotInactive
-            ]}
-          />
-        ))}
+        {MOUNTAINS.map((mountain, index) => {
+          const isActiveDot = index === activeIndex;
+          const locked = mountain.id !== '1';
+
+          if (locked) {
+            return (
+              <Ionicons
+                key={index}
+                name="lock-closed"
+                size={10}
+                color={isActiveDot ? '#FFF' : 'rgba(255,255,255,0.6)'}
+                style={styles.lockIcon}
+              />
+            );
+          }
+
+          return (
+            <View
+              key={index}
+              style={[
+                styles.floatingDot,
+                isActiveDot ? styles.floatingDotActive : styles.floatingDotInactive,
+              ]}
+            />
+          );
+        })}
       </View>
 
     </View>
@@ -380,6 +488,24 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
+  fullScreenGradientLocked: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  lockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    zIndex: 20,
+    paddingHorizontal: 20,
+  },
+  lockedText: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 16,
+    letterSpacing: 1,
+  },
   
   // Floating Viewpoints
   floatingViewpoint: {
@@ -418,6 +544,34 @@ const styles = StyleSheet.create({
   },
   floatingInfoContainerPortrait: {
     bottom: 25,
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  openMapButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 10,
+  },
+  logoPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoPlaceholderText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   floatingMountainName: {
     fontSize: 58,
@@ -472,6 +626,9 @@ const styles = StyleSheet.create({
   transparentHeaderPortrait: {
     paddingTop: 60,
   },
+  transparentHeaderLandscape: {
+    paddingTop: 18,
+  },
   transparentTitle: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -493,6 +650,46 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     borderRadius: 20,
   },
+  profileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'transparent',
+    borderRadius: 20,
+    borderWidth: 0,
+  },
+  profileAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  profileInitials: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  profileTextContainer: {
+    justifyContent: 'center',
+  },
+  profileGreeting: {
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 12,
+  },
+  profileName: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   transparentMenu: {
     padding: 10,
     backgroundColor: 'rgba(255,255,255,0.12)',
@@ -500,14 +697,22 @@ const styles = StyleSheet.create({
   },
   menuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   menuContent: {
+    width: '100%',
+    maxWidth: 360,
     backgroundColor: '#111827',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 14,
   },
   menuTitle: {
     color: '#F9FAFB',
@@ -519,6 +724,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  menuItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   menuItemText: {
     color: '#F9FAFB',
@@ -532,9 +742,8 @@ const styles = StyleSheet.create({
     bottom: 20,
     right: 24,
     flexDirection: 'row',
+    alignItems: 'center',
     zIndex: 100,
-    gap: 6,
-    alignSelf: 'flex-start',
   },
   floatingPaginationPortrait: {
     bottom: 25,
@@ -543,15 +752,18 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    marginHorizontal: 2,
   },
   floatingDotActive: {
     backgroundColor: '#FFF',
-    width: 6,
-    height: 6,
-    borderRadius: 3,
   },
   floatingDotInactive: {
     backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  lockIcon: {
+    marginHorizontal: 2,
+    alignSelf: 'center',
   },
   
   // Floating Navigation Buttons

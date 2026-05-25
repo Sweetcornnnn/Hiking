@@ -16,6 +16,7 @@ export default function DrawerLayout() {
           },
           overlayColor: 'transparent',
           swipeEnabled: true,
+          orientation: 'landscape',
         }}
       >
         <Drawer.Screen 
@@ -23,6 +24,7 @@ export default function DrawerLayout() {
           options={{
             drawerLabel: 'Home',
             title: 'Explore Mountains',
+            orientation: 'landscape',
           }}
         />
         <Drawer.Screen 
@@ -30,6 +32,7 @@ export default function DrawerLayout() {
           options={{
             drawerLabel: 'My Hikes',
             title: 'Hiking Schedule',
+            orientation: 'landscape',
           }}
         />
         <Drawer.Screen 
@@ -37,6 +40,7 @@ export default function DrawerLayout() {
           options={{
             drawerLabel: 'Admin Dashboard',
             title: 'Admin',
+            orientation: 'landscape',
           }}
         />
       </Drawer>

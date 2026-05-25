@@ -10,8 +10,7 @@ interface HikesState {
   allHikes: Hike[]; // For admin view
   adminStats: { total_hikes: number; total_users: number } | null; // Admin statistics
   isLoading: boolean;
-  isDemoMode: boolean;
-  demoHikes: Hike[]; // Local storage for demo mode
+  
   
   // Actions
   fetchHikes: () => Promise<void>;
@@ -20,7 +19,7 @@ interface HikesState {
   createHike: (hike: Omit<Hike, 'id' | 'user_id' | 'created_at'>) => Promise<{ error: string | null }>;
   updateHike: (id: string, hike: Partial<Hike>) => Promise<{ error: string | null }>;
   deleteHike: (id: string) => Promise<{ error: string | null }>;
-  setDemoMode: (enabled: boolean) => void;
+  
 }
 
 export const useHikesStore = create<HikesState>((set, get) => ({
@@ -28,19 +27,10 @@ export const useHikesStore = create<HikesState>((set, get) => ({
   allHikes: [],
   adminStats: null,
   isLoading: false,
-  isDemoMode: false,
-  demoHikes: [],
+  
 
   fetchHikes: async () => {
     set({ isLoading: true });
-    
-    // Check if in demo mode
-    const authState = useAuthStore.getState();
-    if (authState.isDemoMode) {
-      set({ hikes: get().demoHikes });
-      set({ isLoading: false });
-      return;
-    }
     
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
@@ -63,15 +53,6 @@ export const useHikesStore = create<HikesState>((set, get) => ({
 
   fetchAllHikes: async () => {
     set({ isLoading: true });
-    
-    // Check if in demo mode
-    const authState = useAuthStore.getState();
-    if (authState.isDemoMode) {
-      // In demo mode, show all demo hikes
-      set({ allHikes: get().demoHikes });
-      set({ isLoading: false });
-      return;
-    }
     
     try {
       let token = authState.authToken;
@@ -141,22 +122,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
 
   createHike: async (hikeData) => {
     set({ isLoading: true });
-
-    // Check if in demo mode
-    const authState = useAuthStore.getState();
-    if (authState.isDemoMode) {
-      const newHike: Hike = {
-        ...hikeData,
-        id: 'demo-' + Date.now(),
-        user_id: 'demo-user-123',
-        created_at: new Date().toISOString(),
-      };
-      const updatedHikes = [...get().demoHikes, newHike];
-      set({ demoHikes: updatedHikes, hikes: updatedHikes });
-      set({ isLoading: false });
-      return { error: null };
-    }
-
+    
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
       set({ isLoading: false });
@@ -180,18 +146,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
 
   updateHike: async (id, hikeData) => {
     set({ isLoading: true });
-
-    // Check if in demo mode
-    const authState = useAuthStore.getState();
-    if (authState.isDemoMode) {
-      const updatedHikes = get().demoHikes.map(h => 
-        h.id === id ? { ...h, ...hikeData } : h
-      );
-      set({ demoHikes: updatedHikes, hikes: updatedHikes });
-      set({ isLoading: false });
-      return { error: null };
-    }
-
+    
     const { error } = await supabase
       .from('hikes')
       .update(hikeData)
@@ -207,16 +162,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
 
   deleteHike: async (id) => {
     set({ isLoading: true });
-
-    // Check if in demo mode
-    const authState = useAuthStore.getState();
-    if (authState.isDemoMode) {
-      const updatedHikes = get().demoHikes.filter(h => h.id !== id);
-      set({ demoHikes: updatedHikes, hikes: updatedHikes });
-      set({ isLoading: false });
-      return { error: null };
-    }
-
+    
     const { error } = await supabase
       .from('hikes')
       .delete()
@@ -230,7 +176,5 @@ export const useHikesStore = create<HikesState>((set, get) => ({
     return { error: error?.message || null };
   },
 
-  setDemoMode: (enabled) => {
-    set({ isDemoMode: enabled });
-  },
+  // demo mode removed
 }));
