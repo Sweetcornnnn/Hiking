@@ -51,6 +51,7 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
   const handleLogout = async () => {
     onClose();
     await signOut();
+    router.replace('/login');
   };
 
   const handleSettings = () => {

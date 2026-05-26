@@ -55,6 +55,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
     set({ isLoading: true });
     
     try {
+      const authState = useAuthStore.getState();
       let token = authState.authToken;
       if (!token) {
         token = await SecureStore.getItemAsync('authToken');

@@ -3,17 +3,16 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, E
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
+import { API_BASE_URL } from '../config/api';
 
-export default function SignupScreen() {
+export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { user, authToken } = useAuthStore();
+  const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [name, setName] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const { signUp, isLoading } = useAuthStore();
-  
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -25,10 +24,10 @@ export default function SignupScreen() {
     }).start();
   }, []);
 
-  const getPasswordStrength = (pwd: string): { strength: 'weak' | 'fair' | 'strong'; color: string } => {
-    if (pwd.length === 0) return { strength: 'weak', color: '#D1D5DB' };
-    if (pwd.length < 8) return { strength: 'weak', color: '#EF4444' };
-    if (pwd.length < 12) return { strength: 'fair', color: '#F59E0B' };
+  const getPasswordStrength = (password: string): { strength: 'weak' | 'fair' | 'strong'; color: string } => {
+    if (password.length === 0) return { strength: 'weak', color: '#D1D5DB' };
+    if (password.length < 8) return { strength: 'weak', color: '#EF4444' };
+    if (password.length < 12) return { strength: 'fair', color: '#F59E0B' };
     return { strength: 'strong', color: '#10B981' };
   };
 
@@ -42,19 +41,24 @@ export default function SignupScreen() {
     };
   };
 
-  const passwordStrength = getPasswordStrength(password);
-  const requirements = checkPasswordRequirements(password);
+  const passwordStrength = getPasswordStrength(newPassword);
+  const requirements = checkPasswordRequirements(newPassword);
   const allRequirementsMet = Object.values(requirements).every(val => val === true);
-  const doPasswordsMatch = password === confirmPassword && password.length > 0;
+  const doPasswordsMatch = newPassword === confirmPassword && newPassword.length > 0;
   const canSubmit = allRequirementsMet && doPasswordsMatch && !isLoading;
 
-  const handleSignup = async () => {
-    if (!email || !password || !confirmPassword || !name) {
-      Alert.alert('Error', 'Please fill in all fields');
+  const handleReset = async () => {
+    if (!newPassword) {
+      Alert.alert('Error', 'Please enter your new password');
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (!confirmPassword) {
+      Alert.alert('Error', 'Please confirm your password');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
@@ -64,68 +68,77 @@ export default function SignupScreen() {
       return;
     }
 
-    const { error } = await signUp(email, password, name);
+    setIsLoading(true);
 
-    if (error) {
-      Alert.alert('Error', error);
-    } else {
-      Alert.alert('Success', 'Account created! Please sign in.');
-      router.replace('/login');
+    try {
+      console.log(`Requesting password change to ${API_BASE_URL}/api/password-change-request`);
+      const response = await fetch(`${API_BASE_URL}/api/password-change-request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          userId: user?.id,
+          newPassword: newPassword,
+        }),
+      });
+
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
+
+      if (!response.ok) {
+        setIsLoading(false);
+        Alert.alert('Error', data.error || 'Failed to request password change');
+        return;
+      }
+
+      setIsLoading(false);
+      Alert.alert(
+        'Request Sent ✓',
+        'Your password change request has been sent to admin for approval. You will be redirected to login.',
+        [{ text: 'OK', onPress: () => router.replace('/login') }]
+      );
+    } catch (error: any) {
+      setIsLoading(false);
+      console.log('Error:', error.message);
+      Alert.alert('Error', error.message || 'Network error');
     }
   };
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: '#F5E6D3' }]}>
+    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: '#F5E6D3' }]}> 
       <View style={styles.leftPanel}>
-        <Text style={styles.logo}>🏔️</Text>
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join the hiking community</Text>
+        <Text style={styles.logo}>🔐</Text>
+        <Text style={styles.title}>Change Password</Text>
+        <Text style={styles.subtitle}>Secure your account with a new password</Text>
+        <View style={styles.infoBox}>
+          <Ionicons name="information-circle-outline" size={16} color="#2C3E50" />
+          <Text style={styles.infoText}>Admin approval required</Text>
+        </View>
       </View>
-      
+
       <View style={styles.rightPanel}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            placeholder="Full name"
-            placeholderTextColor="#8B7355"
-            value={name}
-            onChangeText={setName}
-            editable={!isLoading}
-          />
-        </View>
-
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email address"
-            placeholderTextColor="#8B7355"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            editable={!isLoading}
-          />
-        </View>
-
-        {/* Password Field */}
+        {/* New Password Field */}
         <View style={styles.fieldContainer}>
-          <Text style={styles.label}>Password</Text>
+          <Text style={styles.label}>New Password</Text>
           <View style={styles.passwordInputWrapper}>
             <TextInput
               style={styles.input}
-              placeholder="Create password"
+              placeholder="Enter new password"
               placeholderTextColor="#8B7355"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              secureTextEntry={!showNewPassword}
               editable={!isLoading}
             />
             <TouchableOpacity 
               style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
+              onPress={() => setShowNewPassword(!showNewPassword)}
             >
               <Ionicons 
-                name={showPassword ? 'eye-off' : 'eye'} 
+                name={showNewPassword ? 'eye-off' : 'eye'} 
                 size={20} 
                 color="#8B7355" 
               />
@@ -133,7 +146,7 @@ export default function SignupScreen() {
           </View>
 
           {/* Password Strength Indicator */}
-          {password.length > 0 && (
+          {newPassword.length > 0 && (
             <View style={styles.strengthContainer}>
               <View style={[styles.strengthBar, { backgroundColor: passwordStrength.color }]} />
               <Text style={[styles.strengthText, { color: passwordStrength.color }]}>
@@ -227,27 +240,29 @@ export default function SignupScreen() {
           )}
         </View>
 
-        <TouchableOpacity 
-          style={[styles.button, !canSubmit && styles.buttonDisabled]} 
-          onPress={handleSignup}
+        {/* Submit Button */}
+        <TouchableOpacity
+          style={[styles.button, !canSubmit && styles.buttonDisabled]}
+          onPress={handleReset}
           disabled={!canSubmit}
         >
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <Ionicons name="hourglass" size={16} color="#FFFFFF" style={styles.spinner} />
-              <Text style={styles.buttonText}>Creating Account...</Text>
+              <Text style={styles.buttonText}>Sending Request...</Text>
             </View>
           ) : (
             <View style={styles.submitContainer}>
-              <Ionicons name="person-add" size={16} color="#FFFFFF" />
-              <Text style={styles.buttonText}>Sign Up</Text>
+              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+              <Text style={styles.buttonText}>Request Password Change</Text>
             </View>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push('/login')} style={styles.linkContainer}>
+        {/* Back to Login Link */}
+        <TouchableOpacity onPress={() => router.replace('/login')} style={styles.linkContainer}>
           <Ionicons name="arrow-back" size={14} color="#2C3E50" />
-          <Text style={styles.link}>Already have an account? Sign In</Text>
+          <Text style={styles.link}>Back to Login</Text>
         </TouchableOpacity>
       </View>
     </Animated.View>
@@ -286,29 +301,30 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6B7280',
+    marginBottom: 20,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(44, 62, 80, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#2C3E50',
+    fontWeight: '500',
   },
   fieldContainer: {
-    marginBottom: 14,
+    marginBottom: 20,
   },
   label: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#2C3E50',
-    marginBottom: 4,
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: '#D4A574',
-    borderRadius: 8,
-    backgroundColor: '#FAFAFA',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   passwordInputWrapper: {
     flexDirection: 'row',
@@ -319,17 +335,24 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     backgroundColor: '#FAFAFA',
   },
+  input: {
+    flex: 1,
+    height: 44,
+    paddingHorizontal: 16,
+    fontSize: 14,
+    color: '#6B7280',
+  },
   eyeIcon: {
     padding: 4,
   },
   strengthContainer: {
     marginTop: 8,
-    marginBottom: 8,
+    gap: 6,
   },
   strengthBar: {
     height: 4,
     borderRadius: 2,
-    marginBottom: 4,
+    backgroundColor: '#D1D5DB',
   },
   strengthText: {
     fontSize: 12,
@@ -346,37 +369,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 4,
+    gap: 8,
   },
   requirementText: {
     fontSize: 12,
-    marginLeft: 6,
+    color: '#9CA3AF',
   },
   matchRow: {
+    marginTop: 8,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-    paddingHorizontal: 8,
+    gap: 8,
   },
   matchText: {
     fontSize: 12,
-    marginLeft: 6,
+    fontWeight: '500',
   },
   button: {
     backgroundColor: '#2C3E50',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 8,
     marginBottom: 16,
   },
   buttonDisabled: {
     opacity: 0.5,
     backgroundColor: '#A0C4A2',
   },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   submitContainer: {
     flexDirection: 'row',
@@ -384,24 +409,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   spinner: {
-    fontStyle: 'italic',
+    opacity: 0.8,
   },
   linkContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
   },
   link: {
     color: '#2C3E50',
     fontSize: 14,
     textAlign: 'center',
+    fontWeight: '500',
   },
 });

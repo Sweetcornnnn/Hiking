@@ -131,6 +131,22 @@ const initializeDatabase = (callback: () => void) => {
       if (err) {
         console.error('Error creating hikes table:', err.message);
       }
+    });
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS password_change_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        new_password TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        responded_at DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `, (err: Error | null) => {
+      if (err) {
+        console.error('Error creating password_change_requests table:', err.message);
+      }
       callback();
     });
   });
@@ -348,6 +364,157 @@ app.get('/api/admin/stats', authenticateToken, (req: any, res: any) => {
       });
     });
   });
+});
+
+// ─────────────────────────────────────────
+// PASSWORD CHANGE REQUEST ENDPOINTS
+// ─────────────────────────────────────────
+
+// Request password change (user endpoint)
+app.post('/api/password-change-request', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { newPassword } = req.body;
+    const userId = req.user.id;
+
+    if (!newPassword) {
+      return res.status(400).json({ error: 'New password is required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // Hash the new password
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+
+    // Create password change request
+    db.run(
+      'INSERT INTO password_change_requests (user_id, new_password, status) VALUES (?, ?, ?)',
+      [userId, hashedPassword, 'pending'],
+      function(err: Error | null) {
+        if (err) {
+          console.error('Error creating password change request:', err.message);
+          return res.status(500).json({ error: 'Failed to create password change request' });
+        }
+
+        res.json({
+          message: 'Password change request sent to admin',
+          requestId: this.lastID,
+        });
+      }
+    );
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all password change requests (admin only)
+app.get('/api/password-change-requests', authenticateToken, (req: any, res: any) => {
+  if (!req.user.is_admin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  db.all(`
+    SELECT pcr.id, pcr.user_id, u.email as userEmail, u.name as userName, 
+           pcr.status, pcr.requested_at as requestedAt, pcr.responded_at as respondedAt
+    FROM password_change_requests pcr
+    JOIN users u ON pcr.user_id = u.id
+    ORDER BY pcr.requested_at DESC
+  `, (err: Error | null, rows: any[]) => {
+    if (err) {
+      console.error('Error fetching password change requests:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch requests' });
+    }
+
+    res.json({
+      requests: rows || [],
+    });
+  });
+});
+
+// Approve password change request (admin only)
+app.post('/api/password-change-requests/:id/approve', authenticateToken, (req: any, res: any) => {
+  if (!req.user.is_admin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  const requestId = req.params.id;
+
+  // Get the password change request
+  db.get(
+    'SELECT user_id, new_password FROM password_change_requests WHERE id = ? AND status = ?',
+    [requestId, 'pending'],
+    (err: Error | null, row: any) => {
+      if (err) {
+        console.error('Error fetching password change request:', err.message);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      if (!row) {
+        return res.status(404).json({ error: 'Request not found or already processed' });
+      }
+
+      // Update user's password
+      db.run(
+        'UPDATE users SET password = ? WHERE id = ?',
+        [row.new_password, row.user_id],
+        (updateErr: Error | null) => {
+          if (updateErr) {
+            console.error('Error updating user password:', updateErr.message);
+            return res.status(500).json({ error: 'Failed to update password' });
+          }
+
+          // Mark the request as approved
+          db.run(
+            'UPDATE password_change_requests SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?',
+            ['approved', requestId],
+            (approveErr: Error | null) => {
+              if (approveErr) {
+                console.error('Error updating request status:', approveErr.message);
+                return res.status(500).json({ error: 'Failed to update request status' });
+              }
+
+              res.json({
+                message: 'Password change approved',
+                requestId,
+              });
+            }
+          );
+        }
+      );
+    }
+  );
+});
+
+// Reject password change request (admin only)
+app.post('/api/password-change-requests/:id/reject', authenticateToken, (req: any, res: any) => {
+  if (!req.user.is_admin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  const requestId = req.params.id;
+
+  // Mark the request as rejected
+  db.run(
+    'UPDATE password_change_requests SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?',
+    ['rejected', requestId, 'pending'],
+    function(err: Error | null) {
+      if (err) {
+        console.error('Error updating request status:', err.message);
+        return res.status(500).json({ error: 'Failed to update request status' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Request not found or already processed' });
+      }
+
+      res.json({
+        message: 'Password change rejected',
+        requestId,
+      });
+    }
+  );
 });
 
 initializeDatabase(() => {

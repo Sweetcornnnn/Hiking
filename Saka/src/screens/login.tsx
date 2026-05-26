@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 
 export default function LoginScreen() {
@@ -56,46 +57,52 @@ export default function LoginScreen() {
       </View>
       
       <View style={styles.rightPanel}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email address"
-          placeholderTextColor="#8B7355"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          editable={!isLoading}
-        />
+        <View style={styles.inputWrapper}>
+          <TextInput
+            style={styles.input}
+            placeholder="Email address"
+            placeholderTextColor="#8B7355"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!isLoading}
+          />
+        </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#8B7355"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
-          editable={!isLoading}
-        />
-
-        <TouchableOpacity
-          style={styles.showPasswordRow}
-          onPress={() => setShowPassword((prev) => !prev)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.checkbox, showPassword && styles.checkboxChecked]}>
-            {showPassword && <Text style={styles.checkboxTick}>✓</Text>}
-          </View>
-          <Text style={styles.showPasswordLabel}>Show password</Text>
-        </TouchableOpacity>
+        <View style={styles.passwordInputWrapper}>
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor="#8B7355"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            editable={!isLoading}
+          />
+          <TouchableOpacity 
+            style={styles.eyeIcon}
+            onPress={() => setShowPassword(!showPassword)}
+          >
+            <Ionicons 
+              name={showPassword ? 'eye-off' : 'eye'} 
+              size={20} 
+              color="#8B7355" 
+            />
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity 
           style={[styles.button, isLoading && styles.buttonDisabled]} 
           onPress={handleLogin}
           disabled={isLoading}
         >
-          <Text style={styles.buttonText}>
-            {isLoading ? 'Signing In...' : 'Sign In'}
-          </Text>
+          <View style={styles.submitContainer}>
+            <Ionicons name="log-in" size={16} color="#FFFFFF" />
+            <Text style={styles.buttonText}>
+              {isLoading ? 'Signing In...' : 'Sign In'}
+            </Text>
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => router.push('/forgot')}>
@@ -146,15 +153,31 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   input: {
+    flex: 1,
     height: 44,
+    paddingHorizontal: 16,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  inputWrapper: {
     borderWidth: 1,
     borderColor: '#D4A574',
     borderRadius: 8,
-    paddingHorizontal: 16,
     backgroundColor: '#FAFAFA',
-    fontSize: 14,
-    color: '#6B7280',
     marginBottom: 12,
+  },
+  passwordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D4A574',
+    borderRadius: 8,
+    paddingRight: 12,
+    backgroundColor: '#FAFAFA',
+    marginBottom: 12,
+  },
+  eyeIcon: {
+    padding: 4,
   },
   button: {
     backgroundColor: '#2C3E50',
@@ -173,6 +196,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  submitContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   link: {
     color: '#2C3E50',
     fontSize: 14,
@@ -184,47 +213,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 14,
   },
-  showPasswordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderWidth: 1,
-    borderColor: '#2C3E50',
-    borderRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  checkboxChecked: {
-    backgroundColor: '#2C3E50',
-  },
-  checkboxTick: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  showPasswordLabel: {
-    color: '#2C3E50',
-    fontSize: 14,
-  },
-  demoSection: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  divider: {
-    width: 100,
-    height: 1,
-    backgroundColor: '#D4A574',
-    marginBottom: 8,
-  },
-  orText: {
-    color: '#8B7355',
-    fontSize: 12,
-    marginBottom: 12,
-  },
-  // demo styles removed
 });

@@ -57,16 +57,7 @@ export default function ViewpointScreen() {
         <Ionicons name="alert-circle-outline" size={48} color="#8B7355" />
         <Text style={styles.errorText}>Viewpoint not found.</Text>
         <TouchableOpacity
-          onPress={() => {
-            if (mountainId) {
-              router.push({
-                pathname: '/MountainTop',
-                params: { mountainId },
-              });
-            } else {
-              router.back();
-            }
-          }}
+          onPress={() => router.back()}
           style={styles.errorButton}
         >
           <Text style={styles.errorButtonText}>Go Back</Text>
@@ -100,16 +91,7 @@ export default function ViewpointScreen() {
 
         {/* Back button */}
         <TouchableOpacity
-          onPress={() => {
-            if (mountainId) {
-              router.push({
-                pathname: '/MountainTop',
-                params: { mountainId },
-              });
-            } else {
-              router.back();
-            }
-          }}
+          onPress={() => router.back()}
           style={styles.backBtn}
         >
           <Ionicons name="chevron-back" size={22} color="#FFF" />

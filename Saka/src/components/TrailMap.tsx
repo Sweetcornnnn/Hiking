@@ -225,7 +225,7 @@ export default function TrailMap({
             onPress={() => {
               setSelectedMarker(null);
               router.push({
-                pathname: '/drawer/viewpoint',
+                pathname: '/viewpoint',
                 params: {
                   viewpointId: selectedMarker.id,
                   mountainId,

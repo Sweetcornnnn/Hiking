@@ -40,6 +40,7 @@ interface MountainData extends Mountain {
   description: string;
   elevation: string;
   difficulty: 'Easy' | 'Moderate' | 'Hard' | 'Expert';
+  funnyWarning?: string;
 }
 
 // Static mountain data with video
@@ -50,6 +51,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The highest peak in Antique, known for its mystical cloud formations and stunning views of the Sibalom Natural Park.',
     elevation: '2,117 m',
     difficulty: 'Hard',
+    funnyWarning: '⚠️ Warning: Cloud formations may make you feel like a god. Side effects include poetry and crying.',
     videoSource: require('../../assets/Mt.Majaas.mp4'),
     viewpoints: [
       { id: 'v1', name: 'Camp 1', x: 25, y: 65, latitude: 11.3717, longitude: 122.1088 },
@@ -63,6 +65,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'Famous for its knife-edge ridge and technical rock formations. A challenging climb for experienced hikers.',
     elevation: '2,058 m',
     difficulty: 'Expert',
+    funnyWarning: '⚠️ Warning: The knife-edge ridge has made grown men whisper "I should have just gone to the mall."',
     imageSource: require('../../assets/images/Mt. Guiting-Guiting.jpg'),
     viewpoints: [
       { id: 'v4', name: 'Bontoc Trailhead', x: 30, y: 75, latitude: 11.7350, longitude: 121.8350, elevation: '~500m', notes: 'Start point, guides required' },
@@ -79,6 +82,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The third highest mountain in the Philippines, famous for its "sea of clouds" sunrise views.',
     elevation: '2,926 m',
     difficulty: 'Moderate',
+    funnyWarning: '⚠️ Warning: Sea of clouds looks amazing in photos. In real life, you\'re just very cold and very wet.',
     imageSource: require('../../assets/images/Mt. Pulag.jpg'),
     viewpoints: [
       { id: 'v10', name: 'Ambangeg Trailhead', x: 35, y: 60, latitude: 16.5900, longitude: 121.0200, elevation: '~1,500m', notes: 'Main route, permits at ranger station' },
@@ -95,6 +99,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The highest mountain in the Philippines. An active volcano with hot springs and diverse ecosystems.',
     elevation: '2,954 m',
     difficulty: 'Hard',
+    funnyWarning: '⚠️ Warning: It\'s literally a volcano. If it erupts, your emergency plan is "run faster than lava."',
     imageSource: require('../../assets/images/Mt. Apo.jpg'),
     viewpoints: [
       { id: 'v16', name: 'Kapatagan Trailhead', x: 35, y: 70, latitude: 6.9700, longitude: 125.3300, elevation: '~600m', notes: 'Main jump-off, gov permits required' },
@@ -111,6 +116,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The most perfectly cone-shaped volcano in the world. A challenging hike with breathtaking views.',
     elevation: '2,463 m',
     difficulty: 'Hard',
+    funnyWarning: '⚠️ Warning: "Perfect cone" does not mean easy climb. Your knees will have notes.',
     imageSource: require('../../assets/images/Mt. Mayon.jpg'),
     viewpoints: [
       { id: 'v22', name: 'Cagsawa Trailhead', x: 30, y: 75, latitude: 13.2400, longitude: 123.6800, elevation: '~500m', notes: 'Most popular route, permits needed' },
@@ -127,6 +133,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'A beginner-friendly mountain with rolling hills and scenic views of Batangas. Perfect for first-timers.',
     elevation: '811 m',
     difficulty: 'Easy',
+    funnyWarning: '⚠️ Warning: "Easy" is relative. Your officemates said the same thing about the team building.',
     imageSource: require('../../assets/images/Mt.Batulao.jpg'),
     viewpoints: [
       { id: 'v28', name: 'Old Trail Junction', x: 25, y: 55, latitude: 13.7750, longitude: 120.8750, elevation: '~300m', notes: 'Beginner-friendly route' },
@@ -143,6 +150,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'Known for its famous Rockies viewpoint overlooking Taal Lake. A popular day hike near Manila.',
     elevation: '930 m',
     difficulty: 'Easy',
+    funnyWarning: '⚠️ Warning: You will take 47 photos of Taal Lake. Only 3 will be shareable.',
     imageSource: require('../../assets/images/Mt. Maculot.jpg'),
     viewpoints: [
       { id: 'v34', name: 'Sto. Tomas Trailhead', x: 25, y: 70, latitude: 13.8640, longitude: 120.9850, elevation: '~200m', notes: 'Easy starting point' },
@@ -159,6 +167,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'Famous for its scenic grassland ridges and pine tree forests. The famous Gungal Rock is here.',
     elevation: '2,086 m',
     difficulty: 'Moderate',
+    funnyWarning: '⚠️ Warning: Grassland ridges have zero shade. SPF 15 is not negotiable. You\'ve been warned.',
     imageSource: require('../../assets/images/Mt. Ulap.jpg'),
     viewpoints: [
       { id: 'v40', name: 'Dakak Trailhead', x: 30, y: 60, latitude: 16.5650, longitude: 120.8980, elevation: '~1,200m', notes: 'Mountain tourism area' },
@@ -175,6 +184,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'A dormant volcano famous for its stunning crater lake formed after the 1991 eruption.',
     elevation: '1,486 m',
     difficulty: 'Moderate',
+    funnyWarning: '⚠️ Warning: "Dormant" just means it\'s napping. Please do not wake the volcano.',
     imageSource: require('../../assets/images/Mt. Pinatubo.jpg'),
     viewpoints: [
       { id: 'v46', name: 'Santa Juliana Trailhead', x: 25, y: 75, latitude: 15.1200, longitude: 120.3300, elevation: '~500m', notes: 'Jeepney access available' },
@@ -191,6 +201,7 @@ const MOUNTAINS: MountainData[] = [
     description: 'The highest peak in Negros and one of the most active volcanoes in the Philippines.',
     elevation: '2,465 m',
     difficulty: 'Hard',
+    funnyWarning: '⚠️ Warning: Most active volcano in the Philippines. Your travel insurance agent already knows.',
     imageSource: require('../../assets/images/Mt. Kanlaon.jpg'),
     viewpoints: [
       { id: 'v52', name: 'Mananaon Trailhead', x: 35, y: 70, latitude: 10.3900, longitude: 123.1200, elevation: '~600m', notes: 'Main route, guides required' },
@@ -271,6 +282,7 @@ export default function HomeScreen() {
     const { width, height } = dimensions;
     const locked = mountain.id !== '1';
     const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
+    const previousMountain = locked ? MOUNTAINS[index - 1] : null;
 
     return (
       <View
@@ -300,6 +312,10 @@ export default function HomeScreen() {
         {/* ── Unlocked: info panel ── */}
         {!locked && (
           <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
+            {/* Funny warning */}
+            {mountain.funnyWarning && (
+              <Text style={styles.funnyWarningText}>{mountain.funnyWarning}</Text>
+            )}
             {/* Difficulty + elevation row */}
             <View style={styles.infoMetaRow}>
               <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
@@ -327,6 +343,21 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Tara Saka CTA — absolutely positioned at bottom-right, independent of info text */}
+        {!locked && (
+          <TouchableOpacity
+            style={[styles.ctaButton, styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
+            onPress={() => router.push('/MountainTop')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.logoPlaceholder}>
+              <Text style={styles.logoPlaceholderText}>Logo</Text>
+            </View>
+            <Text style={styles.ctaText}>Tara, Saka</Text>
+            <Ionicons name="arrow-forward" size={13} color="#FFF" />
+          </TouchableOpacity>
+        )}
+
         {/* ── Locked: atmospheric overlay ── */}
         {locked && (
           <View style={styles.lockOverlay}>
@@ -334,7 +365,15 @@ export default function HomeScreen() {
               <Ionicons name="lock-closed" size={22} color="rgba(255,255,255,0.6)" />
               <View style={styles.lockCardText}>
                 <Text style={styles.lockCardName} numberOfLines={1}>{mountain.name}</Text>
-                <Text style={styles.lockCardSub}>Summit to unlock</Text>
+                {previousMountain && (
+                  <Text style={styles.lockCardSub}>
+                    <Text style={styles.lockCardSubItalic}>
+                      {`"Summit `}
+                      <Text style={styles.lockCardSubBold}>{previousMountain.name}</Text>
+                      {` first to unlock this peak."`}
+                    </Text>
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -366,40 +405,41 @@ export default function HomeScreen() {
 
       {/* Floating Header */}
       <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
-        <TouchableOpacity
-          onPress={openProfileCard}
-          style={styles.profileButton}
-          activeOpacity={0.8}
-        >
-          {/* Avatar with gold ring */}
-          <View style={styles.profileAvatarRing}>
-            <View style={styles.profileAvatar}>
-              {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
-              ) : (
-                <Text style={styles.profileInitials}>
-                  {user?.name?.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'H'}
-                </Text>
-              )}
+        {MOUNTAINS[activeIndex]?.id === '1' && (
+          <TouchableOpacity
+            onPress={openProfileCard}
+            style={styles.profileButton}
+            activeOpacity={0.8}
+          >
+            {/* Avatar with gold ring */}
+            <View style={styles.profileAvatarRing}>
+              <View style={styles.profileAvatar}>
+                {profileImage ? (
+                  <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
+                ) : (
+                  <Text style={styles.profileInitials}>
+                    {user?.name?.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'H'}
+                  </Text>
+                )}
+              </View>
             </View>
-          </View>
-          {/* Text */}
-          <View style={styles.profileTextContainer}>
-            <Text style={styles.profileGreeting}>Hi,</Text>
-            <Text style={styles.profileName} numberOfLines={1}>
-              {user?.name?.split(' ')[0] || 'Hiker'}
-            </Text>
-          </View>
-          {/* Chevron hint */}
-          <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.5)" style={{ marginLeft: 2 }} />
-        </TouchableOpacity>
+            {/* Text */}
+            <View style={styles.profileTextContainer}>
+              <Text style={styles.profileGreeting}>Hi,</Text>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {user?.name?.split(' ')[0] || 'Hiker'}
+              </Text>
+            </View>
+            {/* Chevron hint */}
+            <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.5)" style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ProfileCard visible={profileCardVisible} onClose={closeProfileCard} profileImage={profileImage} />
 
-      {/* Bottom-right: Pagination + CTA */}
-      <View style={[styles.bottomRight, isPortrait && styles.bottomRightPortrait]}>
-        {/* Pagination dots — vertical stack */}
+      {/* Pagination — fixed at vertical center of right edge */}
+      <View style={styles.paginationFixed}>
         <View style={styles.paginationStack}>
           {MOUNTAINS.map((mountain, index) => {
             const isActiveDot = index === activeIndex;
@@ -428,21 +468,6 @@ export default function HomeScreen() {
             );
           })}
         </View>
-
-        {/* Tara, Saka CTA */}
-        {MOUNTAINS[activeIndex]?.id === '1' && (
-          <TouchableOpacity
-            style={styles.ctaButton}
-            onPress={() => router.push('/MountainTop')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoPlaceholderText}>Logo</Text>
-            </View>
-            <Text style={styles.ctaText}>Tara, Saka</Text>
-            <Ionicons name="arrow-forward" size={13} color="#FFF" />
-          </TouchableOpacity>
-        )}
       </View>
 
     </View>
@@ -528,6 +553,7 @@ const styles = StyleSheet.create({
   },
   lockCardText: {
     gap: 2,
+    flex: 1,
   },
   lockCardName: {
     color: 'rgba(255,255,255,0.7)',
@@ -535,9 +561,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   lockCardSub: {
-    color: 'rgba(255,255,255,0.4)',
+    color: 'rgba(255,255,255,0.45)',
     fontSize: 10,
     letterSpacing: 0.3,
+  },
+  lockCardSubItalic: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 10,
+    fontStyle: 'italic',
+    letterSpacing: 0.3,
+  },
+  lockCardSubBold: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 10,
+    fontStyle: 'italic',
+    fontWeight: '700',
+  },
+  funnyWarningText: {
+    color: 'rgba(255,255,220,0.7)',
+    fontSize: 10,
+    fontStyle: 'italic',
+    marginBottom: 10,
+    maxWidth: '65%',
+    lineHeight: 14,
   },
   
   // Floating Viewpoints
@@ -582,6 +628,14 @@ const styles = StyleSheet.create({
   },
   floatingInfoContainerPortrait: {
     paddingBottom: 36,
+  },
+  ctaAbsolute: {
+    position: 'absolute',
+    bottom: 22,
+    right: 24,
+  },
+  ctaAbsolutePortrait: {
+    bottom: 36,
   },
 
   infoMetaRow: {
@@ -630,13 +684,11 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.65)',
     fontSize: 12,
     lineHeight: 17,
-    marginBottom: 14,
     maxWidth: '65%',
   },
   ctaButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
     backgroundColor: 'rgba(0,0,0,0.4)',
     borderRadius: 24,
     paddingHorizontal: 14,
@@ -813,17 +865,15 @@ const styles = StyleSheet.create({
   },
 
   
-  // Bottom-right panel: pagination + CTA
-  bottomRight: {
+  // Pagination fixed at vertical center of right edge
+  paginationFixed: {
     position: 'absolute',
-    bottom: 20,
-    right: 24,
-    alignItems: 'flex-end',
-    gap: 12,
+    right: 16,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
     zIndex: 100,
-  },
-  bottomRightPortrait: {
-    bottom: 32,
   },
 
   paginationStack: {
@@ -851,39 +901,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // CTA button
-  ctaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-  },
-  ctaText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  
-  logoPlaceholder: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoPlaceholderText: {
-    color: '#FFF',
-    fontSize: 8,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
 });
