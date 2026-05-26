@@ -77,7 +77,7 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
     features: [
       { icon: 'home-outline', text: 'Multiple camping spots', safe: true },
       { icon: 'water-outline', text: 'Water available nearby', safe: true },
-      { icon: 'sunset-outline', text: 'Beautiful sunset views', safe: true },
+      { icon: 'sunny-outline', text: 'Beautiful sunset views', safe: true },
       { icon: 'moon-outline', text: 'Clear night sky', safe: true },
     ],
   },
@@ -380,9 +380,9 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
     tags: ['Highest Peak', 'Sea of Clouds', 'Sunrise Views', 'Monument'],
     features: [
       { icon: 'eye-outline', text: 'Unparalleled cloud views', safe: true },
-      { icon: 'sunset-outline', text: 'Spectacular sunrise', safe: true },
+      { icon: 'sunny-outline', text: 'Spectacular sunrise', safe: true },
       { icon: 'flag-outline', text: 'Historic peak marker', safe: true },
-      { icon: 'wind-outline', text: 'Extreme wind exposure', safe: false },
+      { icon: 'warning-outline', text: 'Extreme wind exposure', safe: false },
     ],
   },
 
@@ -648,7 +648,7 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
     tags: ['Day Hike', 'Taal View', 'Easy Summit', 'Popular Weekend'],
     features: [
       { icon: 'eye-outline', text: 'Taal Lake panorama', safe: true },
-      { icon: 'sunset-outline', text: 'Good sunset spot', safe: true },
+      { icon: 'sunny-outline', text: 'Good sunset spot', safe: true },
       { icon: 'people-outline', text: 'Usually crowded', safe: true },
       { icon: 'camera-outline', text: 'Scenic monument location', safe: true },
     ],

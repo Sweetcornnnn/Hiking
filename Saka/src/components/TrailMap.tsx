@@ -4,11 +4,11 @@ import {
   Text,
   ActivityIndicator,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   TouchableOpacity,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';

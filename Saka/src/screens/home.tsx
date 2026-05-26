@@ -7,14 +7,13 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
-  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import ProfileCard from '../components/ProfileCard';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
@@ -210,7 +209,7 @@ export default function HomeScreen() {
   const { user, signOut } = useAuthStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [profileCardVisible, setProfileCardVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
@@ -230,24 +229,8 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const openMenu = () => setMenuVisible(true);
-  const closeMenu = () => setMenuVisible(false);
-
-  const pickProfileImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-
-    
-  };
+  const openProfileCard = () => setProfileCardVisible(true);
+  const closeProfileCard = () => setProfileCardVisible(false);
 
   // Video Player Component - Always mounted, controlled by isActive
   const VideoViewPlayer = ({ source, isActive }: { source: any; isActive: boolean }) => {
@@ -276,23 +259,31 @@ export default function HomeScreen() {
     );
   };
 
+  const DIFFICULTY_COLORS: Record<string, string> = {
+    Easy: '#4CAF81',
+    Moderate: '#F0A500',
+    Hard: '#E05C3A',
+    Expert: '#C0392B',
+  };
+
   const renderMountainScreen = (mountain: MountainData, index: number) => {
     const isActive = index === activeIndex;
     const { width, height } = dimensions;
     const locked = mountain.id !== '1';
+    const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
 
     return (
-      <View 
-        key={mountain.id} 
+      <View
+        key={mountain.id}
         style={[styles.fullScreenContainer, { width, height }]}
       >
-        {/* Full Screen Video or Image Background */}
+        {/* Background */}
         <View style={styles.videoWrapper}>
           {mountain.videoSource ? (
             <VideoViewPlayer source={mountain.videoSource} isActive={isActive} />
           ) : mountain.imageSource ? (
-            <Image 
-              source={mountain.imageSource} 
+            <Image
+              source={mountain.imageSource}
               style={styles.fullScreenImage}
               resizeMode="cover"
             />
@@ -303,27 +294,49 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* Gradient overlay — stronger at bottom for legibility */}
         <View style={[styles.fullScreenGradient, locked && styles.fullScreenGradientLocked]} />
 
+        {/* ── Unlocked: info panel ── */}
         {!locked && (
           <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
-            <TouchableOpacity
-              style={styles.logoRow}
-              onPress={() => router.push('/MountainTop')}
-            >
-              <View style={styles.logoPlaceholder}>
-                <Text style={styles.logoPlaceholderText}>Logo</Text>
+            {/* Difficulty + elevation row */}
+            <View style={styles.infoMetaRow}>
+              <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
+                <View style={[styles.difficultyDot, { backgroundColor: diffColor }]} />
+                <Text style={[styles.difficultyText, { color: diffColor }]}>{mountain.difficulty}</Text>
               </View>
-              <Text style={styles.openMapButtonText}>Tara, Saka</Text>
-            </TouchableOpacity>
-            <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}>{mountain.name}</Text>
+              <View style={styles.elevationPill}>
+                <Ionicons name="trending-up-outline" size={11} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.elevationText}>{mountain.elevation}</Text>
+              </View>
+            </View>
+
+            {/* Mountain name */}
+            <Text
+              style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}
+              numberOfLines={1}
+            >
+              {mountain.name}
+            </Text>
+
+            {/* Short description */}
+            <Text style={styles.mountainDescription} numberOfLines={2}>
+              {mountain.description}
+            </Text>
           </View>
         )}
 
+        {/* ── Locked: atmospheric overlay ── */}
         {locked && (
           <View style={styles.lockOverlay}>
-            <Ionicons name="lock-closed" size={84} color="#FFF" />
-            <Text style={styles.lockedText}>Locked</Text>
+            <View style={styles.lockCard}>
+              <Ionicons name="lock-closed" size={22} color="rgba(255,255,255,0.6)" />
+              <View style={styles.lockCardText}>
+                <Text style={styles.lockCardName} numberOfLines={1}>{mountain.name}</Text>
+                <Text style={styles.lockCardSub}>Summit to unlock</Text>
+              </View>
+            </View>
           </View>
         )}
       </View>
@@ -351,86 +364,85 @@ export default function HomeScreen() {
         {MOUNTAINS.map((mountain, index) => renderMountainScreen(mountain, index))}
       </Animated.ScrollView>
 
-      {/* Floating Transparent Header - Orientation Aware */}
+      {/* Floating Header */}
       <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
-        <TouchableOpacity onPress={pickProfileImage} style={styles.profileButton}>
-          <View style={styles.profileAvatar}>
-            {profileImage ? (
-              <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
-            ) : (
-              <Text style={styles.profileInitials}>{user?.name?.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'H'}</Text>
-            )}
+        <TouchableOpacity
+          onPress={openProfileCard}
+          style={styles.profileButton}
+          activeOpacity={0.8}
+        >
+          {/* Avatar with gold ring */}
+          <View style={styles.profileAvatarRing}>
+            <View style={styles.profileAvatar}>
+              {profileImage ? (
+                <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
+              ) : (
+                <Text style={styles.profileInitials}>
+                  {user?.name?.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'H'}
+                </Text>
+              )}
+            </View>
           </View>
+          {/* Text */}
           <View style={styles.profileTextContainer}>
             <Text style={styles.profileGreeting}>Hi,</Text>
-            <Text style={styles.profileName}>{user?.name || 'Hiker'}</Text>
+            <Text style={styles.profileName} numberOfLines={1}>
+              {user?.name?.split(' ')[0] || 'Hiker'}
+            </Text>
           </View>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={openMenu} style={styles.transparentMenu}>
-          <Ionicons name="menu" size={24} color="#FFF" />
+          {/* Chevron hint */}
+          <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.5)" style={{ marginLeft: 2 }} />
         </TouchableOpacity>
       </View>
 
-      <Modal transparent visible={menuVisible} animationType="fade" onRequestClose={closeMenu}>
-        <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPressOut={closeMenu}>
-          <View style={styles.menuContent}> 
-            <Text style={styles.menuTitle}>Menu</Text>
-            <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); router.push('./calendar'); }}>
-              <View style={styles.menuItemRow}>
-                <Ionicons name="book" size={20} color="#F9FAFB" />
-                <Text style={styles.menuItemText}>My Hikes</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); router.push('/MountainTop'); }}>
-              <View style={styles.menuItemRow}>
-                <Ionicons name="map" size={20} color="#F9FAFB" />
-                <Text style={styles.menuItemText}>Mt. Madja-as Map</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.menuItem} onPress={closeMenu}>
-              <View style={styles.menuItemRow}>
-                <Ionicons name="compass" size={20} color="#F9FAFB" />
-                <Text style={styles.menuItemText}>Explore Mountains</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.menuItem} onPress={() => { closeMenu(); signOut(); }}>
-              <View style={styles.menuItemRow}>
-                <Ionicons name="log-out" size={20} color="#F9FAFB" />
-                <Text style={styles.menuItemText}>Logout</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <ProfileCard visible={profileCardVisible} onClose={closeProfileCard} profileImage={profileImage} />
 
-      {/* Floating Pagination - Right of Mountain Name */}
-      <View style={[styles.floatingPagination, isPortrait && styles.floatingPaginationPortrait]}>
-        {MOUNTAINS.map((mountain, index) => {
-          const isActiveDot = index === activeIndex;
-          const locked = mountain.id !== '1';
+      {/* Bottom-right: Pagination + CTA */}
+      <View style={[styles.bottomRight, isPortrait && styles.bottomRightPortrait]}>
+        {/* Pagination dots — vertical stack */}
+        <View style={styles.paginationStack}>
+          {MOUNTAINS.map((mountain, index) => {
+            const isActiveDot = index === activeIndex;
+            const locked = mountain.id !== '1';
 
-          if (locked) {
+            if (locked) {
+              return (
+                <View key={index} style={styles.paginationLockWrap}>
+                  <Ionicons
+                    name="lock-closed"
+                    size={8}
+                    color={isActiveDot ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.25)'}
+                  />
+                </View>
+              );
+            }
+
             return (
-              <Ionicons
+              <View
                 key={index}
-                name="lock-closed"
-                size={10}
-                color={isActiveDot ? '#FFF' : 'rgba(255,255,255,0.6)'}
-                style={styles.lockIcon}
+                style={[
+                  styles.paginationDot,
+                  isActiveDot ? styles.paginationDotActive : styles.paginationDotInactive,
+                ]}
               />
             );
-          }
+          })}
+        </View>
 
-          return (
-            <View
-              key={index}
-              style={[
-                styles.floatingDot,
-                isActiveDot ? styles.floatingDotActive : styles.floatingDotInactive,
-              ]}
-            />
-          );
-        })}
+        {/* Tara, Saka CTA */}
+        {MOUNTAINS[activeIndex]?.id === '1' && (
+          <TouchableOpacity
+            style={styles.ctaButton}
+            onPress={() => router.push('/MountainTop')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.logoPlaceholder}>
+              <Text style={styles.logoPlaceholderText}>Logo</Text>
+            </View>
+            <Text style={styles.ctaText}>Tara, Saka</Text>
+            <Ionicons name="arrow-forward" size={13} color="#FFF" />
+          </TouchableOpacity>
+        )}
       </View>
 
     </View>
@@ -486,25 +498,46 @@ const styles = StyleSheet.create({
   },
   fullScreenGradient: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    // Strong bottom vignette for info legibility, light top for header
+    backgroundColor: 'transparent',
+    // Simulated with a bottom-heavy dark layer
+    borderBottomWidth: 0,
+    // We use two overlapping Views for gradient effect
   },
   fullScreenGradientLocked: {
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.18)',
+    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
     zIndex: 20,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
   },
-  lockedText: {
-    color: '#FFF',
-    fontSize: 22,
-    fontWeight: '800',
-    marginTop: 16,
-    letterSpacing: 1,
+  lockCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  lockCardText: {
+    gap: 2,
+  },
+  lockCardName: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  lockCardSub: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    letterSpacing: 0.3,
   },
   
   // Floating Viewpoints
@@ -537,13 +570,85 @@ const styles = StyleSheet.create({
   // Floating Info at Bottom
   floatingInfoContainer: {
     position: 'absolute',
-    bottom: 20,
-    left: 24,
+    bottom: 0,
+    left: 0,
+    right: 0,
     zIndex: 30,
-    maxWidth: '70%',
+    paddingHorizontal: 24,
+    paddingBottom: 22,
+    paddingTop: 40,
+    // Bottom gradient via backgroundColor layering
+    backgroundColor: 'rgba(0,0,0,0)',
   },
   floatingInfoContainerPortrait: {
-    bottom: 25,
+    paddingBottom: 36,
+  },
+
+  infoMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  difficultyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  difficultyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  difficultyText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  elevationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  elevationText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  mountainDescription: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 14,
+    maxWidth: '65%',
+  },
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    gap: 8,
+  },
+  ctaText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   logoRow: {
     flexDirection: 'row',
@@ -574,16 +679,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   floatingMountainName: {
-    fontSize: 58,
+    fontSize: 42,
     fontWeight: '900',
     color: '#FFF',
-    lineHeight: 62,
-    textShadowColor: 'rgba(0,0,0,0.55)',
-    textShadowOffset: { width: 0, height: 3 },
+    lineHeight: 46,
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
+    marginBottom: 6,
   },
   floatingMountainNamePortrait: {
-    fontSize: 68,
+    fontSize: 52,
+    lineHeight: 56,
   },
   floatingElevation: {
     fontSize: 14,
@@ -653,18 +761,29 @@ const styles = StyleSheet.create({
   profileButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: 'transparent',
-    borderRadius: 20,
-    borderWidth: 0,
+    gap: 9,
+    paddingRight: 14,
+    paddingLeft: 6,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  profileAvatarRing: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#C9A96E',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   profileAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -675,132 +794,96 @@ const styles = StyleSheet.create({
   },
   profileInitials: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
   },
   profileTextContainer: {
     justifyContent: 'center',
   },
   profileGreeting: {
-    color: 'rgba(255,255,255,0.74)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    lineHeight: 12,
   },
   profileName: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
+    lineHeight: 15,
   },
-  transparentMenu: {
-    padding: 10,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 18,
-  },
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  menuContent: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: '#111827',
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 14,
-  },
-  menuTitle: {
-    color: '#F9FAFB',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  menuItem: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
-  menuItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  menuItemText: {
-    color: '#F9FAFB',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+
   
-  // Floating Pagination
-  floatingPagination: {
+  // Bottom-right panel: pagination + CTA
+  bottomRight: {
     position: 'absolute',
     bottom: 20,
     right: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    gap: 12,
     zIndex: 100,
   },
-  floatingPaginationPortrait: {
-    bottom: 25,
+  bottomRightPortrait: {
+    bottom: 32,
   },
-  floatingDot: {
-    width: 6,
-    height: 6,
+
+  paginationStack: {
+    alignItems: 'center',
+    gap: 5,
+  },
+  paginationDot: {
+    width: 5,
+    height: 5,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginHorizontal: 2,
   },
-  floatingDotActive: {
+  paginationDotActive: {
     backgroundColor: '#FFF',
+    width: 5,
+    height: 14,
+    borderRadius: 3,
   },
-  floatingDotInactive: {
+  paginationDotInactive: {
     backgroundColor: 'rgba(255,255,255,0.3)',
   },
-  lockIcon: {
-    marginHorizontal: 2,
-    alignSelf: 'center',
+  paginationLockWrap: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // CTA button
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  ctaText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   
-  // Floating Navigation Buttons
-  floatingNavContainer: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    zIndex: 100,
-  },
-  floatingNavContainerPortrait: {
-    bottom: 50,
-  },
-  floatingNavButtonPortrait: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  floatingNavTextPortrait: {
-    fontSize: 13,
-  },
-  floatingNavButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
+  logoPlaceholder: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  floatingNavText: {
+  logoPlaceholderText: {
     color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
 });

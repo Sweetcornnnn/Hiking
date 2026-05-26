@@ -60,6 +60,13 @@ export default function RootLayout() {
             orientation: 'landscape',
           }}
         />
+        <Stack.Screen
+          name="settings"
+          options={{
+            headerShown: false,
+            orientation: 'landscape',
+          }}
+        />
       </Stack>
     </>
   );
