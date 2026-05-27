@@ -8,7 +8,7 @@ import { useNotificationStore } from '../store/notificationStore';
 
 export default function AdminRoute() {
   const router = useRouter();
-  const { user, authToken } = useAuthStore();
+  const { user, authToken, signOut } = useAuthStore();
   const { allHikes, adminStats, fetchAllHikes, fetchAdminStats, isLoading } = useHikesStore();
   const { passwordChangeRequests, unreadCount, fetchPasswordChangeRequests, approvePasswordChange, rejectPasswordChange } = useNotificationStore();
   const [notificationModalVisible, setNotificationModalVisible] = useState(false);
@@ -31,6 +31,12 @@ export default function AdminRoute() {
   const filteredRequests = passwordChangeRequests.filter(req => 
     filterStatus === 'all' ? true : req.status === filterStatus
   );
+
+  const statusStyleMap = {
+    pending: styles.statusPending,
+    approved: styles.statusApproved,
+    rejected: styles.statusRejected,
+  } as const;
 
   const handleApproveRequest = async (requestId: string) => {
     setProcessingRequests(prev => new Set(prev).add(requestId));
@@ -62,6 +68,20 @@ export default function AdminRoute() {
     } else {
       Alert.alert('Success', 'Password change rejected');
     }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', onPress: () => {}, style: 'cancel' },
+      {
+        text: 'Logout',
+        onPress: async () => {
+          await signOut();
+          router.replace('/login');
+        },
+        style: 'destructive',
+      },
+    ]);
   };
 
   return (
@@ -111,7 +131,7 @@ export default function AdminRoute() {
                       <Text style={styles.requestName}>{request.userName}</Text>
                       <Text style={styles.requestEmail}>{request.userEmail}</Text>
                     </View>
-                    <View style={[styles.statusBadge, styles[`status${request.status.charAt(0).toUpperCase() + request.status.slice(1)}`]]}>
+                    <View style={[styles.statusBadge, statusStyleMap[request.status]]}>
                       <Text style={styles.statusText}>{request.status}</Text>
                     </View>
                   </View>
@@ -174,9 +194,9 @@ export default function AdminRoute() {
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('../drawer/home')} style={styles.headerButton}>
-              <Ionicons name="arrow-back" size={20} color="#F5E6D3" />
-              <Text style={styles.headerButtonText}>Back</Text>
+            <TouchableOpacity onPress={handleLogout} style={[styles.headerButton, styles.logoutButton]}>
+              <Ionicons name="log-out" size={20} color="#FFF" />
+              <Text style={[styles.headerButtonText, styles.logoutButtonText]}>Logout</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -267,6 +287,12 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 14,
     fontWeight: '700',
+  },
+  logoutButton: {
+    backgroundColor: '#E07070',
+  },
+  logoutButtonText: {
+    color: '#FFFFFF',
   },
   statsRow: {
     flexDirection: 'row',
