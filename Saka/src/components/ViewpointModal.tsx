@@ -86,16 +86,16 @@ import type {
 // ─── Image map — same pattern as viewpoint.tsx ─────────────────────────────
 // Replace placeholder.png with actual images in your project.
 const IMAGE_MAP: Record<string, any> = {
-  trailhead:     require('C:\\Users\\zolin\\OneDrive\\Desktop\\Hiking\\Saka\\assets\\images\\Mt. Guiting-Guiting.jpg'),
-  bantang_river: require('../../assets/viewpoints/placeholder.png'),
-  camp1:         require('../../assets/viewpoints/placeholder.png'),
-  waterfall:     require('../../assets/viewpoints/placeholder.png'),
-  mossy_forest:  require('../../assets/viewpoints/placeholder.png'),
-  camp2:         require('../../assets/viewpoints/placeholder.png'),
-  camp3:         require('../../assets/viewpoints/placeholder.png'),
-  crown_shyness: require('../../assets/viewpoints/placeholder.png'),
-  summit_ridge:  require('../../assets/viewpoints/placeholder.png'),
-  summit:        require('../../assets/viewpoints/placeholder.png'),
+  trailhead:     require('../../assets/images/TrailHead.jpg'),
+  bantang_river: require('../../assets/images/Bantang River.jpg'),
+  camp1:         require('../../assets/images/Camp1.jpg'),
+  waterfall:     require('../../assets/images/Waterfalss.jpg'),
+  mossy_forest:  require('../../assets/images/MossyForest.jpg'),
+  camp2:         require('../../assets/images/Camp1.jpg'),
+  camp3:         require('../../assets/images/Camp2$3.jpg'),
+  crown_shyness: require('../../assets/images/CrownShines.jpg'),
+  summit_ridge:  require('../../assets/images/SummitRidge.jpg'),
+  summit:        require('../../assets/images/Summit.jpg'),
 };
 
 // ─── Viewport Mini-Map Header ──────────────────────────────────────────────

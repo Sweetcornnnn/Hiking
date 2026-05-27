@@ -33,7 +33,7 @@ import type { ViewpointDetail } from '../types/viewpointTypes';
 // ── Put your actual images here — key must match imageKey in viewpointsData ──
 const PLACEHOLDER = require('../../assets/viewpoints/placeholder.png');
 const IMAGE_MAP: Record<string, any> = {
-  trailhead:     require('../../assets/images/Mt. Guiting-Guiting.jpg'),
+  trailhead:     require('../../assets/images/TrailHead.jpg'),
   bantang_river: PLACEHOLDER,
   camp1:         PLACEHOLDER,
   waterfall:     PLACEHOLDER,
