@@ -363,6 +363,9 @@ export default function HomeScreen() {
                 )}
               </View>
             </View>
+            {mountain.funnyWarning && (
+              <Text style={styles.funnyWarningLocked}>{mountain.funnyWarning}</Text>
+            )}
           </View>
         )}
       </View>
@@ -554,6 +557,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+    marginRight: 15,
   },
   lockCardText: {
     gap: 2,
@@ -588,6 +592,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     maxWidth: '65%',
     lineHeight: 14,
+  },
+  funnyWarningLocked: {
+    color: 'rgba(255,255,200,0.55)',
+    fontSize: 10,
+    fontStyle: 'italic',
+    marginTop: 10,
+    maxWidth: '70%',
+    lineHeight: 14,
+    textAlign: 'center',
   },
   
   // Floating Viewpoints
