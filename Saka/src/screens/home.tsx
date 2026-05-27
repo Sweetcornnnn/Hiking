@@ -343,20 +343,7 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Tara Saka CTA — absolutely positioned at bottom-right, independent of info text */}
-        {!locked && (
-          <TouchableOpacity
-            style={[styles.ctaButton, styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
-            onPress={() => router.push('/MountainTop')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoPlaceholderText}>Logo</Text>
-            </View>
-            <Text style={styles.ctaText}>Tara, Saka</Text>
-            <Ionicons name="arrow-forward" size={13} color="#FFF" />
-          </TouchableOpacity>
-        )}
+        {/* Per-page CTA removed — global CTA rendered outside scroll for reliable touches */}
 
         {/* ── Locked: atmospheric overlay ── */}
         {locked && (
@@ -437,6 +424,21 @@ export default function HomeScreen() {
       </View>
 
       <ProfileCard visible={profileCardVisible} onClose={closeProfileCard} profileImage={profileImage} />
+
+      {/* Global CTA overlay placed outside of the scroll/video to avoid native view touch blocking */}
+      {MOUNTAINS[activeIndex] && MOUNTAINS[activeIndex].id === '1' && (
+        <TouchableOpacity
+          style={[styles.ctaButton, styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
+          onPress={() => { console.log('Tara Saka pressed'); router.push('/MountainTop'); }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.logoPlaceholder}>
+            <Text style={styles.logoPlaceholderText}>Logo</Text>
+          </View>
+          <Text style={styles.ctaText}>Tara, Saka</Text>
+          <Ionicons name="arrow-forward" size={13} color="#FFF" />
+        </TouchableOpacity>
+      )}
 
       {/* Pagination — fixed at vertical center of right edge */}
       <View style={styles.paginationFixed}>
@@ -633,6 +635,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 22,
     right: 24,
+    zIndex: 250,
+    elevation: 10,
   },
   ctaAbsolutePortrait: {
     bottom: 36,
