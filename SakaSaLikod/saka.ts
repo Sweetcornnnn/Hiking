@@ -287,7 +287,7 @@ app.post('/api/set-admin', (req: any, res: any) => {
     db.run(
       'UPDATE users SET is_admin = ? WHERE email = ?',
       [adminValue, email],
-      function(err: Error | null) {
+      function(this: { changes: number }, err: Error | null) {
         if (err) {
           if (err.message?.includes('no such column: is_admin')) {
             db.run('ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0', (alterErr: Error | null) => {
@@ -391,7 +391,7 @@ app.post('/api/password-change-request', authenticateToken, async (req: any, res
     db.run(
       'INSERT INTO password_change_requests (user_id, new_password, status) VALUES (?, ?, ?)',
       [userId, hashedPassword, 'pending'],
-      function(err: Error | null) {
+      function(this: { lastID: number }, err: Error | null) {
         if (err) {
           console.error('Error creating password change request:', err.message);
           return res.status(500).json({ error: 'Failed to create password change request' });
@@ -499,7 +499,7 @@ app.post('/api/password-change-requests/:id/reject', authenticateToken, (req: an
   db.run(
     'UPDATE password_change_requests SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?',
     ['rejected', requestId, 'pending'],
-    function(err: Error | null) {
+    function(this: { changes: number }, err: Error | null) {
       if (err) {
         console.error('Error updating request status:', err.message);
         return res.status(500).json({ error: 'Failed to update request status' });

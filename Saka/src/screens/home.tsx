@@ -486,6 +486,8 @@ const styles = StyleSheet.create({
   fullScreenContainer: {
     position: 'relative',
     overflow: 'hidden',
+    borderRightWidth: 2,
+    borderRightColor: 'rgba(201,169,110,0.3)',
   },
   videoWrapper: {
     position: 'absolute',

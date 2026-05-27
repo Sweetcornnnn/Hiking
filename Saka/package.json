@@ -3,12 +3,12 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
+    "start": "node ./node_modules/expo/bin/cli start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web",
-    "lint": "expo lint"
+    "android": "node ./node_modules/expo/bin/cli run:android",
+    "ios": "node ./node_modules/expo/bin/cli run:ios",
+    "web": "node ./node_modules/expo/bin/cli start --web",
+    "lint": "node ./node_modules/expo/bin/cli lint"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -31,13 +31,13 @@
     "expo-linking": "~8.0.12",
     "expo-location": "~17.0.1",
     "expo-router": "~6.0.23",
-    "expo-task-manager": "~11.0.0",
     "expo-screen-orientation": "~9.0.9",
     "expo-secure-store": "~15.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.9",
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
+    "expo-task-manager": "~11.0.0",
     "expo-video": "~3.0.16",
     "expo-web-browser": "~15.0.11",
     "nativewind": "^4.1.23",
