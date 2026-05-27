@@ -1,17 +1,18 @@
 import React, { useMemo } from 'react';
-import { View, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { View } from 'react-native';
 import TrailMap from '../components/TrailMap';
 
 /**
  * Mt. Madja-as — Flores Trail (Primary Route)
- * Jump-off: Barangay Flores, Culasi, Antique
- * Summit GPS: N11.38932° E122.16197° — 2,102 MASL
- * Total Distance: ~23.3 km one way (46.6 km round trip)
- * Elevation Gain: ~2,100m
- * Duration: 3–4 days | Difficulty: 8/9 Major Climb
+ *
+ * Fullscreen fix: the parent screen must have no padding/margin/header
+ * so TrailMap's edges={[]} SafeAreaView can bleed to all edges.
+ * If this screen is inside a drawer/stack navigator, set:
+ *   headerShown: false
+ *   contentStyle: { padding: 0 }
  */
 
-// ─── Named waypoints (marker pins only) ────────────────────────────────────
 const MT_MADJAAS_VIEWPOINTS = [
   {
     id: 'v1',
@@ -95,59 +96,56 @@ const MT_MADJAAS_VIEWPOINTS = [
   },
 ];
 
-// ─── Linear interpolation between waypoints ──────────────────────────────────────
-// Generates a continuous trail by linearly interpolating between waypoints.
-// Creates evenly-spaced coordinate points along the direct path.
-
-interface Point {
-  latitude: number;
-  longitude: number;
-}
+interface Point { latitude: number; longitude: number; }
 
 function linearInterpolate(p1: Point, p2: Point, t: number): Point {
   return {
-    latitude: p1.latitude + (p2.latitude - p1.latitude) * t,
+    latitude:  p1.latitude  + (p2.latitude  - p1.latitude)  * t,
     longitude: p1.longitude + (p2.longitude - p1.longitude) * t,
   };
 }
 
-function buildTrailCoordinates(waypoints: Point[], stepsPerSegment: number = 20): Point[] {
-  const pts = waypoints.map(({ latitude, longitude }) => ({ latitude, longitude }));
+function buildTrailCoordinates(waypoints: Point[], steps = 20): Point[] {
+  const pts    = waypoints.map(({ latitude, longitude }) => ({ latitude, longitude }));
   const result: Point[] = [];
-
   for (let i = 0; i < pts.length - 1; i++) {
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-
-    for (let s = 0; s < stepsPerSegment; s++) {
-      result.push(linearInterpolate(p1, p2, s / stepsPerSegment));
+    for (let s = 0; s < steps; s++) {
+      result.push(linearInterpolate(pts[i], pts[i + 1], s / steps));
     }
   }
-
-  // Always close with the exact summit coordinate
   result.push(pts[pts.length - 1]);
   return result;
 }
 
-// ─── Screen component ───────────────────────────────────────────────────────
 export default function MtMadjaasScreen(): React.ReactElement {
-  // Memoized so the spline only runs once, not on every render
   const trailCoordinates = useMemo(
     () => buildTrailCoordinates(MT_MADJAAS_VIEWPOINTS, 100),
-    []
+    [],
   );
 
+  // Wrap in a plain View with flex:1 and NO padding so TrailMap
+  // (which uses edges={[]} internally) fills edge-to-edge.
   return (
-    <TrailMap
-      mountainId="1"
-      mountainName="Mt. Madja-as"
-      centerCoord={{ latitude: 11.4050, longitude: 122.1350 }}
-      viewpoints={MT_MADJAAS_VIEWPOINTS}
-      trailCoordinates={trailCoordinates}
-      zoomLevel={13.8}
-      trailColor="#E05C2A"
-      trailWidth={2.5}
-      showTrailLine
-    />
+    <View style={styles.root}>
+      <TrailMap
+        mountainId="1"
+        mountainName="Mt. Madja-as"
+        centerCoord={{ latitude: 11.4050, longitude: 122.1350 }}
+        viewpoints={MT_MADJAAS_VIEWPOINTS}
+        trailCoordinates={trailCoordinates}
+        zoomLevel={13.8}
+        trailColor="#C9A96E"
+        trailWidth={2.5}
+        showTrailLine
+      />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  // NO padding, NO margin, NO safe area — let TrailMap handle it all
+  root: {
+    flex: 1,
+    backgroundColor: '#0E1520',
+  },
+});

@@ -46,6 +46,7 @@ import {
   TouchableWithoutFeedback,
   StyleSheet,
   Animated,
+  Easing,
   ScrollView,
   Platform,
   Dimensions,
@@ -291,28 +292,56 @@ export default function ViewpointModal({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError]   = useState(false);
 
-  // ── Entrance animation ───────────────────────────────────────────────
+  // slideAnim: card slides up from 80px below its resting position
+  const slideAnim = useRef(new Animated.Value(40)).current;
+
+  // ── Entrance animation — smooth slide-up + fade ──────────────────────
   useEffect(() => {
     if (visible) {
       setImageLoaded(false);
       setImageError(false);
+      // Start from offset position
+      slideAnim.setValue(400);
+      fadeAnim.setValue(0);
+      scaleAnim.setValue(0.906);
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue:         1,
-          duration:        ANIM.fadeMs,
+          duration:        1200,
+          easing:          Easing.out(Easing.exp),
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue:         0,
+          duration:        1200,
+          easing:          Easing.out(Easing.exp),
           useNativeDriver: true,
         }),
         Animated.timing(scaleAnim, {
           toValue:         1,
-          duration:        ANIM.fadeMs + 60,
+          duration:        3200,
+          easing:          Easing.out(Easing.exp),
           useNativeDriver: true,
         }),
       ]).start();
     } else {
-      fadeAnim.setValue(0);
-      scaleAnim.setValue(0.94);
+      // Slide back down on dismiss
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue:   0,
+          duration:  2000,
+          easing:    Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue:   30,
+          duration:  2000,
+          easing:    Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start();
     }
-  }, [visible, fadeAnim, scaleAnim]);
+  }, [visible, fadeAnim, scaleAnim, slideAnim]);
 
   // ── Keyboard dismiss (web / desktop) ────────────────────────────────
   useEffect(() => {
@@ -346,16 +375,19 @@ export default function ViewpointModal({
       // Accessibility
       accessibilityViewIsModal
     >
-      {/* ── Backdrop ── */}
-      <TouchableWithoutFeedback onPress={onDismiss} accessible={false}>
-        <View style={styles.backdrop} />
-      </TouchableWithoutFeedback>
+      {/* ── No backdrop — photo behind stays visible until dismiss ── */}
 
-      {/* ── Animated card ── */}
+      {/* ── Animated card — slides up from bottom ── */}
       <Animated.View
         style={[
           styles.cardWrap,
-          { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
+          {
+            opacity:   fadeAnim,
+            transform: [
+              { scale:       scaleAnim },
+              { translateY:  slideAnim },
+            ],
+          },
         ]}
         // aria-modal="true" via accessibilityViewIsModal above
         accessibilityLabel={`${detail.name} viewpoint details`}
@@ -476,7 +508,7 @@ export default function ViewpointModal({
             style={[styles.primaryBtn, { backgroundColor: ACCENT_GOLD }]}
             onPress={() => {
               onDismiss();
-              router.push('./calendar');
+              router.push('/drawer/calendar');
             }}
             activeOpacity={0.85}
             accessibilityLabel="Schedule a hike"
@@ -504,18 +536,12 @@ export default function ViewpointModal({
 // ─── Styles ────────────────────────────────────────────────────────────────
 // All colours from designTokens.ts → ProfileCard.tsx origin noted per-rule.
 const styles = StyleSheet.create({
-  // Backdrop — transparent like ProfileCard's centerContainer
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-
   // Card — mirrors ProfileCard card: BG_CARD, RADIUS_CARD, BORDER_DEFAULT
   cardWrap: {
     position:       'absolute',
-    bottom:         16,
-    left:           12,
-    right:          12,
+    bottom:         29,
+    left:            8,
+    right:          45,
     backgroundColor: BG_CARD,         // ProfileCard: '#0E1520'
     borderRadius:   RADIUS_CARD,      // ProfileCard: 16
     borderWidth:    1,

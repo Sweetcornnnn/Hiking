@@ -133,11 +133,12 @@ export function useViewpointFlow({
     }, ZOOM_MS);
 
     // Step 3 — after 3s of showing photo, fetch detail + open modal
+    // Photo stays visible — it only hides when the user dismisses
     after(async () => {
       const detail = await fetchDetail(viewpoint.id).catch(() => null);
       dispatch({ type: 'IMAGE_READY' });   // → modal_pending
       dispatch({ type: 'MODAL_OPEN', detail });
-      setShowPhoto(false);                 // hide photo once modal is open
+      // showPhoto remains true — photo visible behind the modal card
     }, ZOOM_MS + PHOTO_HOLD_MS);           // 800 + 3000 = 3800ms total
 
   }, [cancelAll, makeSnapshot, zoomTo, after, fetchDetail]);
