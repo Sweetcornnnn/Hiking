@@ -34,11 +34,14 @@ const MOUNTAINS_DATA = [
 
 const screenDimensions = Dimensions.get('screen');
 
+type TabId = 'stats' | 'calendar' | 'wildtrack';
+
 export default function ProfileCard({ visible, onClose, profileImage }: ProfileCardProps) {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
   const [location, setLocation] = useState<string>('Loading...');
   const [unlockedCount, setUnlockedCount] = useState(0);
+  const [activeTab, setActiveTab] = useState<TabId>('stats');
 
   useEffect(() => {
     if (visible) {
@@ -142,48 +145,95 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
           {/* ── Vertical divider ── */}
           <View style={styles.dividerV} />
 
-          {/* ── Right panel: mountains list ── */}
+          {/* ── Right panel with tabs ── */}
           <View style={styles.rightPanel}>
+
+            {/* Header row: title + close */}
             <View style={styles.listHeader}>
-              <Text style={styles.listTitle}>Mountains</Text>
+              <Text style={styles.listTitle}>
+                {activeTab === 'stats' ? 'Mountains' : activeTab === 'calendar' ? 'Schedule' : 'WildTrack'}
+              </Text>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                 <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
-            >
-              {MOUNTAINS_DATA.map((mountain, index) => (
-                <View
-                  key={mountain.id}
-                  style={[
-                    styles.mountainRow,
-                    index === MOUNTAINS_DATA.length - 1 && styles.mountainRowLast,
-                  ]}
-                >
+            {/* ── Tab content ── */}
+            {activeTab === 'stats' && (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+                {MOUNTAINS_DATA.map((mountain, index) => (
                   <View
-                    style={[
-                      styles.dot,
-                      mountain.unlocked && styles.dotUnlocked,
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.mountainName,
-                      !mountain.unlocked && styles.mountainNameLocked,
-                    ]}
-                    numberOfLines={1}
+                    key={mountain.id}
+                    style={[styles.mountainRow, index === MOUNTAINS_DATA.length - 1 && styles.mountainRowLast]}
                   >
-                    {mountain.name}
-                  </Text>
-                  {mountain.unlocked && (
-                    <Text style={styles.summitedTag}>summit</Text>
-                  )}
-                </View>
-              ))}
-            </ScrollView>
+                    <View style={[styles.dot, mountain.unlocked && styles.dotUnlocked]} />
+                    <Text
+                      style={[styles.mountainName, !mountain.unlocked && styles.mountainNameLocked]}
+                      numberOfLines={1}
+                    >
+                      {mountain.name}
+                    </Text>
+                    {mountain.unlocked && <Text style={styles.summitedTag}>summit</Text>}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {activeTab === 'calendar' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="calendar-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>Your Schedule</Text>
+                <Text style={styles.tabPaneBody}>
+                  Plan your next summit. View upcoming hikes and set reminders for your climbs.
+                </Text>
+                <TouchableOpacity
+                  style={styles.tabPaneBtn}
+                  onPress={() => { onClose(); router.push('/drawer/calendar'); }}
+                >
+                  <Text style={styles.tabPaneBtnText}>Open Calendar</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {activeTab === 'wildtrack' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="book-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>WildTrack</Text>
+                <Text style={styles.tabPaneBody}>
+                  A field guide to the trails. Flora, fauna, safety tips, and local knowledge — everything you need before the climb.
+                </Text>
+                <TouchableOpacity
+                  style={styles.tabPaneBtn}
+                  onPress={() => { onClose(); router.push('/drawer/wildtrack'); }}
+                >
+                  <Text style={styles.tabPaneBtnText}>Open WildTrack</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* ── Protruding tab strip on the right edge ── */}
+          <View style={styles.tabStrip}>
+            {([
+              { id: 'stats',     icon: 'stats-chart' },
+              { id: 'calendar',  icon: 'calendar-outline' },
+              { id: 'wildtrack', icon: 'book-outline' },
+            ] as { id: TabId; icon: string }[]).map((tab) => (
+              <TouchableOpacity
+                key={tab.id}
+                style={[styles.tabBtn, activeTab === tab.id && styles.tabBtnActive]}
+                onPress={() => setActiveTab(tab.id)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={tab.icon as any}
+                  size={13}
+                  color={activeTab === tab.id ? '#C9A96E' : 'rgba(255,255,255,0.28)'}
+                />
+              </TouchableOpacity>
+            ))}
           </View>
 
         </TouchableOpacity>
@@ -204,13 +254,14 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     width: '78%',
-    maxWidth: 560,
+    maxWidth: 500,
     height: 280,
     backgroundColor: '#0E1520',
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: 'visible',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
+    position: 'relative',
   },
 
   // ── Left panel ──────────────────────────────
@@ -221,6 +272,9 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     alignItems: 'flex-start',
     backgroundColor: '#111927',
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+    overflow: 'hidden',
   },
 
   avatar: {
@@ -371,6 +425,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 14,
     paddingBottom: 14,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#0E1520',
   },
 
   listHeader: {
@@ -435,5 +493,73 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+
+  // ── Tab strip — protrudes from the right edge of the card ────────────
+  tabStrip: {
+    position: 'absolute',
+    right: -22,          // half-protrudes outside the card
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 2,
+  },
+  tabBtn: {
+    width: 22,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#0E1520',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    // left edge flush with the card's right border
+    borderLeftWidth: 0,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+  },
+  tabBtnActive: {
+    backgroundColor: '#111927',
+    borderColor: 'rgba(201,169,110,0.35)',
+  },
+
+  // ── Tab pane (calendar + wildtrack) ──────────────────────────────────
+  tabPane: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 10,
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  tabPaneTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tabPaneBody: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 10,
+    lineHeight: 15,
+    flex: 1,
+  },
+  tabPaneBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(201,169,110,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.25)',
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+  },
+  tabPaneBtnText: {
+    color: '#C9A96E',
+    fontSize: 10,
+    fontWeight: '600',
   },
 });
