@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
@@ -13,395 +13,361 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { signUp, isLoading } = useAuthStore();
-  
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 480, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
   }, []);
 
-  const getPasswordStrength = (pwd: string): { strength: 'weak' | 'fair' | 'strong'; color: string } => {
-    if (pwd.length === 0) return { strength: 'weak', color: '#D1D5DB' };
-    if (pwd.length < 8) return { strength: 'weak', color: '#EF4444' };
-    if (pwd.length < 12) return { strength: 'fair', color: '#F59E0B' };
-    return { strength: 'strong', color: '#10B981' };
+  const getPasswordStrength = (pwd: string): { label: string; color: string; width: string } => {
+    if (pwd.length === 0) return { label: '', color: 'transparent', width: '0%' };
+    if (pwd.length < 8)   return { label: 'Weak', color: '#E07070', width: '33%' };
+    if (pwd.length < 12)  return { label: 'Fair', color: '#C9A96E', width: '66%' };
+    return { label: 'Strong', color: '#6FAF8A', width: '100%' };
   };
 
-  const checkPasswordRequirements = (pwd: string) => {
-    return {
-      hasNumber: /\d/.test(pwd),
-      hasUpperCase: /[A-Z]/.test(pwd),
-      hasLowerCase: /[a-z]/.test(pwd),
-      hasSymbol: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
-      isLongEnough: pwd.length >= 6,
-    };
-  };
+  const checkReqs = (pwd: string) => ({
+    hasNumber:    /\d/.test(pwd),
+    hasUpperCase: /[A-Z]/.test(pwd),
+    hasLowerCase: /[a-z]/.test(pwd),
+    hasSymbol:    /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+    isLongEnough: pwd.length >= 6,
+  });
 
-  const passwordStrength = getPasswordStrength(password);
-  const requirements = checkPasswordRequirements(password);
-  const allRequirementsMet = Object.values(requirements).every(val => val === true);
-  const doPasswordsMatch = password === confirmPassword && password.length > 0;
-  const canSubmit = allRequirementsMet && doPasswordsMatch && !isLoading;
+  const strength = getPasswordStrength(password);
+  const reqs = checkReqs(password);
+  const allReqsMet = Object.values(reqs).every(Boolean);
+  const passwordsMatch = password === confirmPassword && password.length > 0;
+  const canSubmit = allReqsMet && passwordsMatch && !isLoading;
 
   const handleSignup = async () => {
-    if (!email || !password || !confirmPassword || !name) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-
-    if (!allRequirementsMet) {
-      Alert.alert('Error', 'Password must contain a number, uppercase letter, lowercase letter, and symbol');
-      return;
-    }
-
+    if (!email || !password || !confirmPassword || !name) { Alert.alert('Error', 'Please fill in all fields'); return; }
+    if (password !== confirmPassword) { Alert.alert('Error', 'Passwords do not match'); return; }
+    if (!allReqsMet) { Alert.alert('Error', 'Password does not meet all requirements'); return; }
     const { error } = await signUp(email, password, name);
-
-    if (error) {
-      Alert.alert('Error', error);
-    } else {
-      Alert.alert('Success', 'Account created! Please sign in.');
-      router.replace('/login');
-    }
+    if (error) Alert.alert('Error', error);
+    else { Alert.alert('Success', 'Account created! Please sign in.'); router.replace('/login'); }
   };
 
+  const REQ_ITEMS = [
+    { key: 'hasNumber',    label: 'One number' },
+    { key: 'hasUpperCase', label: 'One uppercase' },
+    { key: 'hasLowerCase', label: 'One lowercase' },
+    { key: 'hasSymbol',    label: 'One symbol' },
+    { key: 'isLongEnough', label: '6+ characters' },
+  ] as const;
+
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: '#F5E6D3' }]}>
-      <View style={styles.leftPanel}>
-        <Text style={styles.logo}>🏔️</Text>
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join the hiking community</Text>
-      </View>
-      
-      <View style={styles.rightPanel}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            placeholder="Full name"
-            placeholderTextColor="#8B7355"
-            value={name}
-            onChangeText={setName}
-            editable={!isLoading}
-          />
-        </View>
+    <View style={styles.root}>
+      <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
 
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email address"
-            placeholderTextColor="#8B7355"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            editable={!isLoading}
-          />
-        </View>
-
-        {/* Password Field */}
-        <View style={styles.fieldContainer}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordInputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Create password"
-              placeholderTextColor="#8B7355"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              editable={!isLoading}
-            />
-            <TouchableOpacity 
-              style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              <Ionicons 
-                name={showPassword ? 'eye-off' : 'eye'} 
-                size={20} 
-                color="#8B7355" 
-              />
-            </TouchableOpacity>
+        {/* ── Left panel ── */}
+        <View style={styles.leftPanel}>
+          <View style={styles.logoMark}>
+            <Text style={styles.logoEmoji}>🏔️</Text>
           </View>
+          <Text style={styles.brandName}>TaraSaka</Text>
+          <Text style={styles.brandTagline}>Join thousands of{'\n'}Filipino hikers.</Text>
 
-          {/* Password Strength Indicator */}
+          <View style={styles.dividerH} />
+
+          <Text style={styles.sectionLabel}>PASSWORD RULES</Text>
+          {REQ_ITEMS.map((item) => {
+            const met = reqs[item.key];
+            return (
+              <View key={item.key} style={styles.reqRow}>
+                <Ionicons
+                  name={met ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={11}
+                  color={met ? '#6FAF8A' : 'rgba(255,255,255,0.18)'}
+                />
+                <Text style={[styles.reqText, met && styles.reqTextMet]}>{item.label}</Text>
+              </View>
+            );
+          })}
+
+          {/* Strength bar */}
           {password.length > 0 && (
-            <View style={styles.strengthContainer}>
-              <View style={[styles.strengthBar, { backgroundColor: passwordStrength.color }]} />
-              <Text style={[styles.strengthText, { color: passwordStrength.color }]}>
-                {passwordStrength.strength.charAt(0).toUpperCase() + passwordStrength.strength.slice(1)} strength
-              </Text>
+            <View style={styles.strengthWrap}>
+              <View style={styles.strengthTrack}>
+                <View style={[styles.strengthFill, { width: strength.width as any, backgroundColor: strength.color }]} />
+              </View>
+              <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
             </View>
           )}
-
-          {/* Password Requirements */}
-          <View style={styles.requirementsContainer}>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasNumber ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasNumber ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasNumber ? '#10B981' : '#9CA3AF' }]}>
-                At least one number
-              </Text>
-            </View>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasUpperCase ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasUpperCase ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasUpperCase ? '#10B981' : '#9CA3AF' }]}>
-                At least one uppercase letter
-              </Text>
-            </View>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasLowerCase ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasLowerCase ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasLowerCase ? '#10B981' : '#9CA3AF' }]}>
-                At least one lowercase letter
-              </Text>
-            </View>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasSymbol ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasSymbol ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasSymbol ? '#10B981' : '#9CA3AF' }]}>
-                At least one symbol (!@#$%^&*)
-              </Text>
-            </View>
-          </View>
         </View>
 
-        {/* Confirm Password Field */}
-        <View style={styles.fieldContainer}>
-          <Text style={styles.label}>Confirm Password</Text>
-          <View style={styles.passwordInputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm password"
-              placeholderTextColor="#8B7355"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showConfirmPassword}
-              editable={!isLoading}
-            />
-            <TouchableOpacity 
-              style={styles.eyeIcon}
-              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+        {/* ── Vertical divider ── */}
+        <View style={styles.dividerV} />
+
+        {/* ── Right panel ── */}
+        <View style={styles.rightPanel}>
+          <Text style={styles.formTitle}>Create account</Text>
+          <Text style={styles.formSubtitle}>Start tracking your summits</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
+            {/* Name */}
+            <Text style={styles.fieldLabel}>FULL NAME</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="person-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="Juan dela Cruz" placeholderTextColor="rgba(255,255,255,0.18)"
+                value={name} onChangeText={setName} editable={!isLoading} />
+            </View>
+
+            {/* Email */}
+            <Text style={styles.fieldLabel}>EMAIL</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="mail-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="you@example.com" placeholderTextColor="rgba(255,255,255,0.18)"
+                value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" editable={!isLoading} />
+            </View>
+
+            {/* Password */}
+            <Text style={styles.fieldLabel}>PASSWORD</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="••••••••" placeholderTextColor="rgba(255,255,255,0.18)"
+                value={password} onChangeText={setPassword} secureTextEntry={!showPassword} editable={!isLoading} />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={14} color="rgba(255,255,255,0.28)" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Confirm Password */}
+            <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
+            <View style={[styles.inputRow, confirmPassword.length > 0 && { borderColor: passwordsMatch ? 'rgba(111,175,138,0.35)' : 'rgba(224,112,112,0.35)' }]}>
+              <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="••••••••" placeholderTextColor="rgba(255,255,255,0.18)"
+                value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry={!showConfirmPassword} editable={!isLoading} />
+              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeBtn}>
+                <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={14} color="rgba(255,255,255,0.28)" />
+              </TouchableOpacity>
+            </View>
+            {confirmPassword.length > 0 && (
+              <Text style={[styles.matchText, { color: passwordsMatch ? '#6FAF8A' : '#E07070' }]}>
+                {passwordsMatch ? '✓ Passwords match' : '✗ Passwords do not match'}
+              </Text>
+            )}
+
+            <TouchableOpacity
+              style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
+              onPress={handleSignup}
+              disabled={!canSubmit}
+              activeOpacity={0.82}
             >
-              <Ionicons 
-                name={showConfirmPassword ? 'eye-off' : 'eye'} 
-                size={20} 
-                color="#8B7355" 
-              />
+              {isLoading
+                ? <Text style={styles.submitText}>Creating account…</Text>
+                : <><Text style={styles.submitText}>Create Account</Text>
+                    <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} /></>
+              }
             </TouchableOpacity>
-          </View>
 
-          {/* Match Indicator */}
-          {confirmPassword.length > 0 && (
-            <View style={styles.matchRow}>
-              <Ionicons 
-                name={doPasswordsMatch ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={doPasswordsMatch ? '#10B981' : '#EF4444'} 
-              />
-              <Text style={[styles.matchText, { color: doPasswordsMatch ? '#10B981' : '#EF4444' }]}>
-                {doPasswordsMatch ? 'Passwords match' : 'Passwords do not match'}
-              </Text>
+            <View style={styles.footerRow}>
+              <Text style={styles.footerMuted}>Already have an account?</Text>
+              <TouchableOpacity onPress={() => router.push('/login')}>
+                <Text style={styles.footerLink}>Sign in</Text>
+              </TouchableOpacity>
             </View>
-          )}
+          </ScrollView>
         </View>
 
-        <TouchableOpacity 
-          style={[styles.button, !canSubmit && styles.buttonDisabled]} 
-          onPress={handleSignup}
-          disabled={!canSubmit}
-        >
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Ionicons name="hourglass" size={16} color="#FFFFFF" style={styles.spinner} />
-              <Text style={styles.buttonText}>Creating Account...</Text>
-            </View>
-          ) : (
-            <View style={styles.submitContainer}>
-              <Ionicons name="person-add" size={16} color="#FFFFFF" />
-              <Text style={styles.buttonText}>Sign Up</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => router.push('/login')} style={styles.linkContainer}>
-          <Ionicons name="arrow-back" size={14} color="#2C3E50" />
-          <Text style={styles.link}>Already have an account? Sign In</Text>
-        </TouchableOpacity>
-      </View>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
+    backgroundColor: '#080D14',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  card: {
     flexDirection: 'row',
-    backgroundColor: '#F5E6D3',
-    paddingHorizontal: 40,
-    paddingVertical: 20,
+    width: '82%',
+    maxWidth: 580,
+    height: 360,
+    backgroundColor: '#0E1520',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
   },
+
+  // Left panel
   leftPanel: {
-    flex: 1,
-    justifyContent: 'center',
+    width: 168,
+    backgroundColor: '#111927',
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 18,
     alignItems: 'flex-start',
-    paddingRight: 30,
   },
-  rightPanel: {
-    flex: 1.5,
+  logoMark: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(201,169,110,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.25)',
     justifyContent: 'center',
-    paddingLeft: 30,
-  },
-  logo: {
-    fontSize: 48,
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2C3E50',
+    alignItems: 'center',
     marginBottom: 10,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
+  logoEmoji: { fontSize: 17 },
+  brandName: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginBottom: 4,
   },
-  fieldContainer: {
+  brandTagline: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 10,
+    lineHeight: 15,
     marginBottom: 14,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2C3E50',
-    marginBottom: 4,
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: '#D4A574',
-    borderRadius: 8,
-    backgroundColor: '#FAFAFA',
+  dividerH: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignSelf: 'stretch',
     marginBottom: 12,
   },
-  passwordInputWrapper: {
+  sectionLabel: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 9,
+  },
+  reqRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D4A574',
-    borderRadius: 8,
-    paddingRight: 12,
-    backgroundColor: '#FAFAFA',
+    gap: 6,
+    marginBottom: 6,
   },
-  eyeIcon: {
-    padding: 4,
+  reqText: {
+    color: 'rgba(255,255,255,0.22)',
+    fontSize: 10,
   },
-  strengthContainer: {
-    marginTop: 8,
-    marginBottom: 8,
+  reqTextMet: {
+    color: '#6FAF8A',
   },
-  strengthBar: {
-    height: 4,
+  strengthWrap: {
+    marginTop: 10,
+    alignSelf: 'stretch',
+  },
+  strengthTrack: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 2,
+    overflow: 'hidden',
     marginBottom: 4,
   },
-  strengthText: {
-    fontSize: 12,
-    fontWeight: '500',
+  strengthFill: {
+    height: '100%',
+    borderRadius: 2,
   },
-  requirementsContainer: {
-    marginTop: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 6,
+  strengthLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  requirementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
+
+  dividerV: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
-  requirementText: {
-    fontSize: 12,
-    marginLeft: 6,
+
+  // Right panel
+  rightPanel: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
   },
-  matchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    paddingHorizontal: 8,
-  },
-  matchText: {
-    fontSize: 12,
-    marginLeft: 6,
-  },
-  button: {
-    backgroundColor: '#2C3E50',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 16,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-    backgroundColor: '#A0C4A2',
-  },
-  buttonText: {
+  formTitle: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  formSubtitle: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 10,
+    marginBottom: 14,
+  },
+  formScroll: {
+    paddingBottom: 4,
+  },
+  fieldLabel: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    height: 34,
+    marginBottom: 10,
+  },
+  inputIcon: { marginRight: 7 },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
+  eyeBtn: { padding: 4, marginLeft: 2 },
+  matchText: {
+    fontSize: 9,
     fontWeight: '600',
+    marginTop: -6,
+    marginBottom: 8,
+    marginLeft: 2,
   },
-  submitContainer: {
+  submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    backgroundColor: '#C9A96E',
+    borderRadius: 8,
+    height: 34,
+    marginTop: 4,
+    marginBottom: 12,
   },
-  loadingContainer: {
+  submitBtnDisabled: { opacity: 0.4 },
+  submitText: {
+    color: '#0E1520',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  footerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 5,
   },
-  spinner: {
-    fontStyle: 'italic',
+  footerMuted: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 11,
   },
-  linkContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  link: {
-    color: '#2C3E50',
-    fontSize: 14,
-    textAlign: 'center',
+  footerLink: {
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

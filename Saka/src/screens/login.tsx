@@ -10,207 +10,292 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const { signIn, isLoading } = useAuthStore();
-  
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 480, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
   }, []);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password');
-      return;
-    }
-
+    if (!email || !password) { Alert.alert('Error', 'Please enter both email and password'); return; }
     const { error } = await signIn(email, password);
-
     if (error) {
       Alert.alert('Error', error);
     } else {
-      // Check if user is admin and redirect accordingly
       const authState = useAuthStore.getState();
-      console.log('Login successful, user:', authState.user);
-      console.log('Is admin:', authState.user?.is_admin);
-      
-      if (authState.user?.is_admin) {
-        console.log('Redirecting to admin screen...');
-        router.replace('/drawer/admin/[...admin]');
-      } else {
-        console.log('Redirecting to home screen...');
-        router.replace('/drawer/home');
-      }
+      if (authState.user?.is_admin) router.replace('/drawer/admin/[...admin]');
+      else router.replace('/drawer/home');
     }
   };
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: '#F5E6D3' }]}>
-      <View style={styles.leftPanel}>
-        <Text style={styles.logo}>🏔️</Text>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
-      </View>
-      
-      <View style={styles.rightPanel}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email address"
-            placeholderTextColor="#8B7355"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            editable={!isLoading}
-          />
-        </View>
+    <View style={styles.root}>
+      <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
 
-        <View style={styles.passwordInputWrapper}>
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#8B7355"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            editable={!isLoading}
-          />
-          <TouchableOpacity 
-            style={styles.eyeIcon}
-            onPress={() => setShowPassword(!showPassword)}
-          >
-            <Ionicons 
-              name={showPassword ? 'eye-off' : 'eye'} 
-              size={20} 
-              color="#8B7355" 
-            />
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity 
-          style={[styles.button, isLoading && styles.buttonDisabled]} 
-          onPress={handleLogin}
-          disabled={isLoading}
-        >
-          <View style={styles.submitContainer}>
-            <Ionicons name="log-in" size={16} color="#FFFFFF" />
-            <Text style={styles.buttonText}>
-              {isLoading ? 'Signing In...' : 'Sign In'}
-            </Text>
+        {/* ── Left panel ── */}
+        <View style={styles.leftPanel}>
+          <View style={styles.logoMark}>
+            <Text style={styles.logoEmoji}>🏔️</Text>
           </View>
-        </TouchableOpacity>
+          <Text style={styles.brandName}>TaraSaka</Text>
+          <Text style={styles.brandTagline}>Every summit begins{'\n'}with a single step.</Text>
 
-        <TouchableOpacity onPress={() => router.push('/forgot')}>
-          <Text style={styles.forgotLink}>Forgot password?</Text>
-        </TouchableOpacity>
+          <View style={styles.dividerH} />
 
-        <TouchableOpacity onPress={() => router.push('/signup')}>
-          <Text style={styles.link}>Don't have an account? Sign Up</Text>
-        </TouchableOpacity>
+          {[
+            { label: '10 peaks to conquer', gold: false },
+            { label: 'Track every ascent', gold: true },
+            { label: 'Built for Filipino hikers', gold: false },
+          ].map((item, i) => (
+            <View key={i} style={styles.featureRow}>
+              <View style={[styles.featureDot, item.gold && styles.featureDotGold]} />
+              <Text style={styles.featureText}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
 
-        {/* Demo mode removed */}
-      </View>
-    </Animated.View>
+        {/* ── Vertical divider ── */}
+        <View style={styles.dividerV} />
+
+        {/* ── Right panel ── */}
+        <View style={styles.rightPanel}>
+          <Text style={styles.formTitle}>Welcome back</Text>
+          <Text style={styles.formSubtitle}>Sign in to continue your journey</Text>
+
+          {/* Email */}
+          <Text style={styles.fieldLabel}>EMAIL</Text>
+          <View style={styles.inputRow}>
+            <Ionicons name="mail-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="you@example.com"
+              placeholderTextColor="rgba(255,255,255,0.18)"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              editable={!isLoading}
+            />
+          </View>
+
+          {/* Password */}
+          <Text style={styles.fieldLabel}>PASSWORD</Text>
+          <View style={styles.inputRow}>
+            <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="••••••••"
+              placeholderTextColor="rgba(255,255,255,0.18)"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              editable={!isLoading}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={14} color="rgba(255,255,255,0.28)" />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity onPress={() => router.push('/forgot')} style={styles.forgotWrap}>
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.submitBtn, isLoading && styles.submitBtnDisabled]}
+            onPress={handleLogin}
+            disabled={isLoading}
+            activeOpacity={0.82}
+          >
+            <Text style={styles.submitText}>{isLoading ? 'Signing in…' : 'Sign In'}</Text>
+            {!isLoading && <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} />}
+          </TouchableOpacity>
+
+          <View style={styles.footerRow}>
+            <Text style={styles.footerMuted}>No account yet?</Text>
+            <TouchableOpacity onPress={() => router.push('/signup')}>
+              <Text style={styles.footerLink}>Create one</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
+    backgroundColor: '#080D14',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  card: {
     flexDirection: 'row',
-    backgroundColor: '#F5E6D3',
-    paddingHorizontal: 40,
-    paddingVertical: 20,
+    width: '80%',
+    maxWidth: 560,
+    height: 290,
+    backgroundColor: '#0E1520',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
   },
+
+  // Left panel
   leftPanel: {
-    flex: 1,
-    justifyContent: 'center',
+    width: 168,
+    backgroundColor: '#111927',
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 18,
     alignItems: 'flex-start',
-    paddingRight: 30,
   },
-  rightPanel: {
-    flex: 1.5,
+  logoMark: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(201,169,110,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.25)',
     justifyContent: 'center',
-    paddingLeft: 30,
-  },
-  logo: {
-    fontSize: 48,
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2C3E50',
+    alignItems: 'center',
     marginBottom: 10,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    paddingHorizontal: 16,
+  logoEmoji: { fontSize: 17 },
+  brandName: {
+    color: '#FFFFFF',
     fontSize: 14,
-    color: '#6B7280',
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginBottom: 4,
   },
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: '#D4A574',
-    borderRadius: 8,
-    backgroundColor: '#FAFAFA',
+  brandTagline: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 10,
+    lineHeight: 15,
+    marginBottom: 14,
+  },
+  dividerH: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignSelf: 'stretch',
     marginBottom: 12,
   },
-  passwordInputWrapper: {
+  featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D4A574',
-    borderRadius: 8,
-    paddingRight: 12,
-    backgroundColor: '#FAFAFA',
-    marginBottom: 12,
+    gap: 7,
+    marginBottom: 8,
   },
-  eyeIcon: {
-    padding: 4,
+  featureDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  button: {
-    backgroundColor: '#2C3E50',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 16,
+  featureDotGold: { backgroundColor: '#C9A96E' },
+  featureText: {
+    color: 'rgba(255,255,255,0.32)',
+    fontSize: 10,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-    backgroundColor: '#A0C4A2',
+
+  // Divider
+  dividerV: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
-  buttonText: {
+
+  // Right panel
+  rightPanel: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
+    justifyContent: 'center',
+  },
+  formTitle: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    marginBottom: 3,
   },
-  submitContainer: {
+  formSubtitle: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 10,
+    marginBottom: 16,
+  },
+  fieldLabel: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    height: 36,
+    marginBottom: 10,
+  },
+  inputIcon: { marginRight: 7 },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
+  eyeBtn: { padding: 4, marginLeft: 2 },
+
+  forgotWrap: {
+    alignSelf: 'flex-end',
+    marginBottom: 12,
+    marginTop: -2,
+  },
+  forgotText: {
+    color: '#C9A96E',
+    fontSize: 10,
+    fontWeight: '500',
+  },
+
+  submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    backgroundColor: '#C9A96E',
+    borderRadius: 8,
+    height: 36,
+    marginBottom: 12,
   },
-  link: {
-    color: '#2C3E50',
-    fontSize: 14,
-    textAlign: 'center',
+  submitBtnDisabled: { opacity: 0.45 },
+  submitText: {
+    color: '#0E1520',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
-  forgotLink: {
-    color: '#8B7355',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 14,
+
+  footerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  footerMuted: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 11,
+  },
+  footerLink: {
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
