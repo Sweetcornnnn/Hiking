@@ -522,3 +522,55 @@ initializeDatabase(() => {
     console.log(`Server running on port ${PORT}`);
   });
 });
+
+// ─────────────────────────────────────────
+// WildTrack minimal API (development shim)
+// These return empty but valid JSON so the app can function during local development.
+// Implement full behavior as needed later.
+
+app.get('/api/wildtrack/featured', (req: any, res: any) => {
+  const mountainId = req.query.mountain_id || null;
+  res.json({ species: [] });
+});
+
+app.get('/api/wildtrack/mountain-info/:id', (req: any, res: any) => {
+  const id = req.params.id;
+  res.json({ info: {
+    id,
+    name: `Mountain ${id}`,
+    curated_species_count: 0,
+    description: '',
+    endemic_species_count: 0,
+    key_species: '',
+    ecosystem: '',
+    conservation_status: '',
+  }});
+});
+
+app.get('/api/wildtrack/mountain/:id', (req: any, res: any) => {
+  const id = req.params.id;
+  res.json({ species: [] });
+});
+
+app.get('/api/wildtrack/species', (req: any, res: any) => {
+  res.json({ species: [] });
+});
+
+app.get('/api/wildtrack/species/:id', (req: any, res: any) => {
+  const id = Number(req.params.id);
+  res.json({ species: {
+    id,
+    scientific_name: '',
+    common_name: '',
+    category: '',
+  }});
+});
+
+app.get('/api/wildtrack/stats', (req: any, res: any) => {
+  res.json({
+    discovered_count: 0,
+    total_species: 0,
+    percentage: 0,
+    by_category: [],
+  });
+});

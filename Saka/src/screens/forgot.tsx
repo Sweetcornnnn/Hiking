@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
@@ -13,420 +13,394 @@ export default function ForgotPasswordScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 480, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
   }, []);
 
-  const getPasswordStrength = (password: string): { strength: 'weak' | 'fair' | 'strong'; color: string } => {
-    if (password.length === 0) return { strength: 'weak', color: '#D1D5DB' };
-    if (password.length < 8) return { strength: 'weak', color: '#EF4444' };
-    if (password.length < 12) return { strength: 'fair', color: '#F59E0B' };
-    return { strength: 'strong', color: '#10B981' };
+  const getPasswordStrength = (pwd: string): { label: string; color: string; width: string } => {
+    if (pwd.length === 0) return { label: '', color: 'transparent', width: '0%' };
+    if (pwd.length < 8)   return { label: 'Weak', color: '#E07070', width: '33%' };
+    if (pwd.length < 12)  return { label: 'Fair', color: '#C9A96E', width: '66%' };
+    return { label: 'Strong', color: '#6FAF8A', width: '100%' };
   };
 
-  const checkPasswordRequirements = (pwd: string) => {
-    return {
-      hasNumber: /\d/.test(pwd),
-      hasUpperCase: /[A-Z]/.test(pwd),
-      hasLowerCase: /[a-z]/.test(pwd),
-      hasSymbol: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
-      isLongEnough: pwd.length >= 6,
-    };
-  };
+  const checkReqs = (pwd: string) => ({
+    hasNumber:    /\d/.test(pwd),
+    hasUpperCase: /[A-Z]/.test(pwd),
+    hasLowerCase: /[a-z]/.test(pwd),
+    hasSymbol:    /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+    isLongEnough: pwd.length >= 6,
+  });
 
-  const passwordStrength = getPasswordStrength(newPassword);
-  const requirements = checkPasswordRequirements(newPassword);
-  const allRequirementsMet = Object.values(requirements).every(val => val === true);
-  const doPasswordsMatch = newPassword === confirmPassword && newPassword.length > 0;
-  const canSubmit = allRequirementsMet && doPasswordsMatch && !isLoading;
+  const strength = getPasswordStrength(newPassword);
+  const reqs = checkReqs(newPassword);
+  const allReqsMet = Object.values(reqs).every(Boolean);
+  const passwordsMatch = newPassword === confirmPassword && newPassword.length > 0;
+  const canSubmit = allReqsMet && passwordsMatch && !isLoading;
 
   const handleReset = async () => {
-    if (!newPassword) {
-      Alert.alert('Error', 'Please enter your new password');
-      return;
-    }
-
-    if (!confirmPassword) {
-      Alert.alert('Error', 'Please confirm your password');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-
-    if (!allRequirementsMet) {
-      Alert.alert('Error', 'Password must contain a number, uppercase letter, lowercase letter, and symbol');
-      return;
-    }
+    if (!newPassword) { Alert.alert('Error', 'Please enter your new password'); return; }
+    if (!confirmPassword) { Alert.alert('Error', 'Please confirm your password'); return; }
+    if (newPassword !== confirmPassword) { Alert.alert('Error', 'Passwords do not match'); return; }
+    if (!allReqsMet) { Alert.alert('Error', 'Password does not meet all requirements'); return; }
 
     setIsLoading(true);
-
     try {
-      console.log(`Requesting password change to ${API_BASE_URL}/api/password-change-request`);
       const response = await fetch(`${API_BASE_URL}/api/password-change-request`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          userId: user?.id,
-          newPassword: newPassword,
-        }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ userId: user?.id, newPassword }),
       });
-
-      console.log('Response status:', response.status);
       const data = await response.json();
-      console.log('Response data:', data);
-
-      if (!response.ok) {
-        setIsLoading(false);
-        Alert.alert('Error', data.error || 'Failed to request password change');
-        return;
-      }
-
+      if (!response.ok) { setIsLoading(false); Alert.alert('Error', data.error || 'Failed to request password change'); return; }
       setIsLoading(false);
-      Alert.alert(
-        'Request Sent ✓',
-        'Your password change request has been sent to admin for approval. You will be redirected to login.',
-        [{ text: 'OK', onPress: () => router.replace('/login') }]
-      );
+      Alert.alert('Request Sent ✓', 'Your password change request has been sent to admin for approval.',
+        [{ text: 'OK', onPress: () => router.replace('/login') }]);
     } catch (error: any) {
       setIsLoading(false);
-      console.log('Error:', error.message);
       Alert.alert('Error', error.message || 'Network error');
     }
   };
 
+  const REQ_ITEMS = [
+    { key: 'hasNumber',    label: 'One number' },
+    { key: 'hasUpperCase', label: 'One uppercase' },
+    { key: 'hasLowerCase', label: 'One lowercase' },
+    { key: 'hasSymbol',    label: 'One symbol' },
+    { key: 'isLongEnough', label: '6+ characters' },
+  ] as const;
+
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: '#F5E6D3' }]}> 
-      <View style={styles.leftPanel}>
-        <Text style={styles.logo}>🔐</Text>
-        <Text style={styles.title}>Change Password</Text>
-        <Text style={styles.subtitle}>Secure your account with a new password</Text>
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle-outline" size={16} color="#2C3E50" />
-          <Text style={styles.infoText}>Admin approval required</Text>
-        </View>
-      </View>
+    <View style={styles.root}>
+      <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
 
-      <View style={styles.rightPanel}>
-        {/* New Password Field */}
-        <View style={styles.fieldContainer}>
-          <Text style={styles.label}>New Password</Text>
-          <View style={styles.passwordInputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter new password"
-              placeholderTextColor="#8B7355"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry={!showNewPassword}
-              editable={!isLoading}
-            />
-            <TouchableOpacity 
-              style={styles.eyeIcon}
-              onPress={() => setShowNewPassword(!showNewPassword)}
-            >
-              <Ionicons 
-                name={showNewPassword ? 'eye-off' : 'eye'} 
-                size={20} 
-                color="#8B7355" 
-              />
-            </TouchableOpacity>
+        {/* ── Left panel ── */}
+        <View style={styles.leftPanel}>
+          <View style={styles.logoMark}>
+            <Text style={styles.logoEmoji}>🔐</Text>
+          </View>
+          <Text style={styles.brandName}>Change{'\n'}Password</Text>
+          <Text style={styles.brandTagline}>Admin approval{'\n'}required.</Text>
+
+          <View style={styles.dividerH} />
+
+          {/* Admin approval notice */}
+          <View style={styles.noticeBox}>
+            <Ionicons name="shield-checkmark-outline" size={13} color="#C9A96E" />
+            <Text style={styles.noticeText}>Your request will be reviewed before taking effect.</Text>
           </View>
 
-          {/* Password Strength Indicator */}
+          <View style={styles.dividerH} />
+
+          <Text style={styles.sectionLabel}>PASSWORD RULES</Text>
+          {REQ_ITEMS.map((item) => {
+            const met = reqs[item.key];
+            return (
+              <View key={item.key} style={styles.reqRow}>
+                <Ionicons
+                  name={met ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={11}
+                  color={met ? '#6FAF8A' : 'rgba(255,255,255,0.18)'}
+                />
+                <Text style={[styles.reqText, met && styles.reqTextMet]}>{item.label}</Text>
+              </View>
+            );
+          })}
+
           {newPassword.length > 0 && (
-            <View style={styles.strengthContainer}>
-              <View style={[styles.strengthBar, { backgroundColor: passwordStrength.color }]} />
-              <Text style={[styles.strengthText, { color: passwordStrength.color }]}>
-                {passwordStrength.strength.charAt(0).toUpperCase() + passwordStrength.strength.slice(1)} strength
-              </Text>
+            <View style={styles.strengthWrap}>
+              <View style={styles.strengthTrack}>
+                <View style={[styles.strengthFill, { width: strength.width as any, backgroundColor: strength.color }]} />
+              </View>
+              <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
             </View>
           )}
-
-          {/* Password Requirements */}
-          <View style={styles.requirementsContainer}>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasNumber ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasNumber ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasNumber ? '#10B981' : '#9CA3AF' }]}>
-                At least one number
-              </Text>
-            </View>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasUpperCase ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasUpperCase ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasUpperCase ? '#10B981' : '#9CA3AF' }]}>
-                At least one uppercase letter
-              </Text>
-            </View>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasLowerCase ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasLowerCase ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasLowerCase ? '#10B981' : '#9CA3AF' }]}>
-                At least one lowercase letter
-              </Text>
-            </View>
-            <View style={styles.requirementRow}>
-              <Ionicons 
-                name={requirements.hasSymbol ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={requirements.hasSymbol ? '#10B981' : '#D1D5DB'} 
-              />
-              <Text style={[styles.requirementText, { color: requirements.hasSymbol ? '#10B981' : '#9CA3AF' }]}>
-                At least one symbol (!@#$%^&*)
-              </Text>
-            </View>
-          </View>
         </View>
 
-        {/* Confirm Password Field */}
-        <View style={styles.fieldContainer}>
-          <Text style={styles.label}>Confirm Password</Text>
-          <View style={styles.passwordInputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm password"
-              placeholderTextColor="#8B7355"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showConfirmPassword}
-              editable={!isLoading}
-            />
-            <TouchableOpacity 
-              style={styles.eyeIcon}
-              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+        {/* ── Vertical divider ── */}
+        <View style={styles.dividerV} />
+
+        {/* ── Right panel ── */}
+        <View style={styles.rightPanel}>
+          <Text style={styles.formTitle}>Set new password</Text>
+          <Text style={styles.formSubtitle}>Choose a strong password to secure your account</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
+
+            {/* New Password */}
+            <Text style={styles.fieldLabel}>NEW PASSWORD</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Enter new password"
+                placeholderTextColor="rgba(255,255,255,0.18)"
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry={!showNewPassword}
+                editable={!isLoading}
+              />
+              <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)} style={styles.eyeBtn}>
+                <Ionicons name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} size={14} color="rgba(255,255,255,0.28)" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Confirm Password */}
+            <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
+            <View style={[styles.inputRow, confirmPassword.length > 0 && { borderColor: passwordsMatch ? 'rgba(111,175,138,0.35)' : 'rgba(224,112,112,0.35)' }]}>
+              <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm password"
+                placeholderTextColor="rgba(255,255,255,0.18)"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showConfirmPassword}
+                editable={!isLoading}
+              />
+              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeBtn}>
+                <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={14} color="rgba(255,255,255,0.28)" />
+              </TouchableOpacity>
+            </View>
+            {confirmPassword.length > 0 && (
+              <Text style={[styles.matchText, { color: passwordsMatch ? '#6FAF8A' : '#E07070' }]}>
+                {passwordsMatch ? '✓ Passwords match' : '✗ Passwords do not match'}
+              </Text>
+            )}
+
+            <TouchableOpacity
+              style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
+              onPress={handleReset}
+              disabled={!canSubmit}
+              activeOpacity={0.82}
             >
-              <Ionicons 
-                name={showConfirmPassword ? 'eye-off' : 'eye'} 
-                size={20} 
-                color="#8B7355" 
-              />
+              {isLoading
+                ? <Text style={styles.submitText}>Sending request…</Text>
+                : <><Text style={styles.submitText}>Request Password Change</Text>
+                    <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} /></>
+              }
             </TouchableOpacity>
-          </View>
 
-          {/* Match Indicator */}
-          {confirmPassword.length > 0 && (
-            <View style={styles.matchRow}>
-              <Ionicons 
-                name={doPasswordsMatch ? 'checkmark-circle' : 'close-circle'} 
-                size={14} 
-                color={doPasswordsMatch ? '#10B981' : '#EF4444'} 
-              />
-              <Text style={[styles.matchText, { color: doPasswordsMatch ? '#10B981' : '#EF4444' }]}>
-                {doPasswordsMatch ? 'Passwords match' : 'Passwords do not match'}
-              </Text>
-            </View>
-          )}
+            <TouchableOpacity onPress={() => router.replace('/login')} style={styles.backRow}>
+              <Ionicons name="arrow-back" size={12} color="rgba(255,255,255,0.25)" />
+              <Text style={styles.backText}>Back to Login</Text>
+            </TouchableOpacity>
+
+          </ScrollView>
         </View>
 
-        {/* Submit Button */}
-        <TouchableOpacity
-          style={[styles.button, !canSubmit && styles.buttonDisabled]}
-          onPress={handleReset}
-          disabled={!canSubmit}
-        >
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Ionicons name="hourglass" size={16} color="#FFFFFF" style={styles.spinner} />
-              <Text style={styles.buttonText}>Sending Request...</Text>
-            </View>
-          ) : (
-            <View style={styles.submitContainer}>
-              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-              <Text style={styles.buttonText}>Request Password Change</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Back to Login Link */}
-        <TouchableOpacity onPress={() => router.replace('/login')} style={styles.linkContainer}>
-          <Ionicons name="arrow-back" size={14} color="#2C3E50" />
-          <Text style={styles.link}>Back to Login</Text>
-        </TouchableOpacity>
-      </View>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
+    backgroundColor: '#080D14',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  card: {
     flexDirection: 'row',
-    backgroundColor: '#F5E6D3',
-    paddingHorizontal: 40,
-    paddingVertical: 20,
+    width: '82%',
+    maxWidth: 580,
+    height: 360,
+    backgroundColor: '#0E1520',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
   },
+
+  // Left panel
   leftPanel: {
-    flex: 1,
-    justifyContent: 'center',
+    width: 168,
+    backgroundColor: '#111927',
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 18,
     alignItems: 'flex-start',
-    paddingRight: 30,
   },
-  rightPanel: {
-    flex: 1.5,
+  logoMark: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(201,169,110,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.25)',
     justifyContent: 'center',
-    paddingLeft: 30,
-  },
-  logo: {
-    fontSize: 48,
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2C3E50',
+    alignItems: 'center',
     marginBottom: 10,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 20,
-  },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(44, 62, 80, 0.08)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 8,
-  },
-  infoText: {
+  logoEmoji: { fontSize: 17 },
+  brandName: {
+    color: '#FFFFFF',
     fontSize: 14,
-    color: '#2C3E50',
-    fontWeight: '500',
-  },
-  fieldContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2C3E50',
-    marginBottom: 8,
-  },
-  passwordInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D4A574',
-    borderRadius: 8,
-    paddingRight: 12,
-    backgroundColor: '#FAFAFA',
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  eyeIcon: {
-    padding: 4,
-  },
-  strengthContainer: {
-    marginTop: 8,
-    gap: 6,
-  },
-  strengthBar: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#D1D5DB',
-  },
-  strengthText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  requirementsContainer: {
-    marginTop: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 6,
-  },
-  requirementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    lineHeight: 19,
     marginBottom: 4,
-    gap: 8,
   },
-  requirementText: {
-    fontSize: 12,
-    color: '#9CA3AF',
+  brandTagline: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 10,
+    lineHeight: 15,
+    marginBottom: 12,
   },
-  matchRow: {
-    marginTop: 8,
+  dividerH: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignSelf: 'stretch',
+    marginBottom: 10,
+  },
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
     paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  matchText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  button: {
-    backgroundColor: '#2C3E50',
-    paddingVertical: 12,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(201,169,110,0.07)',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.18)',
+    marginBottom: 10,
+  },
+  noticeText: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 9,
+    lineHeight: 13,
+    flex: 1,
+  },
+  sectionLabel: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 9,
+  },
+  reqRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  reqText: {
+    color: 'rgba(255,255,255,0.22)',
+    fontSize: 10,
+  },
+  reqTextMet: { color: '#6FAF8A' },
+  strengthWrap: {
     marginTop: 8,
-    marginBottom: 16,
+    alignSelf: 'stretch',
   },
-  buttonDisabled: {
-    opacity: 0.5,
-    backgroundColor: '#A0C4A2',
+  strengthTrack: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 4,
   },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  strengthFill: {
+    height: '100%',
+    borderRadius: 2,
   },
-  submitContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+  strengthLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  buttonText: {
+
+  dividerV: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+
+  // Right panel
+  rightPanel: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+  },
+  formTitle: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  formSubtitle: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 10,
+    marginBottom: 16,
+  },
+  formScroll: {
+    paddingBottom: 4,
+  },
+  fieldLabel: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    height: 36,
+    marginBottom: 10,
+  },
+  inputIcon: { marginRight: 7 },
+  input: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
+  eyeBtn: { padding: 4, marginLeft: 2 },
+  matchText: {
+    fontSize: 9,
     fontWeight: '600',
+    marginTop: -6,
+    marginBottom: 10,
+    marginLeft: 2,
   },
-  spinner: {
-    opacity: 0.8,
-  },
-  linkContainer: {
+  submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    backgroundColor: '#C9A96E',
+    borderRadius: 8,
+    height: 36,
+    marginTop: 6,
+    marginBottom: 12,
   },
-  link: {
-    color: '#2C3E50',
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
+  submitBtnDisabled: { opacity: 0.4 },
+  submitText: {
+    color: '#0E1520',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  backText: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 11,
   },
 });

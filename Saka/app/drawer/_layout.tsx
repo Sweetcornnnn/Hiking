@@ -43,6 +43,14 @@ export default function DrawerLayout() {
             orientation: 'landscape',
           }}
         />
+        <Drawer.Screen
+          name="wildtrack"
+          options={{
+            drawerLabel: 'WildTrack',
+            title: 'WildTrack',
+            orientation: 'landscape',
+          }}
+        />
       </Drawer>
     </GestureHandlerRootView>
   );

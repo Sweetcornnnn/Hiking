@@ -40,8 +40,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     
     try {
-      console.log(`Attempting login to ${API_BASE_URL}/api/login`);
-      const response = await fetch(`${API_BASE_URL}/api/login`, {
+      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
+      console.log(`Attempting login to ${base}/api/login`);
+      const response = await fetch(`${base}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -83,8 +84,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     
     try {
-      console.log(`Attempting signup to ${API_BASE_URL}/api/register`);
-      const response = await fetch(`${API_BASE_URL}/api/register`, {
+      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
+      console.log(`Attempting signup to ${base}/api/register`);
+      const response = await fetch(`${base}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name }),
