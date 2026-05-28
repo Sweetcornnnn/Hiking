@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Animated, Easing,
+  StyleSheet, Animated, Easing, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -201,9 +201,12 @@ export default function LoginScreen() {
         <Animated.View style={[styles.face, { opacity: frontOpacity }]} pointerEvents={isAdminLogin ? 'none' : 'auto'}>
           <View style={styles.leftPanel}>
             <TouchableOpacity onPress={handleLogoPress} activeOpacity={0.75} style={styles.logoMark}>
-              <Text style={styles.logoEmoji}>🏔️</Text>
+              <Image
+                source={require('../../assets/images/SakaLogo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
-            <Text style={styles.brandName}>TaraSaka</Text>
             <Text style={styles.brandTagline}>Every summit begins{'\n'}with a single step.</Text>
             <View style={styles.dividerH} />
             {[
@@ -274,12 +277,16 @@ export default function LoginScreen() {
         <Animated.View style={[styles.face, { opacity: backOpacity }]} pointerEvents={isAdminLogin ? 'auto' : 'none'}>
           <View style={styles.leftPanel}>
             <TouchableOpacity onPress={handleLogoPress} activeOpacity={0.75} style={styles.logoMark}>
-              <Text style={styles.logoEmoji}>🏔️</Text>
+              <Image
+                source={require('../../assets/images/SakaLogo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
             <Text style={styles.brandName}>Admin Access</Text>
             <Text style={styles.brandTagline}>Hidden sign in for{'\n'}administrators only.</Text>
             <View style={styles.dividerH} />
-            <Text style={styles.adminHint}>Tap the logo 7 times{'\n'}to toggle this screen.</Text>
+            <Text style={styles.adminHint}>Admin ka Gale?</Text>
           </View>
 
           <View style={styles.dividerV} />
@@ -361,11 +368,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoMark: {
-    width: 52, height: 52, borderRadius: 16,
-    backgroundColor: 'rgba(201,169,110,0.12)',
-    borderWidth: 1, borderColor: 'rgba(201,169,110,0.25)',
-    justifyContent: 'center', alignItems: 'center', marginBottom: 14,
+    marginBottom: -20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  logoImage: { width: 102, height: 102 },
   logoEmoji:   { fontSize: 24 },
   brandName:   { color: '#FFFFFF', fontSize: 15, fontWeight: '800', letterSpacing: 0.2, marginBottom: 6, textAlign: 'center' },
   brandTagline:{ color: 'rgba(255,255,255,0.28)', fontSize: 10, lineHeight: 16, marginBottom: 14, textAlign: 'center' },

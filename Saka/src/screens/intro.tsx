@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function IntroScreen() {
@@ -14,21 +14,17 @@ export default function IntroScreen() {
 
   useEffect(() => {
     Animated.sequence([
-      // Logo fades in first
       Animated.parallel([
         Animated.timing(logoFade,  { toValue: 1, duration: 700, easing: Easing.out(Easing.ease), useNativeDriver: true }),
         Animated.timing(logoScale, { toValue: 1, duration: 700, easing: Easing.out(Easing.back(1.2)), useNativeDriver: true }),
       ]),
-      // Name + tagline slide up
       Animated.parallel([
         Animated.timing(textFade,  { toValue: 1, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
         Animated.timing(textSlide, { toValue: 0, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       ]),
-      // Quote fades in
       Animated.timing(quoteFade, { toValue: 1, duration: 500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start();
 
-    // Progress bar runs independently over the full 3s
     Animated.timing(barWidth, {
       toValue: 1,
       duration: 6000,
@@ -43,26 +39,24 @@ export default function IntroScreen() {
   return (
     <View style={styles.root}>
 
-      {/* Logo placeholder */}
+      {/* Logo — swap the require() path to your actual logo file */}
       <Animated.View style={[styles.logoWrap, { opacity: logoFade, transform: [{ scale: logoScale }] }]}>
-        <View style={styles.logoBox}>
-          <Text style={styles.logoEmoji}>🏔️</Text>
-        </View>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoBadgeText}>LOGO</Text>
-        </View>
+          <Image
+            source={require('../../assets/images/SakaLogo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
       </Animated.View>
 
       {/* App name + tagline */}
       <Animated.View style={[styles.nameWrap, { opacity: textFade, transform: [{ translateY: textSlide }] }]}>
-        <Text style={styles.appName}>SAKA</Text>
         <View style={styles.nameDivider} />
         <Text style={styles.appSub}>Philippine Hiking Trails</Text>
       </Animated.View>
 
       {/* Quote */}
       <Animated.View style={[styles.quoteWrap, { opacity: quoteFade }]}>
-        <Text style={styles.quoteText}>"The mountain does not care if you make it.{'\n'}You do."</Text>
+        <Text style={styles.quoteText}>"The mountain doesn't care if you'll make it.{'\n'}you do."</Text>
       </Animated.View>
 
       {/* Progress bar */}
@@ -83,48 +77,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 48,
+    paddingTop: 48, 
   },
 
   // Logo
   logoWrap: {
     alignItems: 'center',
-    marginBottom: 36,
+    marginBottom: 0,
     position: 'relative',
   },
-  logoBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 22,
-    backgroundColor: 'rgba(201,169,110,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoEmoji: {
-    fontSize: 38,
-  },
-  logoBadge: {
-    position: 'absolute',
-    bottom: -8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    backgroundColor: '#0B1119',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.25)',
-    borderRadius: 4,
-  },
-  logoBadgeText: {
-    color: 'rgba(201,169,110,0.5)',
-    fontSize: 8,
-    fontWeight: '700',
-    letterSpacing: 2,
+  logoImage: {
+    width: 290,
+    height: 290,
   },
 
   // App name
   nameWrap: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginTop: -70,
+    marginBottom: 16, // was 28
   },
   appName: {
     color: '#FFFFFF',
@@ -136,7 +107,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 1,
     backgroundColor: '#C9A96E',
-    marginVertical: 10,
+    marginVertical: 4,
   },
   appSub: {
     color: 'rgba(255,255,255,0.3)',
@@ -148,13 +119,13 @@ const styles = StyleSheet.create({
 
   // Quote
   quoteWrap: {
-    marginBottom: 64,
+    marginBottom: 40,   // was 64
     paddingHorizontal: 16,
   },
   quoteText: {
     color: 'rgba(255,255,255,0.22)',
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 12,       // was 13
+    lineHeight: 18,     // was 20
     textAlign: 'center',
     fontStyle: 'italic',
   },
