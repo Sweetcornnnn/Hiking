@@ -465,27 +465,38 @@ export default function HomeScreen() {
             style={styles.profileButton}
             activeOpacity={0.8}
           >
-            {/* Avatar with gold ring */}
-            <View style={styles.profileAvatarRing}>
-              <View style={styles.profileAvatar}>
-                {profileImage ? (
-                  <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
-                ) : (
-                  <Text style={styles.profileInitials}>
-                    {user?.name?.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'H'}
-                  </Text>
-                )}
+            {/* Avatar stack */}
+            <View style={styles.profileAvatarOuter}>
+              <View style={styles.profileAvatarRing}>
+                <View style={styles.profileAvatar}>
+                  {profileImage ? (
+                    <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
+                  ) : (
+                    <Text style={styles.profileInitials}>
+                      {user?.name?.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'H'}
+                    </Text>
+                  )}
+                </View>
               </View>
+              {/* Presence dot */}
+              <View style={styles.profilePresenceDot} />
             </View>
+
+            {/* Divider */}
+            <View style={styles.profileDivider} />
+
             {/* Text */}
             <View style={styles.profileTextContainer}>
-              <Text style={styles.profileGreeting}>Hi,</Text>
+              <Text style={styles.profileGreeting}>Welcome back</Text>
               <Text style={styles.profileName} numberOfLines={1}>
                 {user?.name?.split(' ')[0] || 'Hiker'}
               </Text>
             </View>
-            {/* Chevron hint */}
-            <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.5)" style={{ marginLeft: 2 }} />
+
+            {/* Chevron */}
+            <View style={styles.profileChevronWrap}>
+              <Ionicons name="chevron-down" size={11} color="#C9A96E" />
+            </View>
           </TouchableOpacity>
         )}
       </View>
@@ -504,18 +515,22 @@ export default function HomeScreen() {
       {/* Global CTA overlay placed outside of the scroll/video to avoid native view touch blocking */}
       {MOUNTAINS[activeIndex] && MOUNTAINS[activeIndex].id === '1' && (
         <TouchableOpacity
-          style={[styles.ctaButton, styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
+          style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
           onPress={() => {
             console.log('Tara Saka pressed');
             router.push('/loading?next=/MountainTop');
           }}
-          activeOpacity={0.85}
+          activeOpacity={0.75}
         >
-          <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoPlaceholderText}>Logo</Text>
+          <View style={styles.ctaLogoWrap}>
+            <View style={styles.ctaGlowRing} />
+            <Image
+              source={require('../../assets/images/SakaLogo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
-          <Text style={styles.ctaText}>Tara, Saka</Text>
-          <Ionicons name="arrow-forward" size={13} color="#FFF" />
+          <Text style={styles.logoLabel}>Tara, Saka</Text>
         </TouchableOpacity>
       )}
 
@@ -745,10 +760,49 @@ const styles = StyleSheet.create({
     bottom: 22,
     right: 24,
     zIndex: 250,
-    elevation: 10,
+    elevation: 0,
+    alignItems: 'center',
+    gap: 0,
   },
   ctaAbsolutePortrait: {
     bottom: 36,
+  },
+
+  ctaLogoWrap: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ctaGlowRing: {
+    position: 'absolute',
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    backgroundColor: 'rgba(201,169,110,0.16)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+
+  // ── Logo stamp CTA ───────────────────────────────────────────────────────
+  logoGlowRing: {},
+  logoBorderRing: {},
+  logoInner: {},
+  logoImage: {
+    width: 168,
+    height: 168,
+  },
+  logoLabelWrap: {},
+  logoLabel: {
+    color: '#C9A96E',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginTop: -40,
   },
 
   infoMetaRow: {
@@ -799,22 +853,6 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     maxWidth: '65%',
   },
-  ctaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    gap: 8,
-  },
-  ctaText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -825,23 +863,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginLeft: 10,
-  },
-  logoPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoPlaceholderText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
   },
   floatingMountainName: {
     fontSize: 42,
@@ -926,29 +947,54 @@ const styles = StyleSheet.create({
   profileButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
-    paddingRight: 14,
-    paddingLeft: 6,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    gap: 0,
+    paddingRight: 10,
+    paddingLeft: 5,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(10,16,26,0.72)',
     borderRadius: 30,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(201,169,110,0.28)',
+    // Top highlight edge
+    shadowColor: '#C9A96E',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  profileAvatarOuter: {
+    position: 'relative',
+    marginRight: 0,
   },
   profileAvatarRing: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1.5,
     borderColor: '#C9A96E',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#C9A96E',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+  },
+  profilePresenceDot: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#6FAF8A',
+    borderWidth: 1.5,
+    borderColor: '#0A101A',
   },
   profileAvatar: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(201,169,110,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -958,23 +1004,44 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   profileInitials: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '700',
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  profileDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: 'rgba(201,169,110,0.2)',
+    marginHorizontal: 10,
   },
   profileTextContainer: {
     justifyContent: 'center',
+    marginRight: 8,
   },
   profileGreeting: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 10,
-    lineHeight: 12,
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '500',
+    letterSpacing: 0.3,
   },
   profileName: {
-    color: '#FFF',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
-    lineHeight: 15,
+    lineHeight: 16,
+    letterSpacing: 0.1,
+  },
+  profileChevronWrap: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(201,169,110,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   

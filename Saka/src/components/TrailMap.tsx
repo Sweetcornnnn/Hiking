@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { useViewpointFlow } from '../hooks/useViewpointFlow';
 import ViewpointModal from './ViewpointModal';
@@ -34,14 +35,19 @@ const PLACEHOLDER = require('../../assets/viewpoints/placeholder.png');
 const IMAGE_MAP: Record<string, any> = {
   trailhead:     require('../../assets/images/TrailHead.jpg'),
   bantang_river: require('../../assets/images/BantangRiverWide.jpg'),
-  camp1:         require('../../assets/images/Camp1.jpg'),
+  camp1:         require('../../assets/images/Camp1.png'),
   waterfall:     require('../../assets/images/WaterfallsWide.jpg'),
   mossy_forest:  require('../../assets/images/MossyForestWide.jpg'),
   camp2:         require('../../assets/images/Camp2$3.jpg'),
   camp3:         require('../../assets/images/Camp2$3.jpg'),
   crown_shyness: require('../../assets/images/CrownShines.jpg'),
   summit_ridge:  require('../../assets/images/MadjaasRidgeWide.jpg'),
-  summit:        require('../../assets/images/MadjaasSummit.jpg'),
+  summit:        require('../../assets/images/Summit.png'),
+};
+
+const VIDEO_MAP: Record<string, any> = {
+  waterfall: require('../../assets/WaterfallsFor89.mp4'),
+  crown_shyness: require('../../assets/Waterfalls.mp4'),
 };
 
 // ─── ProfileCard design tokens ────────────────────────────────────────────
@@ -183,6 +189,31 @@ function CenterPin() {
   );
 }
 
+function TrailVideoPlayer({ source, isActive }: { source: any; isActive: boolean }) {
+  const player = useVideoPlayer(source, (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.staysActiveInBackground = true;
+  });
+
+  useEffect(() => {
+    if (isActive) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isActive, player]);
+
+  return (
+    <VideoView
+      style={styles.photoFill}
+      player={player}
+      nativeControls={false}
+      contentFit="cover"
+    />
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────
 export default function TrailMap({
   mountainId,
@@ -238,6 +269,7 @@ export default function TrailMap({
   const activeDetail = activeViewpoint
     ? (VIEWPOINTS_DATA as any)[activeViewpoint.id] : null;
   const activeImage  = activeDetail ? IMAGE_MAP[activeDetail.imageKey] : null;
+  const activeVideo  = activeDetail ? VIDEO_MAP[activeDetail.imageKey] : null;
 
   const trailCoordinates = customTrailCoordinates || [
     centerCoord,
@@ -299,9 +331,11 @@ export default function TrailMap({
 
       {/* Full-screen photo overlay */}
       <Animated.View style={[styles.photoOverlay, { opacity: photoOpacity }]} pointerEvents="none">
-        {activeImage && (
+        {activeVideo ? (
+          <TrailVideoPlayer source={activeVideo} isActive={showPhoto} />
+        ) : activeImage ? (
           <Image source={activeImage} style={styles.photoFill} resizeMode="cover" />
-        )}
+        ) : null}
       </Animated.View>
 
       {/* Back button — top: 16, no assumed status bar height */}
