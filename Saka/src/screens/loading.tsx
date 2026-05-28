@@ -61,13 +61,13 @@ export default function LoadingScreen({
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.03,
-          duration: 2500,
+          duration: 3500,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 2500,
+          duration: 3500,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
