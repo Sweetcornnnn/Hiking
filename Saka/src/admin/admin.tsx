@@ -1,34 +1,153 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Modal, Alert } from 'react-native';
+import {
+  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView, TextInput,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
 import { useNotificationStore } from '../store/notificationStore';
 
+// ---------- User Store (local, using authToken) ----------
+interface AdminUser {
+  id: number;
+  email: string;
+  name: string | null;
+  is_admin: boolean;
+  created_at: string;
+}
+
 export default function AdminRoute() {
   const router = useRouter();
   const { user, authToken, signOut } = useAuthStore();
-  const { allHikes, adminStats, fetchAllHikes, fetchAdminStats, isLoading } = useHikesStore();
-  const { passwordChangeRequests, unreadCount, fetchPasswordChangeRequests, approvePasswordChange, rejectPasswordChange } = useNotificationStore();
+  const { allHikes, adminStats, fetchAllHikes, fetchAdminStats, isLoading: hikesLoading } = useHikesStore();
+  const {
+    passwordChangeRequests,
+    unreadCount,
+    fetchPasswordChangeRequests,
+    approvePasswordChange,
+    rejectPasswordChange,
+  } = useNotificationStore();
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'hikes' | 'users'>('hikes');
+
+  // User management state
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+
+  // Password request modal state
   const [notificationModalVisible, setNotificationModalVisible] = useState(false);
   const [processRequests, setProcessingRequests] = useState<Set<string>>(new Set());
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
 
+  // ---------- Fetch users ----------
+  const fetchUsers = async () => {
+    if (!authToken) return;
+    setUsersLoading(true);
+    try {
+      const res = await fetch('http://10.127.50.102:3000/api/admin/users', {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsers(data.users);
+      } else {
+        Alert.alert('Error', data.error || 'Failed to fetch users');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error fetching users');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  // ---------- Update user (admin toggle) ----------
+  const updateUserAdmin = async (userId: number, isAdmin: boolean) => {
+    if (!authToken) return;
+    try {
+      const res = await fetch(`http://10.127.50.102:3000/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ is_admin: isAdmin }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Alert.alert('Success', `User admin status updated`);
+        fetchUsers(); // refresh list
+      } else {
+        Alert.alert('Error', data.error || 'Failed to update user');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error');
+    }
+  };
+
+  // ---------- Reset password (creates pending request) ----------
+  const resetUserPassword = async (userId: number, password: string) => {
+    if (!authToken) return;
+    try {
+      const res = await fetch(`http://10.127.50.102:3000/api/admin/users/${userId}/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ newPassword: password }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Alert.alert('Success', 'Password reset request created. The user will need to approve it.');
+      } else {
+        Alert.alert('Error', data.error || 'Failed to reset password');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error');
+    }
+  };
+
+  // ---------- Delete user ----------
+  const deleteUser = async (userId: number) => {
+    if (!authToken) return;
+    try {
+      const res = await fetch(`http://10.127.50.102:3000/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Alert.alert('Success', 'User deleted');
+        fetchUsers(); // refresh list
+      } else {
+        Alert.alert('Error', data.error || 'Failed to delete user');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Network error');
+    }
+  };
+
+  // ---------- Initial data fetching ----------
   useEffect(() => {
     if (!user?.is_admin) {
       router.replace('/drawer/home');
       return;
     }
-
     fetchAllHikes();
     fetchAdminStats();
     if (authToken) {
       fetchPasswordChangeRequests(authToken);
+      fetchUsers();
     }
   }, [user?.is_admin, authToken]);
 
-  const filteredRequests = passwordChangeRequests.filter(req => 
+  // Password request handlers (unchanged)
+  const filteredRequests = passwordChangeRequests.filter(req =>
     filterStatus === 'all' ? true : req.status === filterStatus
   );
 
@@ -38,529 +157,836 @@ export default function AdminRoute() {
     rejected: styles.statusRejected,
   } as const;
 
+  const statusTextMap = {
+    pending: styles.statusText,
+    approved: styles.statusTextApproved,
+    rejected: styles.statusTextRejected,
+  } as const;
+
   const handleApproveRequest = async (requestId: string) => {
     setProcessingRequests(prev => new Set(prev).add(requestId));
     const { error } = await approvePasswordChange(requestId, authToken || '');
-    setProcessingRequests(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(requestId);
-      return newSet;
-    });
-
-    if (error) {
-      Alert.alert('Error', error);
-    } else {
-      Alert.alert('Success', 'Password change approved');
-    }
+    setProcessingRequests(prev => { const s = new Set(prev); s.delete(requestId); return s; });
+    if (error) Alert.alert('Error', error);
+    else Alert.alert('Success', 'Password change approved');
   };
 
   const handleRejectRequest = async (requestId: string) => {
     setProcessingRequests(prev => new Set(prev).add(requestId));
     const { error } = await rejectPasswordChange(requestId, authToken || '');
-    setProcessingRequests(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(requestId);
-      return newSet;
-    });
-
-    if (error) {
-      Alert.alert('Error', error);
-    } else {
-      Alert.alert('Success', 'Password change rejected');
-    }
+    setProcessingRequests(prev => { const s = new Set(prev); s.delete(requestId); return s; });
+    if (error) Alert.alert('Error', error);
+    else Alert.alert('Success', 'Password change rejected');
   };
 
   const handleLogout = async () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', onPress: () => {}, style: 'cancel' },
-      {
-        text: 'Logout',
-        onPress: async () => {
-          await signOut();
-          router.replace('/login');
-        },
-        style: 'destructive',
-      },
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', onPress: async () => { await signOut(); router.replace('/login'); }, style: 'destructive' },
     ]);
   };
 
+  const confirmResetPassword = () => {
+    if (!selectedUserId) return;
+    if (newPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+    resetUserPassword(selectedUserId, newPassword);
+    setResetModalVisible(false);
+    setNewPassword('');
+    setSelectedUserId(null);
+  };
+
+  // ---------- Render ----------
   return (
     <>
+      {/* Password Requests Modal (unchanged) */}
       <Modal
         transparent
         visible={notificationModalVisible}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setNotificationModalVisible(false)}
+        statusBarTranslucent
+        presentationStyle="overFullScreen"
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Password Change Requests</Text>
-            <TouchableOpacity onPress={() => setNotificationModalVisible(false)}>
-              <Ionicons name="close" size={24} color="#2C3E50" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Filter Tabs */}
-          <View style={styles.filterTabs}>
-            {(['all', 'pending', 'approved', 'rejected'] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.filterTab, filterStatus === tab && styles.filterTabActive]}
-                onPress={() => setFilterStatus(tab)}
-              >
-                <Text style={[styles.filterTabText, filterStatus === tab && styles.filterTabTextActive]}>
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </Text>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Password Requests</Text>
+              <TouchableOpacity onPress={() => setNotificationModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
               </TouchableOpacity>
-            ))}
-          </View>
+            </View>
 
-          <ScrollView style={styles.modalContent}>
-            {filteredRequests.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="checkmark-circle" size={60} color="#6FAF8A" />
-                <Text style={styles.emptyStateText}>
-                  {filterStatus === 'pending' ? 'No pending requests' : `No ${filterStatus} requests`}
-                </Text>
-              </View>
-            ) : (
-              filteredRequests.map((request) => (
-                <View key={request.id} style={[styles.requestCard, request.status === 'pending' && styles.requestCardPending]}>
-                  <View style={styles.requestHeader}>
-                    <View>
-                      <Text style={styles.requestName}>{request.userName}</Text>
-                      <Text style={styles.requestEmail}>{request.userEmail}</Text>
-                    </View>
-                    <View style={[styles.statusBadge, statusStyleMap[request.status]]}>
-                      <Text style={styles.statusText}>{request.status}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.requestDate}>
-                    📅 Requested: {new Date(request.requestedAt).toLocaleString()}
+            <View style={styles.filterTabs}>
+              {(['all', 'pending', 'approved', 'rejected'] as const).map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.filterTab, filterStatus === tab && styles.filterTabActive]}
+                  onPress={() => setFilterStatus(tab)}
+                >
+                  <Text style={[styles.filterTabText, filterStatus === tab && styles.filterTabTextActive]}>
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </Text>
-                  
-                  {request.respondedAt && (
-                    <Text style={styles.respondedDate}>
-                      ✓ {request.status === 'approved' ? 'Approved' : 'Rejected'}: {new Date(request.respondedAt).toLocaleString()}
-                    </Text>
-                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
 
-                  {request.status === 'pending' && (
-                    <View style={styles.actionButtonsContainer}>
-                      <TouchableOpacity
-                        style={[styles.modalActionButton, styles.approveButton]}
-                        onPress={() => handleApproveRequest(request.id)}
-                        disabled={processRequests.has(request.id)}
-                      >
-                        <Ionicons name="checkmark" size={18} color="#FFF" />
-                        <Text style={styles.modalActionButtonText}>
-                          {processRequests.has(request.id) ? 'Processing...' : 'Approve'}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.modalActionButton, styles.rejectButton]}
-                        onPress={() => handleRejectRequest(request.id)}
-                        disabled={processRequests.has(request.id)}
-                      >
-                        <Ionicons name="close" size={18} color="#FFF" />
-                        <Text style={styles.modalActionButtonText}>
-                          {processRequests.has(request.id) ? 'Processing...' : 'Reject'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {filteredRequests.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="checkmark-circle" size={36} color="#6FAF8A" />
+                  <Text style={styles.emptyStateText}>
+                    {filterStatus === 'pending' ? 'No pending requests' : `No ${filterStatus} requests`}
+                  </Text>
                 </View>
-              ))
-            )}
-          </ScrollView>
+              ) : (
+                filteredRequests.map((request) => (
+                  <View key={request.id} style={[styles.requestCard, request.status === 'pending' && styles.requestCardPending]}>
+                    <View style={styles.requestHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.requestName} numberOfLines={1}>{request.userName}</Text>
+                        <Text style={styles.requestEmail} numberOfLines={1}>{request.userEmail}</Text>
+                      </View>
+                      <View style={[styles.statusBadge, statusStyleMap[request.status]]}>
+                        <Text style={statusTextMap[request.status]}>{request.status}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.requestDate}>
+                      {new Date(request.requestedAt).toLocaleString()}
+                    </Text>
+                    {request.respondedAt && (
+                      <Text style={styles.respondedDate}>
+                        ✓ {request.status === 'approved' ? 'Approved' : 'Rejected'}: {new Date(request.respondedAt).toLocaleString()}
+                      </Text>
+                    )}
+                    {request.status === 'pending' && (
+                      <View style={styles.actionButtonsContainer}>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.approveButton]}
+                          onPress={() => handleApproveRequest(request.id)}
+                          disabled={processRequests.has(request.id)}
+                        >
+                          <Ionicons name="checkmark" size={13} color="#6FAF8A" />
+                          <Text style={styles.approveBtnText}>
+                            {processRequests.has(request.id) ? 'Processing...' : 'Approve'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.rejectButton]}
+                          onPress={() => handleRejectRequest(request.id)}
+                          disabled={processRequests.has(request.id)}
+                        >
+                          <Ionicons name="close" size={13} color="#E07070" />
+                          <Text style={styles.rejectBtnText}>
+                            {processRequests.has(request.id) ? 'Processing...' : 'Reject'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Admin Dashboard</Text>
-            <Text style={styles.subtitle}>Manage hikes and monitor members</Text>
+      {/* Reset Password Modal */}
+      <Modal visible={resetModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Reset Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="New password (min. 6 characters)"
+              placeholderTextColor="rgba(255,255,255,0.4)"
+              secureTextEntry
+              value={newPassword}
+              onChangeText={setNewPassword}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtn} onPress={confirmResetPassword}>
+                <Text style={styles.confirmText}>Reset</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity 
-              onPress={() => setNotificationModalVisible(true)} 
-              style={styles.notificationButton}
-            >
-              <Ionicons name="notifications" size={20} color="#2C3E50" />
+        </View>
+      </Modal>
+
+      {/* Main Admin Panel */}
+      <View style={styles.screen}>
+        <View style={styles.card}>
+          {/* Left Panel */}
+          <View style={styles.leftPanel}>
+            <Text style={styles.title}>Admin</Text>
+            <Text style={styles.subtitle}>Dashboard</Text>
+            <View style={styles.dividerH} />
+
+            <View style={styles.statItem}>
+              <Text style={styles.statNum}>{adminStats?.total_hikes || 0}</Text>
+              <Text style={styles.statLbl}>hikes</Text>
+            </View>
+            <View style={styles.statSep} />
+            <View style={styles.statItem}>
+              <Text style={styles.statNum}>{adminStats?.total_users || 0}</Text>
+              <Text style={styles.statLbl}>users</Text>
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            <TouchableOpacity style={styles.notifBtn} onPress={() => setNotificationModalVisible(true)}>
+              <Ionicons name="notifications-outline" size={13} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.notifBtnText}>Requests</Text>
               {unreadCount > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>{unreadCount}</Text>
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{unreadCount}</Text>
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogout} style={[styles.headerButton, styles.logoutButton]}>
-              <Ionicons name="log-out" size={20} color="#FFF" />
-              <Text style={[styles.headerButtonText, styles.logoutButtonText]}>Logout</Text>
+
+            <TouchableOpacity style={styles.refreshBtn} onPress={fetchAllHikes}>
+              <Ionicons name="refresh" size={13} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.refreshBtnText}>Refresh</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={13} color="#E07070" />
+              <Text style={styles.logoutBtnText}>Logout</Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, styles.statCardFirst]}>
-            <Text style={styles.statLabel}>Total Hikes</Text>
-            <Text style={styles.statValue}>{adminStats?.total_hikes || 0}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Active Users</Text>
-            <Text style={styles.statValue}>{adminStats?.total_users || 0}</Text>
-          </View>
-        </View>
+          <View style={styles.dividerV} />
 
-        <View style={styles.actionRow}>
-          <TouchableOpacity onPress={fetchAllHikes} style={styles.actionButton}>
-            <Ionicons name="refresh" size={18} color="#2C3E50" />
-            <Text style={styles.actionButtonText}>Refresh</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.sectionTitle}>Recent Hikes</Text>
-
-        {isLoading ? (
-          <View style={styles.loadingCard}>
-            <Text style={styles.loadingText}>Loading hike records...</Text>
-          </View>
-        ) : allHikes.length === 0 ? (
-          <View style={styles.loadingCard}>
-            <Text style={styles.loadingText}>No hikes found yet.</Text>
-          </View>
-        ) : (
-          allHikes.map((hike) => (
-            <View key={hike.id} style={styles.hikeCard}>
-              <View style={styles.hikeHeader}>
-                <Text style={styles.hikeTitle}>{hike.user?.name || hike.user?.email || 'Unknown Hiker'}</Text>
-                <Text style={styles.hikeMeta}>{new Date(hike.date).toLocaleDateString()}</Text>
+          {/* Right Panel with Tabs */}
+          <View style={styles.rightPanel}>
+            <View style={styles.listHeader}>
+              <View style={styles.tabContainer}>
+                <TouchableOpacity
+                  style={[styles.tab, activeTab === 'hikes' && styles.activeTab]}
+                  onPress={() => setActiveTab('hikes')}
+                >
+                  <Text style={[styles.tabText, activeTab === 'hikes' && styles.activeTabText]}>Hikes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, activeTab === 'users' && styles.activeTab]}
+                  onPress={() => setActiveTab('users')}
+                >
+                  <Text style={[styles.tabText, activeTab === 'users' && styles.activeTabText]}>Users</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.hikeDetail}>Start: {hike.start_time}</Text>
-              <Text style={styles.hikeDetail}>End: {hike.end_time}</Text>
-              <Text style={styles.hikeDetail}>Tagalongs: {hike.tagalongs}</Text>
-              <Text style={styles.hikeDetail}>Contact: {hike.contact_number}</Text>
-              <Text style={styles.hikeDetail}>Emergency: {hike.emergency_contact}</Text>
             </View>
-          ))
-        )}
-      </ScrollView>
+
+            {activeTab === 'hikes' && (
+              hikesLoading ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>Loading hikes...</Text>
+                </View>
+              ) : allHikes.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>No hikes yet.</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={allHikes}
+                  keyExtractor={(h) => h.id}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.listContent}
+                  renderItem={({ item: hike, index }) => (
+                    <View style={[styles.hikeRow, index === allHikes.length - 1 && styles.hikeRowLast]}>
+                      <View style={styles.hikeDot} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.hikeName} numberOfLines={1}>
+                          {hike.user?.name || hike.user?.email || 'Unknown'}
+                        </Text>
+                        <Text style={styles.hikeSub} numberOfLines={1}>
+                          {hike.start_time} → {hike.end_time}  ·  {hike.tagalongs} along
+                        </Text>
+                      </View>
+                      <Text style={styles.hikeMeta}>
+                        {new Date(hike.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </Text>
+                    </View>
+                  )}
+                />
+              )
+            )}
+
+            {activeTab === 'users' && (
+              usersLoading ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>Loading users...</Text>
+                </View>
+              ) : users.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>No users found.</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={users}
+                  keyExtractor={(u) => u.id.toString()}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.listContent}
+                  renderItem={({ item: u }) => (
+                    <View style={styles.userRow}>
+                      <View style={styles.userInfo}>
+                        <Text style={styles.userName}>{u.name || 'No name'}</Text>
+                        <Text style={styles.userEmail}>{u.email}</Text>
+                        <Text style={styles.userMeta}>
+                          Joined {new Date(u.created_at).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      <View style={styles.userActions}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            if (u.id === user?.id) {
+                              Alert.alert('Not allowed', 'You cannot change your own admin status.');
+                              return;
+                            }
+                            Alert.alert(
+                              u.is_admin ? 'Remove admin rights?' : 'Make admin?',
+                              `${u.name || u.email} will ${u.is_admin ? 'lose' : 'gain'} admin privileges.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                { text: 'Confirm', onPress: () => updateUserAdmin(u.id, !u.is_admin) },
+                              ]
+                            );
+                          }}
+                          style={styles.actionIcon}
+                        >
+                          <Ionicons
+                            name={u.is_admin ? 'shield-checkmark' : 'shield-outline'}
+                            size={16}
+                            color={u.is_admin ? '#C9A96E' : 'rgba(255,255,255,0.5)'}
+                          />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedUserId(u.id);
+                            setNewPassword('');
+                            setResetModalVisible(true);
+                          }}
+                          style={styles.actionIcon}
+                        >
+                          <Ionicons name="key-outline" size={16} color="#6FAF8A" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => {
+                            if (u.id === user?.id) {
+                              Alert.alert('Not allowed', 'You cannot delete your own account from here.');
+                              return;
+                            }
+                            Alert.alert(
+                              'Delete User',
+                              `Delete ${u.name || u.email}? This will remove all their hikes and requests.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                { text: 'Delete', style: 'destructive', onPress: () => deleteUser(u.id) },
+                              ]
+                            );
+                          }}
+                          style={styles.actionIcon}
+                        >
+                          <Ionicons name="trash-outline" size={16} color="#E07070" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                />
+              )
+            )}
+          </View>
+        </View>
+      </View>
     </>
   );
 }
 
+// ---------- Styles ----------
 const styles = StyleSheet.create({
-  container: {
+  // --- Existing styles (unchanged) ---
+  screen: {
     flex: 1,
-    backgroundColor: '#F5E6D3',
-  },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    backgroundColor: '#0E1520',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    padding: 20,
+  },
+  card: {
+    flexDirection: 'row',
+    width: '100%',
+    maxWidth: 640,
+    flex: 1,
+    maxHeight: 560,
+    backgroundColor: '#0E1520',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  leftPanel: {
+    width: 150,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 16,
+    alignItems: 'flex-start',
+    backgroundColor: '#111927',
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#2C3E50',
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  headerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2C3E50',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-  },
-  headerButtonText: {
-    color: '#F5E6D3',
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  logoutButton: {
-    backgroundColor: '#E07070',
-  },
-  logoutButtonText: {
     color: '#FFFFFF',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#F5F2EA',
-    borderRadius: 20,
-    padding: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
-  },
-  statCardFirst: {
-    marginRight: 12,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#8B7355',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  statValue: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#2C3E50',
-  },
-  actionRow: {
-    marginBottom: 20,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#D4A574',
-    borderRadius: 999,
-  },
-  actionButtonText: {
-    color: '#2C3E50',
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2C3E50',
-    marginBottom: 12,
-  },
-  loadingCard: {
-    backgroundColor: '#F5F2EA',
-    borderRadius: 18,
-    padding: 18,
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#6B7280',
-    fontSize: 14,
-  },
-  hikeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  hikeHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  hikeTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#2C3E50',
+    marginBottom: 2,
   },
-  hikeMeta: {
-    fontSize: 12,
-    color: '#8B7355',
+  subtitle: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 11,
+    marginBottom: 12,
   },
-  hikeDetail: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
+  dividerH: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignSelf: 'stretch',
+    marginBottom: 12,
   },
-  // Notification styles
-  headerButtons: {
+  statItem: {
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  statNum: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '700',
+    lineHeight: 28,
+  },
+  statLbl: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 9,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  statSep: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignSelf: 'stretch',
+    marginBottom: 10,
+  },
+  notifBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  notificationButton: {
-    position: 'relative',
-    width: 44,
-    height: 44,
-    borderRadius: 999,
-    backgroundColor: '#F5F2EA',
+    gap: 5,
+    alignSelf: 'stretch',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 6,
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  notificationBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
+  notifBtnText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  notifBadge: {
     backgroundColor: '#E07070',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    borderRadius: 8,
+    minWidth: 14,
+    height: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 3,
   },
-  notificationBadgeText: {
+  notifBadgeText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '700',
   },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#F5E6D3',
-    paddingTop: 40,
-  },
-  modalHeader: {
+  refreshBtn: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8DCC8',
+    gap: 5,
+    alignSelf: 'stretch',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 6,
+    justifyContent: 'center',
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#2C3E50',
+  refreshBtnText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '600',
   },
-  filterTabs: {
+  logoutBtn: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(212, 165, 116, 0.08)',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'stretch',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(224,112,112,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.2)',
+    justifyContent: 'center',
+  },
+  logoutBtnText: {
+    color: '#E07070',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  dividerV: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  rightPanel: {
+    flex: 1,
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
+  listHeader: {
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  listTitle: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  listContent: {
+    paddingHorizontal: 14,
+  },
+  hikeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
   },
-  filterTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(212, 165, 116, 0.1)',
+  hikeRowLast: {
+    borderBottomWidth: 0,
   },
-  filterTabActive: {
-    backgroundColor: '#D4A574',
+  hikeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#C9A96E',
   },
-  filterTabText: {
+  hikeName: {
+    flex: 1,
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
-    color: '#8B7355',
   },
-  filterTabTextActive: {
-    color: '#FFFFFF',
+  hikeSub: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 10,
+    marginTop: 1,
   },
-  modalContent: {
-    flex: 1,
-    padding: 20,
+  hikeMeta: {
+    color: '#C9A96E',
+    fontSize: 10,
+    fontWeight: '500',
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    gap: 10,
+    paddingVertical: 40,
   },
   emptyStateText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6B7280',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.35)',
+  },
+
+  // --- Modal styles (unchanged) ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: 560,
+    backgroundColor: '#111927',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+  },
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  closeBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterTabs: {
+    flexDirection: 'row',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.07)',
+  },
+  filterTab: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  filterTabActive: {
+    backgroundColor: '#C9A96E',
+    borderColor: '#C9A96E',
+  },
+  filterTabText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.5)',
+  },
+  filterTabTextActive: {
+    color: '#0E1520',
+  },
+  modalScroll: {
+    padding: 14,
   },
   requestCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
+    backgroundColor: '#0E1520',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#E8DCC8',
+    borderColor: 'rgba(255,255,255,0.07)',
   },
   requestCardPending: {
-    borderColor: '#D4A574',
-    backgroundColor: 'rgba(212, 165, 116, 0.05)',
+    borderColor: 'rgba(201,169,110,0.3)',
+    backgroundColor: 'rgba(201,169,110,0.04)',
   },
   requestHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 6,
+    gap: 8,
   },
   requestName: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#2C3E50',
+    color: '#FFFFFF',
   },
   requestEmail: {
-    fontSize: 12,
-    color: '#8B7355',
-    marginTop: 4,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.38)',
+    marginTop: 2,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
   },
   statusPending: {
-    backgroundColor: '#FFF3CD',
+    backgroundColor: 'rgba(201,169,110,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.3)',
   },
   statusApproved: {
-    backgroundColor: '#D4EDDA',
+    backgroundColor: 'rgba(111,175,138,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(111,175,138,0.3)',
   },
   statusRejected: {
-    backgroundColor: '#F8D7DA',
+    backgroundColor: 'rgba(224,112,112,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.3)',
   },
   statusText: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '600',
     textTransform: 'capitalize',
+    color: '#C9A96E',
+  },
+  statusTextApproved: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+    color: '#6FAF8A',
+  },
+  statusTextRejected: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+    color: '#E07070',
   },
   requestDate: {
-    fontSize: 12,
-    color: '#8B7355',
-    marginBottom: 12,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.35)',
+    marginBottom: 6,
   },
   respondedDate: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#6FAF8A',
-    marginBottom: 12,
+    marginBottom: 6,
     fontWeight: '500',
   },
   actionButtonsContainer: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 14,
+    gap: 8,
+    marginTop: 8,
   },
-  modalActionButton: {
+  actionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 999,
-  },
-  modalActionButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    marginLeft: 6,
+    gap: 4,
   },
   approveButton: {
-    flex: 1,
-    backgroundColor: '#6FAF8A',
+    backgroundColor: 'rgba(111,175,138,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(111,175,138,0.3)',
   },
   rejectButton: {
+    backgroundColor: 'rgba(224,112,112,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.3)',
+  },
+  approveBtnText: {
+    color: '#6FAF8A',
+    fontWeight: '600',
+    fontSize: 11,
+  },
+  rejectBtnText: {
+    color: '#E07070',
+    fontWeight: '600',
+    fontSize: 11,
+  },
+
+  // --- New styles for user list and tabs ---
+  tabContainer: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 12,
+  },
+  tab: {
+    paddingBottom: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#C9A96E',
+  },
+  tabText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  activeTabText: {
+    color: '#C9A96E',
+  },
+  userRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+  },
+  userInfo: {
     flex: 1,
-    backgroundColor: '#E07070',
+  },
+  userName: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  userEmail: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  userMeta: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 9,
+    marginTop: 2,
+  },
+  userActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginLeft: 12,
+  },
+  actionIcon: {
+    padding: 4,
+  },
+  input: {
+    backgroundColor: '#0E1520',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    color: '#FFF',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 10,
+  },
+  cancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  cancelText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+  },
+  confirmBtn: {
+    backgroundColor: '#C9A96E',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  confirmText: {
+    color: '#000',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
