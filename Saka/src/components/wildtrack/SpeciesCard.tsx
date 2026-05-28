@@ -194,7 +194,7 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
           numberOfLines={layoutConfig.descriptionLines}
         >
           {species.description ||
-            'A curated mountain biodiversity profile for field exploration.'}
+            ' mountA curatedain biodiversity profile for field exploration.'}
         </Text>
 
         {/* FOOTER */}

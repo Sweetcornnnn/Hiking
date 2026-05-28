@@ -51,6 +51,7 @@ export const GBIFService = {
         is_native: false,
         occurrence_count: item.numDescendants ?? item.usageKey ?? undefined,
         habitat: item.kingdom,
+        description: item.taxonomicStatus || `${item.rank || 'Species'} within ${item.kingdom || 'the tree of life'}`,
       }));
     } catch (error) {
       console.error('[GBIFService] searchSpecies error', error);
