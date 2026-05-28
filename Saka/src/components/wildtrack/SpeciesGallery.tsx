@@ -191,8 +191,8 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#F8FAFC',
   },
 
@@ -206,9 +206,9 @@ const styles = StyleSheet.create({
   },
 
   counterText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#CBD5E1',
-    fontWeight: '700',
+    fontWeight: '600',
   },
 
   strip: {
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
 
   emptyText: {
     color: '#64748B',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
   },
 
@@ -284,8 +284,8 @@ const styles = StyleSheet.create({
 
   modalCounter: {
     color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '600',
   },
 
   closeBtn: {

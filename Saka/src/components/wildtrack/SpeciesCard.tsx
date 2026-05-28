@@ -54,35 +54,35 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
   const layoutConfig = useMemo(() => {
     if (SCREEN_WIDTH >= 1400) {
       return {
-        imageHeight: 182,
-        minHeight: 330,
-        titleSize: 17,
+        imageHeight: 140,
+        minHeight: 260,
+        titleSize: 13,
         descriptionLines: 2,
       };
     }
 
     if (SCREEN_WIDTH >= 1100) {
       return {
-        imageHeight: 172,
-        minHeight: 318,
-        titleSize: 16,
+        imageHeight: 130,
+        minHeight: 250,
+        titleSize: 13,
         descriptionLines: 2,
       };
     }
 
     if (SCREEN_WIDTH >= 900) {
       return {
-        imageHeight: 162,
-        minHeight: 306,
-        titleSize: 16,
+        imageHeight: 120,
+        minHeight: 240,
+        titleSize: 13,
         descriptionLines: 2,
       };
     }
 
     return {
-      imageHeight: isLandscape ? 154 : 190,
-      minHeight: isLandscape ? 292 : 360,
-      titleSize: 15,
+      imageHeight: isLandscape ? 110 : 130,
+      minHeight: isLandscape ? 220 : 260,
+      titleSize: 13,
       descriptionLines: 2,
     };
   }, []);
@@ -112,7 +112,7 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
           <Image
             source={{ uri: species.image_url }}
             style={styles.heroImage}
-            resizeMode="cover"
+            resizeMode="contain"
             onError={() => setImageError(true)}
           />
         ) : (
@@ -126,39 +126,27 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
         )}
 
         {/* TOP OVERLAY */}
-        {showDiscoveryStatus && (
+        {showDiscoveryStatus && isDiscovered && (
           <View
             style={[
               styles.topBadge,
-              isDiscovered
-                ? styles.topBadgeDiscovered
-                : styles.topBadgeLocked,
+              styles.topBadgeDiscovered,
             ]}
           >
             <Ionicons
-              name={
-                isDiscovered
-                  ? 'checkmark-circle'
-                  : 'lock-closed'
-              }
+              name="checkmark-circle"
               size={11}
-              color={
-                isDiscovered
-                  ? ACCENT_GREEN
-                  : '#94A3B8'
-              }
+              color={ACCENT_GREEN}
             />
 
             <Text
               style={[
                 styles.topBadgeText,
-                isDiscovered
-                  ? styles.topBadgeTextActive
-                  : styles.topBadgeTextLocked,
+                styles.topBadgeTextActive,
               ]}
               numberOfLines={1}
             >
-              {isDiscovered ? 'Discovered' : 'Locked'}
+              Discovered
             </Text>
           </View>
         )}
@@ -368,16 +356,16 @@ const styles = StyleSheet.create({
   },
 
   scientificName: {
-    fontSize: 11.5,
+    fontSize: 10,
     color: TEXT_MUTED,
     fontStyle: 'italic',
     marginTop: 3,
   },
 
   quickNote: {
-    fontSize: 11.5,
+    fontSize: 10,
     color: '#CBD5E1',
-    lineHeight: 17,
+    lineHeight: 14,
     marginTop: 2,
 
     /**
@@ -408,8 +396,8 @@ const styles = StyleSheet.create({
 
   detailLink: {
     color: ACCENT_GOLD,
-    fontWeight: '700',
-    fontSize: 11.5,
+    fontWeight: '600',
+    fontSize: 10,
     letterSpacing: 0.25,
     marginRight: 6,
   },

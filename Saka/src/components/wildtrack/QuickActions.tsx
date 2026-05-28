@@ -70,7 +70,7 @@ const styles = StyleSheet.create({
     borderColor: BORDER_DEFAULT,
   },
   actionLabel: {
-    fontSize: isLandscape ? 12 : 13,
+    fontSize: 10,
     fontWeight: '600',
     color: TEXT_PRIMARY,
     textAlign: 'center',
