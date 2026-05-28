@@ -15,7 +15,7 @@ export default function DrawerLayout() {
             width: 280,
           },
           overlayColor: 'transparent',
-          swipeEnabled: true,
+          swipeEnabled: false,
         }}
       >
         <Drawer.Screen 
