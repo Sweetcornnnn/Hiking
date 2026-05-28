@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
-import { API_BASE_URL } from '../config/api';
+import { resolveApiBaseUrl } from '../config/api';
 
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
   const controller = new AbortController();
@@ -50,7 +50,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     
     try {
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
+      const base = await resolveApiBaseUrl();
       console.log(`Attempting login to ${base}/api/login`);
       const response = await fetchWithTimeout(`${base}/api/login`, {
         method: 'POST',
@@ -95,7 +95,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     
     try {
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
+      const base = await resolveApiBaseUrl();
       console.log(`Attempting signup to ${base}/api/register`);
       const response = await fetchWithTimeout(`${base}/api/register`, {
         method: 'POST',

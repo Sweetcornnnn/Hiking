@@ -1,5 +1,9 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const API_PORT = 3000;
+const HEALTHCHECK_PATH = '/api/health';
 
 const getHostFromUrl = (url?: string): string | undefined => {
   if (!url) return undefined;
@@ -24,8 +28,6 @@ const getExpoHost = (): string | undefined => {
 };
 
 const getDevApiHost = () => {
-  // Allow explicit override via app manifest `extra` or environment variable.
-  // In app.json / app.config.js set: { "expo": { "extra": { "API_HOST": "192.168.x.y" } } }
   const manifestExtraHost = (Constants.manifest && (Constants.manifest as any).extra && (Constants.manifest as any).extra.API_HOST) ||
     (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.API_HOST) ||
     (process && (process.env as any).EXPO_API_HOST) ||
@@ -50,14 +52,13 @@ const getDevApiHost = () => {
     return 'localhost';
   }
 
-  return '10.0.0.20';
+  return undefined;
 };
 
-// API configuration for different environments
 const getApiUrl = () => {
   if (__DEV__) {
-    const host = getDevApiHost();
-    const url = `http://${host}:3000`;
+    const host = getDevApiHost() || 'localhost';
+    const url = `http://${host}:${API_PORT}`;
     console.log('[API] Dev host selected:', host, 'API_BASE_URL=', url);
     return url;
   }
@@ -66,3 +67,70 @@ const getApiUrl = () => {
 };
 
 export const API_BASE_URL = getApiUrl();
+
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 3000) => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+};
+
+const buildUrl = (host: string) => host.startsWith('http') ? host : `http://${host}:${API_PORT}`;
+
+const checkHealthUrl = async (baseUrl: string) => {
+  try {
+    const response = await fetchWithTimeout(`${baseUrl}${HEALTHCHECK_PATH}`, { method: 'GET' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+export const resolveApiBaseUrl = async (): Promise<string> => {
+  if ((global as any).__API_BASE__) {
+    return (global as any).__API_BASE__;
+  }
+
+  const override = await AsyncStorage.getItem('API_HOST_OVERRIDE');
+  if (override) {
+    const base = buildUrl(override);
+    (global as any).__API_BASE__ = base;
+    console.log('[API] Using runtime override from AsyncStorage:', base);
+    return base;
+  }
+
+  const manifestExtraHost = (Constants.manifest && (Constants.manifest as any).extra && (Constants.manifest as any).extra.API_HOST) ||
+    (Constants.expoConfig && (Constants.expoConfig as any).extra && (Constants.expoConfig as any).extra.API_HOST);
+
+  const candidates = [
+    manifestExtraHost,
+    getExpoHost(),
+    Platform.OS === 'android' && !Constants.isDevice ? '10.0.2.2' : undefined,
+    Constants.platform?.web ? 'localhost' : undefined,
+    !Constants.isDevice && Platform.OS === 'ios' ? 'localhost' : undefined,
+    'localhost',
+  ].filter((host): host is string => Boolean(host));
+
+  const seen = new Set<string>();
+  const uniqueCandidates = candidates.filter((host) => {
+    if (seen.has(host)) return false;
+    seen.add(host);
+    return true;
+  });
+
+  for (const host of uniqueCandidates) {
+    const base = buildUrl(host);
+    if (await checkHealthUrl(base)) {
+      (global as any).__API_BASE__ = base;
+      console.log('[API] Resolved backend host via health check:', base);
+      return base;
+    }
+  }
+
+  const fallback = API_BASE_URL;
+  console.warn('[API] Failed to resolve backend host from candidates, falling back to', fallback);
+  return fallback;
+};

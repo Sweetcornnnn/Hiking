@@ -327,6 +327,96 @@ app.get('/api/profile', (req: any, res: any) => {
   }
 });
 
+// User hike CRUD endpoints
+app.get('/api/hikes', authenticateToken, (req: any, res: any) => {
+  console.log('[API] GET /api/hikes', { userId: req.user?.id, ip: req.ip, headers: { authorization: Boolean(req.headers.authorization) } });
+  db.all(
+    'SELECT * FROM hikes WHERE user_id = ? ORDER BY date ASC, start_time ASC',
+    [req.user.id],
+    (err: Error | null, rows: any[]) => {
+      if (err) {
+        console.error('Error fetching user hikes:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch hikes' });
+      }
+      res.json({ hikes: rows });
+    }
+  );
+});
+
+app.post('/api/hikes', authenticateToken, (req: any, res: any) => {
+  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact } = req.body;
+
+  if (!date || !start_time || !end_time) {
+    return res.status(400).json({ error: 'date, start_time, and end_time are required' });
+  }
+
+  db.run(
+    'INSERT INTO hikes (user_id, date, start_time, end_time, tagalongs, contact_number, emergency_contact) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [req.user.id, date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || ''],
+    function(this: { lastID: number }, err: Error | null) {
+      if (err) {
+        console.error('Error creating hike:', err.message);
+        return res.status(500).json({ error: 'Failed to create hike' });
+      }
+
+      db.get('SELECT * FROM hikes WHERE id = ?', [this.lastID], (selectErr: Error | null, row: any) => {
+        if (selectErr) {
+          console.error('Error loading created hike:', selectErr.message);
+          return res.status(500).json({ error: 'Hike created but could not be loaded' });
+        }
+        res.status(201).json({ hike: row });
+      });
+    }
+  );
+});
+
+app.put('/api/hikes/:id', authenticateToken, (req: any, res: any) => {
+  const hikeId = req.params.id;
+  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact } = req.body;
+
+  if (!date || !start_time || !end_time) {
+    return res.status(400).json({ error: 'date, start_time, and end_time are required' });
+  }
+
+  db.run(
+    'UPDATE hikes SET date = ?, start_time = ?, end_time = ?, tagalongs = ?, contact_number = ?, emergency_contact = ? WHERE id = ? AND user_id = ?',
+    [date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || '', hikeId, req.user.id],
+    function(this: { changes: number }, err: Error | null) {
+      if (err) {
+        console.error('Error updating hike:', err.message);
+        return res.status(500).json({ error: 'Failed to update hike' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Hike not found or access denied' });
+      }
+
+      res.json({ message: 'Hike updated successfully' });
+    }
+  );
+});
+
+app.delete('/api/hikes/:id', authenticateToken, (req: any, res: any) => {
+  const hikeId = req.params.id;
+
+  db.run(
+    'DELETE FROM hikes WHERE id = ? AND user_id = ?',
+    [hikeId, req.user.id],
+    function(this: { changes: number }, err: Error | null) {
+      if (err) {
+        console.error('Error deleting hike:', err.message);
+        return res.status(500).json({ error: 'Failed to delete hike' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Hike not found or access denied' });
+      }
+
+      res.json({ message: 'Hike deleted successfully' });
+    }
+  );
+});
+
 // Set admin status - for development/testing
 app.post('/api/set-admin', (req: any, res: any) => {
   const { email, isAdmin } = req.body;
