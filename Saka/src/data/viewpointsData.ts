@@ -20,7 +20,7 @@ export interface ViewpointData {
 export type ViewpointsDataType = Record<string, ViewpointData>;
 
 export const VIEWPOINTS_DATA: ViewpointsDataType = {
-  // ===== MT. MADJA-AS =====
+  // ===== MT. MADJA-AS (reordered as requested) =====
   v1: {
     id: 'v1',
     name: 'Barangay Flores Trailhead',
@@ -103,66 +103,6 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
   },
   v5: {
     id: 'v5',
-    name: 'Camp 2 - Upper Camp',
-    subtitle: 'High Altitude Camp',
-    elevation: '~1,280m',
-    imageKey: 'camp2',
-    accentColor: '#AA96DA',
-    distanceFromStart: '8.5 km',
-    estimatedHike: '5-6 hrs',
-    bestTime: 'Late afternoon',
-    description:
-      'A secondary camping area situated closer to the summit, offering a more direct approach for an early morning summit attempt. Camp 2 is smaller and more exposed than Mamay Camp but provides better starting point for sunrise at the peak. Water must be collected from higher elevations.',
-    tags: ['Upper Camp', 'Summit Staging', 'Minimal Shade', 'Alpine'],
-    features: [
-      { icon: 'arrow-up-outline', text: 'High altitude zone', safe: false },
-      { icon: 'home-outline', text: 'Limited camping spots', safe: true },
-      { icon: 'moon-outline', text: 'Stunning night sky', safe: true },
-      { icon: 'water-outline', text: 'Water collection challenging', safe: false },
-    ],
-  },
-  v6: {
-    id: 'v6',
-    name: 'Summit Ridge',
-    subtitle: 'Final Approach',
-    elevation: '~1,310m',
-    imageKey: 'summit_ridge',
-    accentColor: '#FCBAD3',
-    distanceFromStart: '10 km',
-    estimatedHike: '6-7 hrs',
-    bestTime: 'Pre-dawn for sunrise',
-    description:
-      'The final approach to Mt. Madja-as summit features steep rocky terrain. This section is the most challenging part of the hike with loose rocks and steep inclines. The trail is well-defined but requires careful footing. Reaching the ridge early allows for sunrise views from the summit.',
-    tags: ['Rocky Terrain', 'Steep', 'Final Push', 'Exposed'],
-    features: [
-      { icon: 'alert-circle-outline', text: 'Loose rock hazard', safe: false },
-      { icon: 'trending-up-outline', text: 'Very steep incline', safe: false },
-      { icon: 'eye-outline', text: 'Sunrise views possible', safe: true },
-      { icon: 'wind-outline', text: 'Strong winds at ridge', safe: false },
-    ],
-  },
-  v7: {
-    id: 'v7',
-    name: 'Mt. Madja-as Summit',
-    subtitle: 'Highest Peak in Antique',
-    elevation: '~1,338m',
-    imageKey: 'summit',
-    accentColor: '#FFD700',
-    distanceFromStart: '11 km',
-    estimatedHike: '7-8 hrs',
-    bestTime: 'Sunrise at peak',
-    description:
-      'The summit of Mt. Madja-as offers a 360-degree panoramic view encompassing Panay Island, views toward Negros, and the Sibuyan Sea on clear days. There is a peak marker and often a register book for hikers to sign. The summit experience is truly rewarding after the challenging climb.',
-    tags: ['Summit Peak', 'Panoramic Views', 'Peak Marker', 'Monument'],
-    features: [
-      { icon: 'flag-outline', text: 'Official peak marker', safe: true },
-      { icon: 'eye-outline', text: '360° island views', safe: true },
-      { icon: 'camera-outline', text: 'Prime photo location', safe: true },
-      { icon: 'alert-circle-outline', text: 'Exposed to weather', safe: false },
-    ],
-  },
-  v8: {
-    id: 'v8',
     name: 'Lake Viewpoint',
     subtitle: 'Scenic Lake Views',
     elevation: '~1,300m',
@@ -181,8 +121,28 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
       { icon: 'alert-circle-outline', text: 'Loose terrain on descent', safe: false },
     ],
   },
-  v9: {
-    id: 'v9',
+  v6: {
+    id: 'v6',
+    name: 'Camp 2 - Upper Camp',
+    subtitle: 'High Altitude Camp',
+    elevation: '~1,280m',
+    imageKey: 'camp2',
+    accentColor: '#AA96DA',
+    distanceFromStart: '8.5 km',
+    estimatedHike: '5-6 hrs',
+    bestTime: 'Late afternoon',
+    description:
+      'A secondary camping area situated closer to the summit, offering a more direct approach for an early morning summit attempt. Camp 2 is smaller and more exposed than Mamay Camp but provides better starting point for sunrise at the peak. Water must be collected from higher elevations.',
+    tags: ['Upper Camp', 'Summit Staging', 'Minimal Shade', 'Alpine'],
+    features: [
+      { icon: 'arrow-up-outline', text: 'High altitude zone', safe: false },
+      { icon: 'home-outline', text: 'Limited camping spots', safe: true },
+      { icon: 'moon-outline', text: 'Stunning night sky', safe: true },
+      { icon: 'water-outline', text: 'Water collection challenging', safe: false },
+    ],
+  },
+  v7: {
+    id: 'v7',
     name: 'Hidden Spring',
     subtitle: 'Water on Descent',
     elevation: '~1,290m',
@@ -201,8 +161,8 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
       { icon: 'home-outline', text: 'Rest area on descent', safe: true },
     ],
   },
-  v10: {
-    id: 'v10',
+  v8: {
+    id: 'v8',
     name: 'Grassy Meadow',
     subtitle: 'Alpine Meadow',
     elevation: '~1,250m',
@@ -219,6 +179,46 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
       { icon: 'eye-outline', text: 'Wildlife viewing area', safe: true },
       { icon: 'camera-outline', text: 'Scenic landscape photos', safe: true },
       { icon: 'sunny-outline', text: 'Open area - sun exposure', safe: false },
+    ],
+  },
+  v9: {
+    id: 'v9',
+    name: 'Mt. Madja-as Summit',
+    subtitle: 'Highest Peak in Antique',
+    elevation: '~1,338m',
+    imageKey: 'summit',
+    accentColor: '#FFD700',
+    distanceFromStart: '11 km',
+    estimatedHike: '7-8 hrs',
+    bestTime: 'Sunrise at peak',
+    description:
+      'The summit of Mt. Madja-as offers a 360-degree panoramic view encompassing Panay Island, views toward Negros, and the Sibuyan Sea on clear days. There is a peak marker and often a register book for hikers to sign. The summit experience is truly rewarding after the challenging climb.',
+    tags: ['Summit Peak', 'Panoramic Views', 'Peak Marker', 'Monument'],
+    features: [
+      { icon: 'flag-outline', text: 'Official peak marker', safe: true },
+      { icon: 'eye-outline', text: '360° island views', safe: true },
+      { icon: 'camera-outline', text: 'Prime photo location', safe: true },
+      { icon: 'alert-circle-outline', text: 'Exposed to weather', safe: false },
+    ],
+  },
+  v10: {
+    id: 'v10',
+    name: 'Summit Ridge',
+    subtitle: 'Final Approach',
+    elevation: '~1,310m',
+    imageKey: 'summit_ridge',
+    accentColor: '#FCBAD3',
+    distanceFromStart: '10 km',
+    estimatedHike: '6-7 hrs',
+    bestTime: 'Pre-dawn for sunrise',
+    description:
+      'The final approach to Mt. Madja-as summit features steep rocky terrain. This section is the most challenging part of the hike with loose rocks and steep inclines. The trail is well-defined but requires careful footing. Reaching the ridge early allows for sunrise views from the summit.',
+    tags: ['Rocky Terrain', 'Steep', 'Final Push', 'Exposed'],
+    features: [
+      { icon: 'alert-circle-outline', text: 'Loose rock hazard', safe: false },
+      { icon: 'trending-up-outline', text: 'Very steep incline', safe: false },
+      { icon: 'eye-outline', text: 'Sunrise views possible', safe: true },
+      { icon: 'wind-outline', text: 'Strong winds at ridge', safe: false },
     ],
   },
 
