@@ -881,7 +881,7 @@ export default function WildTrackScreen() {
                   </Text>
 
                   <Text style={styles.sectionSubtitle}>
-                    Landscape optimized species discovery
+                    Discover
                   </Text>
                 </View>
 

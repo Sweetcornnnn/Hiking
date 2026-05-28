@@ -179,13 +179,13 @@ export default function LoginScreen() {
         showToast({ type: 'denied', title: 'Access denied', message: 'This account does not have admin privileges.' });
         return;
       }
-      router.replace('/drawer/admin/[...admin]');
+      router.replace('/loading');
     } else {
       if (authState.user?.is_admin) {
         showToast({ type: 'denied', title: 'Access denied', message: 'Admin accounts must use the admin login.' });
         return;
       }
-      router.replace('/drawer/home');
+      router.replace('/loading');
     }
   };
 
