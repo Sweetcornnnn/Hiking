@@ -1,13 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView, TextInput, Animated, Easing,
+  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, TextInput, Animated, Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
 import { useNotificationStore } from '../store/notificationStore';
-import { API_BASE_URL, resolveApiBaseUrl } from '../config/api';
+import { resolveApiBaseUrl } from '../config/api';
 import UserLocationModal from './UserLocationModal';
 
 // ---------- User Store (local, using authToken) ----------
@@ -15,6 +15,7 @@ interface AdminUser {
   id: number;
   email: string;
   name: string | null;
+  contact_number: string | null;
   is_admin: boolean;
   created_at: string;
 }
@@ -50,6 +51,17 @@ export default function AdminRoute() {
   const [locationModalVisible, setLocationModalVisible] = useState(false);
   const [locationModalUser, setLocationModalUser] = useState<AdminUser | null>(null);
 
+  // Make admin modal state
+  const [makeAdminModalVisible, setMakeAdminModalVisible] = useState(false);
+  const [makeAdminTarget, setMakeAdminTarget] = useState<AdminUser | null>(null);
+
+  // Delete user modal state
+  const [deleteUserModalVisible, setDeleteUserModalVisible] = useState(false);
+  const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUser | null>(null);
+
+  // Password visibility state
+  const [passwordVisible, setPasswordVisible] = useState(false);
+
   // ---------- Fetch users ----------
   const fetchUsers = async () => {
     if (!authToken) return;
@@ -63,10 +75,10 @@ export default function AdminRoute() {
       if (res.ok) {
         setUsers(data.users);
       } else {
-        Alert.alert('Error', data.error || 'Failed to fetch users');
+        showToast('error', 'Fetch Failed', data.error || 'Failed to fetch users');
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error fetching users');
+      showToast('error', 'Network Error', 'Could not reach the server. Check your connection.');
     } finally {
       setUsersLoading(false);
     }
@@ -87,13 +99,13 @@ export default function AdminRoute() {
       });
       const data = await res.json();
       if (res.ok) {
-        Alert.alert('Success', `User admin status updated`);
+        showToast('success', 'Admin Updated', `Privileges have been ${isAdmin ? 'granted' : 'removed'} successfully.`);
         fetchUsers();
       } else {
-        Alert.alert('Error', data.error || 'Failed to update user');
+        showToast('error', 'Update Failed', data.error || 'Failed to update user');
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error');
+      showToast('error', 'Network Error', 'Could not reach the server.');
     }
   };
 
@@ -112,12 +124,12 @@ export default function AdminRoute() {
       });
       const data = await res.json();
       if (res.ok) {
-        Alert.alert('Success', 'Password reset request created. The user will need to approve it.');
+        showToast('success', 'Request Created', 'Password reset sent. The user will need to approve it.');
       } else {
-        Alert.alert('Error', data.error || 'Failed to reset password');
+        showToast('error', 'Reset Failed', data.error || 'Failed to reset password');
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error');
+      showToast('error', 'Network Error', 'Could not reach the server.');
     }
   };
 
@@ -132,13 +144,13 @@ export default function AdminRoute() {
       });
       const data = await res.json();
       if (res.ok) {
-        Alert.alert('Success', 'User deleted');
+        showToast('success', 'User Deleted', 'The user and all their data have been removed.');
         fetchUsers();
       } else {
-        Alert.alert('Error', data.error || 'Failed to delete user');
+        showToast('error', 'Delete Failed', data.error || 'Failed to delete user');
       }
     } catch (error) {
-      Alert.alert('Error', 'Network error');
+      showToast('error', 'Network Error', 'Could not reach the server.');
     }
   };
 
@@ -178,16 +190,39 @@ export default function AdminRoute() {
     setProcessingRequests(prev => new Set(prev).add(requestId));
     const { error } = await approvePasswordChange(requestId, authToken || '');
     setProcessingRequests(prev => { const s = new Set(prev); s.delete(requestId); return s; });
-    if (error) Alert.alert('Error', error);
-    else Alert.alert('Success', 'Password change approved');
+    if (error) showToast('error', 'Approval Failed', error);
+    else showToast('success', 'Request Approved', 'The password change has been approved.');
   };
 
   const handleRejectRequest = async (requestId: string) => {
     setProcessingRequests(prev => new Set(prev).add(requestId));
     const { error } = await rejectPasswordChange(requestId, authToken || '');
     setProcessingRequests(prev => { const s = new Set(prev); s.delete(requestId); return s; });
-    if (error) Alert.alert('Error', error);
-    else Alert.alert('Success', 'Password change rejected');
+    if (error) showToast('error', 'Rejection Failed', error);
+    else showToast('warning', 'Request Rejected', 'The password change has been rejected.');
+  };
+
+  // ── Unified feedback toast ───────────────────────────────────────────────
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'warning'; title: string; msg: string } | null>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastY = useRef(new Animated.Value(8)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (type: 'success' | 'error' | 'warning', title: string, msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ type, title, msg });
+    toastOpacity.setValue(0);
+    toastY.setValue(8);
+    Animated.parallel([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(toastY,       { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(toastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(toastY,       { toValue: 8, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      ]).start(() => setToast(null));
+    }, 2800);
   };
 
   // ── Themed logout confirm toast ─────────────────────────────────────────
@@ -221,7 +256,11 @@ export default function AdminRoute() {
   const confirmResetPassword = () => {
     if (!selectedUserId) return;
     if (newPassword.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Animated.parallel([
+        Animated.timing(toastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(toastY,       { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]).start();
+      setToast({ type: 'error', title: 'Error', msg: 'Password must be at least 6 characters' });
       return;
     }
     resetUserPassword(selectedUserId, newPassword);
@@ -333,24 +372,190 @@ export default function AdminRoute() {
       </Modal>
 
       {/* Reset Password Modal */}
-      <Modal visible={resetModalVisible} transparent animationType="fade">
+      <Modal visible={resetModalVisible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Reset Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="New password (min. 6 characters)"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              secureTextEntry
-              value={newPassword}
-              onChangeText={setNewPassword}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+          <View style={[styles.modalCard, { maxHeight: 320 }]}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <View style={styles.modalIconWrap}>
+                  <Ionicons name="key" size={13} color="#6FAF8A" />
+                </View>
+                <Text style={styles.modalTitle}>Reset Password</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => { setResetModalVisible(false); setNewPassword(''); setPasswordVisible(false); }}
+                style={styles.closeBtn}
+              >
+                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmBtn} onPress={confirmResetPassword}>
-                <Text style={styles.confirmText}>Reset</Text>
+            </View>
+
+            {/* Body */}
+            <View style={styles.modalBody}>
+              <Text style={styles.modalDesc}>
+                Set a new password for this user. They will be prompted to approve the change.
+              </Text>
+
+              {/* Password input */}
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={14} color="rgba(255,255,255,0.3)" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.inputField}
+                  placeholder="New password (min. 6 chars)"
+                  placeholderTextColor="rgba(255,255,255,0.25)"
+                  secureTextEntry={!passwordVisible}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity onPress={() => setPasswordVisible(v => !v)} style={styles.inputEye}>
+                  <Ionicons
+                    name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                    size={14}
+                    color="rgba(255,255,255,0.3)"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Strength hint */}
+              {newPassword.length > 0 && newPassword.length < 6 && (
+                <Text style={styles.inputHint}>⚠ At least 6 characters required</Text>
+              )}
+            </View>
+
+            {/* Footer */}
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => { setResetModalVisible(false); setNewPassword(''); setPasswordVisible(false); }}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, styles.modalConfirmGreen, newPassword.length < 6 && styles.modalConfirmDisabled]}
+                onPress={confirmResetPassword}
+                disabled={newPassword.length < 6}
+              >
+                <Ionicons name="checkmark" size={13} color={newPassword.length < 6 ? 'rgba(255,255,255,0.3)' : '#0E1520'} />
+                <Text style={[styles.modalConfirmText, newPassword.length < 6 && styles.modalConfirmTextDisabled]}>Reset Password</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Make Admin / Remove Admin Modal */}
+      <Modal visible={makeAdminModalVisible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: 280 }]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <View style={[styles.modalIconWrap, { backgroundColor: 'rgba(201,169,110,0.12)', borderColor: 'rgba(201,169,110,0.2)' }]}>
+                  <Ionicons
+                    name={makeAdminTarget?.is_admin ? 'shield-outline' : 'shield-checkmark'}
+                    size={13}
+                    color="#C9A96E"
+                  />
+                </View>
+                <Text style={styles.modalTitle}>
+                  {makeAdminTarget?.is_admin ? 'Remove Admin Rights' : 'Grant Admin Rights'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setMakeAdminModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              {/* User pill */}
+              <View style={styles.userPill}>
+                <View style={styles.userPillAvatar}>
+                  <Text style={styles.userPillAvatarText}>
+                    {(makeAdminTarget?.name || makeAdminTarget?.email || '?')[0].toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.userPillName}>{makeAdminTarget?.name || 'No name'}</Text>
+                  <Text style={styles.userPillEmail}>{makeAdminTarget?.email}</Text>
+                </View>
+              </View>
+              <Text style={styles.modalDesc}>
+                {makeAdminTarget?.is_admin
+                  ? 'This user will lose all admin privileges and access to the admin panel.'
+                  : 'This user will gain full admin privileges and access to the admin panel.'}
+              </Text>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setMakeAdminModalVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, styles.modalConfirmGold]}
+                onPress={() => {
+                  if (makeAdminTarget) updateUserAdmin(makeAdminTarget.id, !makeAdminTarget.is_admin);
+                  setMakeAdminModalVisible(false);
+                  setMakeAdminTarget(null);
+                }}
+              >
+                <Ionicons name="shield-checkmark" size={13} color="#0E1520" />
+                <Text style={styles.modalConfirmText}>
+                  {makeAdminTarget?.is_admin ? 'Remove Admin' : 'Make Admin'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete User Modal */}
+      <Modal visible={deleteUserModalVisible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: 280 }]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <View style={[styles.modalIconWrap, { backgroundColor: 'rgba(224,112,112,0.1)', borderColor: 'rgba(224,112,112,0.2)' }]}>
+                  <Ionicons name="trash" size={13} color="#E07070" />
+                </View>
+                <Text style={styles.modalTitle}>Delete User</Text>
+              </View>
+              <TouchableOpacity onPress={() => setDeleteUserModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.userPill}>
+                <View style={[styles.userPillAvatar, { backgroundColor: 'rgba(224,112,112,0.12)', borderColor: 'rgba(224,112,112,0.2)' }]}>
+                  <Text style={[styles.userPillAvatarText, { color: '#E07070' }]}>
+                    {(deleteUserTarget?.name || deleteUserTarget?.email || '?')[0].toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.userPillName}>{deleteUserTarget?.name || 'No name'}</Text>
+                  <Text style={styles.userPillEmail}>{deleteUserTarget?.email}</Text>
+                </View>
+              </View>
+              <Text style={styles.modalDesc}>
+                This will permanently delete the user and all their hikes, requests, and data. This action cannot be undone.
+              </Text>
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setDeleteUserModalVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, styles.modalConfirmRed]}
+                onPress={() => {
+                  if (deleteUserTarget) deleteUser(deleteUserTarget.id);
+                  setDeleteUserModalVisible(false);
+                  setDeleteUserTarget(null);
+                }}
+              >
+                <Ionicons name="trash-outline" size={13} color="#FFFFFF" />
+                <Text style={[styles.modalConfirmText, { color: '#FFFFFF' }]}>Delete User</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -478,6 +683,7 @@ export default function AdminRoute() {
                       <View style={styles.userInfo}>
                         <Text style={styles.userName}>{u.name || 'No name'}</Text>
                         <Text style={styles.userEmail}>{u.email}</Text>
+                        <Text style={styles.userMeta}>Phone: {u.contact_number || 'N/A'}</Text>
                         <Text style={styles.userMeta}>
                           Joined {new Date(u.created_at).toLocaleDateString()}
                         </Text>
@@ -498,17 +704,11 @@ export default function AdminRoute() {
                         <TouchableOpacity
                           onPress={() => {
                             if (u.id === Number(user?.id)) {
-                              Alert.alert('Not allowed', 'You cannot change your own admin status.');
+                              showToast('warning', 'Not Allowed', 'You cannot change your own admin status.');
                               return;
                             }
-                            Alert.alert(
-                              u.is_admin ? 'Remove admin rights?' : 'Make admin?',
-                              `${u.name || u.email} will ${u.is_admin ? 'lose' : 'gain'} admin privileges.`,
-                              [
-                                { text: 'Cancel', style: 'cancel' },
-                                { text: 'Confirm', onPress: () => updateUserAdmin(u.id, !u.is_admin) },
-                              ]
-                            );
+                            setMakeAdminTarget(u);
+                            setMakeAdminModalVisible(true);
                           }}
                           style={styles.actionIcon}
                         >
@@ -535,17 +735,11 @@ export default function AdminRoute() {
                         <TouchableOpacity
                           onPress={() => {
                             if (u.id === Number(user?.id)) {
-                              Alert.alert('Not allowed', 'You cannot delete your own account from here.');
+                              showToast('warning', 'Not Allowed', 'You cannot delete your own account from here.');
                               return;
                             }
-                            Alert.alert(
-                              'Delete User',
-                              `Delete ${u.name || u.email}? This will remove all their hikes and requests.`,
-                              [
-                                { text: 'Cancel', style: 'cancel' },
-                                { text: 'Delete', style: 'destructive', onPress: () => deleteUser(u.id) },
-                              ]
-                            );
+                            setDeleteUserTarget(u);
+                            setDeleteUserModalVisible(true);
                           }}
                           style={styles.actionIcon}
                         >
@@ -577,6 +771,37 @@ export default function AdminRoute() {
                 <Text style={styles.logoutToastConfirmText}>Sign out</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </Animated.View>
+      )}
+
+      {/* ── Feedback toast ── */}
+      {toast && (
+        <Animated.View
+          style={[
+            styles.feedbackToast,
+            toast.type === 'success' && styles.feedbackToastSuccess,
+            toast.type === 'error'   && styles.feedbackToastError,
+            toast.type === 'warning' && styles.feedbackToastWarning,
+            { opacity: toastOpacity, transform: [{ translateY: toastY }] },
+          ]}
+        >
+          <View style={[
+            styles.feedbackToastBar,
+            toast.type === 'success' && { backgroundColor: '#6FAF8A' },
+            toast.type === 'error'   && { backgroundColor: '#E07070' },
+            toast.type === 'warning' && { backgroundColor: '#C9A96E' },
+          ]} />
+          <View style={styles.feedbackToastIcon}>
+            <Ionicons
+              name={toast.type === 'success' ? 'checkmark-circle' : toast.type === 'error' ? 'alert-circle' : 'warning'}
+              size={15}
+              color={toast.type === 'success' ? '#6FAF8A' : toast.type === 'error' ? '#E07070' : '#C9A96E'}
+            />
+          </View>
+          <View style={styles.feedbackToastContent}>
+            <Text style={styles.feedbackToastTitle}>{toast.title}</Text>
+            <Text style={styles.feedbackToastMsg}>{toast.msg}</Text>
           </View>
         </Animated.View>
       )}
@@ -1027,41 +1252,6 @@ const styles = StyleSheet.create({
   actionIcon: {
     padding: 4,
   },
-  input: {
-    backgroundColor: '#0E1520',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-    color: '#FFF',
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    marginTop: 10,
-  },
-  cancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  cancelText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-  },
-  confirmBtn: {
-    backgroundColor: '#C9A96E',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  confirmText: {
-    color: '#000',
-    fontWeight: '700',
-    fontSize: 14,
-  },
   logoutToast: {
     position: 'absolute',
     bottom: 40,
@@ -1131,5 +1321,203 @@ const styles = StyleSheet.create({
     color: '#0E1520',
     fontSize: 10,
     fontWeight: '700',
+  },
+
+  // ── Shared modal layout ──────────────────────────────────────────────────
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: 'rgba(111,175,138,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(111,175,138,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBody: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  modalDesc: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
+    lineHeight: 18,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+  },
+  modalCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  modalCancelText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalConfirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  modalConfirmGreen: {
+    backgroundColor: '#6FAF8A',
+  },
+  modalConfirmGold: {
+    backgroundColor: '#C9A96E',
+  },
+  modalConfirmRed: {
+    backgroundColor: '#E07070',
+  },
+  modalConfirmDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  modalConfirmText: {
+    color: '#0E1520',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalConfirmTextDisabled: {
+    color: 'rgba(255,255,255,0.25)',
+  },
+
+  // ── Password input ───────────────────────────────────────────────────────
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0E1520',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    paddingHorizontal: 10,
+    height: 42,
+    gap: 8,
+  },
+  inputIcon: {
+    marginRight: 2,
+  },
+  inputField: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    paddingVertical: 0,
+  },
+  inputEye: {
+    padding: 4,
+  },
+  inputHint: {
+    fontSize: 11,
+    color: '#E07070',
+    marginTop: -4,
+  },
+
+  // ── User pill (admin / delete confirm) ───────────────────────────────────
+  userPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    padding: 10,
+  },
+  userPillAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(201,169,110,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userPillAvatarText: {
+    color: '#C9A96E',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  userPillName: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  userPillEmail: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 10,
+    marginTop: 1,
+  },
+
+  // ── Feedback toast ───────────────────────────────────────────────────────
+  feedbackToast: {
+    position: 'absolute',
+    bottom: 16,
+    left: '50%',
+    marginLeft: -148,
+    width: 296,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#141E2D',
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+    zIndex: 200,
+    elevation: 12,
+  },
+  feedbackToastSuccess: {
+    borderColor: 'rgba(111,175,138,0.25)',
+  },
+  feedbackToastError: {
+    borderColor: 'rgba(224,112,112,0.25)',
+  },
+  feedbackToastWarning: {
+    borderColor: 'rgba(201,169,110,0.25)',
+  },
+  feedbackToastBar: {
+    width: 3,
+    alignSelf: 'stretch',
+  },
+  feedbackToastIcon: {
+    paddingLeft: 10,
+    paddingRight: 2,
+    justifyContent: 'center',
+  },
+  feedbackToastContent: {
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+  },
+  feedbackToastTitle: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 1,
+  },
+  feedbackToastMsg: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 10,
+    lineHeight: 14,
   },
 });
