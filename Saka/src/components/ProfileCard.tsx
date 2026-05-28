@@ -9,8 +9,10 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useRouter } from 'expo-router';
 import { useWildTrackStore } from '../store/wildtrackStore';
@@ -21,6 +23,8 @@ interface ProfileCardProps {
   visible: boolean;
   onClose: () => void;
   profileImage?: string | null;
+  onAvatarPress?: () => void;
+  onProfileImageSelect?: (uri: string) => void;
 }
 
 const MOUNTAINS_DATA = [
@@ -45,7 +49,7 @@ interface LocationPayload {
 
 type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather';
 
-export default function ProfileCard({ visible, onClose, profileImage }: ProfileCardProps) {
+export default function ProfileCard({ visible, onClose, profileImage, onAvatarPress, onProfileImageSelect }: ProfileCardProps) {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
@@ -102,6 +106,30 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
     router.push('/settings');
   };
 
+  const pickProfileImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.status !== 'granted') {
+      Alert.alert(
+        'Permission required',
+        'Allow photo access to choose a profile image.'
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      onProfileImageSelect?.(result.assets[0].uri);
+    }
+  };
+
+  const handleAvatarPress = onAvatarPress ?? pickProfileImage;
+
   const initials =
     user?.name
       ?.split(' ')
@@ -127,13 +155,13 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
           {/* ── Left panel ── */}
           <View style={styles.leftPanel}>
             {/* Avatar */}
-            <View style={styles.avatar}>
+            <TouchableOpacity style={styles.avatar} onPress={handleAvatarPress} activeOpacity={0.8}>
               {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.avatarImage} />
+                <Image source={{ uri: profileImage }} style={styles.avatarImage} resizeMode="cover" />
               ) : (
                 <Text style={styles.avatarInitials}>{initials}</Text>
               )}
-            </View>
+            </TouchableOpacity>
 
             {/* Name / email */}
             <Text style={styles.name} numberOfLines={1}>{user?.name || 'Hiker'}</Text>
@@ -357,17 +385,21 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderBottomLeftRadius: 16,
     overflow: 'hidden',
+    position: 'relative',
   },
 
   avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    position: 'absolute',
+    top: 11,
+    right: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#1E2D42',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 0,
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.4)',
   },
@@ -377,7 +409,7 @@ const styles = StyleSheet.create({
   },
   avatarInitials: {
     color: '#C9A96E',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
   },
 
@@ -386,6 +418,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 2,
+    marginTop: 40,
   },
   email: {
     color: 'rgba(255,255,255,0.38)',

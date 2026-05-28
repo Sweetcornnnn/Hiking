@@ -426,7 +426,12 @@ export default function HomeScreen() {
         )}
       </View>
 
-      <ProfileCard visible={profileCardVisible} onClose={closeProfileCard} profileImage={profileImage} />
+      <ProfileCard
+        visible={profileCardVisible}
+        onClose={closeProfileCard}
+        profileImage={profileImage}
+        onProfileImageSelect={setProfileImage}
+      />
 
       {/* Global CTA overlay placed outside of the scroll/video to avoid native view touch blocking */}
       {MOUNTAINS[activeIndex] && MOUNTAINS[activeIndex].id === '1' && (
