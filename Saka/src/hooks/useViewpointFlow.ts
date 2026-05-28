@@ -4,7 +4,8 @@
  * Flow on marker tap:
  *   1. Camera zooms to viewpoint (800ms)
  *   2. Photo fades in full-screen immediately after zoom finishes
- *   3. After 3 seconds of showing the photo → modal opens
+ *   3. For normal images, modal auto-opens after a delay;
+ *      for video overlays, modal opens only after playback ends or on tap
  *   4. On dismiss → photo hides, camera zooms back to overview
  *
  * A second tap or early dismiss cancels everything cleanly.
@@ -36,12 +37,14 @@ interface UseViewpointFlowOptions {
   overviewZoom: number;
   mountainId: string;
   fetchDetail: (viewpointId: string) => Promise<ViewpointDetail | null>;
+  shouldAutoOpenModal?: (detail: ViewpointDetail | null) => boolean;
 }
 
 interface UseViewpointFlowReturn {
   state: ViewpointFlowState;
   onMarkerPress: (viewpoint: Viewpoint) => void;
   onDismiss: () => void;
+  requestModalOpen: () => void;
   /** True while the full-screen photo should be shown */
   showPhoto: boolean;
   /** The viewpoint currently being shown (for picking the right photo) */
@@ -53,11 +56,13 @@ export function useViewpointFlow({
   overviewCoord,
   overviewZoom,
   fetchDetail,
+  shouldAutoOpenModal,
 }: UseViewpointFlowOptions): UseViewpointFlowReturn {
 
   const [state, dispatch]   = useReducer(viewpointReducer, { phase: 'idle' });
   const [showPhoto, setShowPhoto] = useState(false);
   const [activeViewpoint, setActiveViewpoint] = useState<Viewpoint | null>(null);
+  const [loadedDetail, setLoadedDetail] = useState<ViewpointDetail | null>(null);
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const aborted = useRef(false);
@@ -120,8 +125,19 @@ export function useViewpointFlow({
     cancelAll();
 
     setActiveViewpoint(viewpoint);
+    setLoadedDetail(null);
     const snapshot = makeSnapshot(viewpoint);
     dispatch({ type: 'TAP', viewpoint, snapshot });
+
+    const detailPromise = fetchDetail(viewpoint.id)
+      .then((detail) => {
+        setLoadedDetail(detail);
+        return detail;
+      })
+      .catch(() => {
+        setLoadedDetail(null);
+        return null;
+      });
 
     // Step 1 — zoom camera
     zoomTo(viewpoint);
@@ -132,23 +148,39 @@ export function useViewpointFlow({
       setShowPhoto(true);
     }, ZOOM_MS);
 
-    // Step 3 — after 3s of showing photo, fetch detail + open modal
-    // Photo stays visible — it only hides when the user dismisses
+    // Step 3 — only auto-open modal when configured to do so.
+    // Video overlays can disable auto-open and open on end/tap instead.
     after(async () => {
-      const detail = await fetchDetail(viewpoint.id).catch(() => null);
+      const detail = await detailPromise;
+      const shouldAutoOpen =
+        typeof shouldAutoOpenModal === 'function'
+          ? shouldAutoOpenModal(detail)
+          : true;
+      if (!shouldAutoOpen) return;
+
       dispatch({ type: 'IMAGE_READY' });   // → modal_pending
       dispatch({ type: 'MODAL_OPEN', detail });
-      // showPhoto remains true — photo visible behind the modal card
-    }, ZOOM_MS + PHOTO_HOLD_MS);           // 800 + 3000 = 3800ms total
+    }, ZOOM_MS + PHOTO_HOLD_MS);
 
-  }, [cancelAll, makeSnapshot, zoomTo, after, fetchDetail]);
+  }, [cancelAll, makeSnapshot, zoomTo, after, fetchDetail, shouldAutoOpenModal]);
 
   // ── Dismiss ──────────────────────────────────────────────────────────
+  const requestModalOpen = useCallback(async () => {
+    if (state.phase !== 'image_revealing') return;
+    dispatch({ type: 'IMAGE_READY' });
+
+    const detail = loadedDetail ??
+      await fetchDetail(activeViewpoint?.id ?? '').catch(() => null);
+    setLoadedDetail(detail);
+    dispatch({ type: 'MODAL_OPEN', detail });
+  }, [state.phase, loadedDetail, fetchDetail, activeViewpoint]);
+
   const onDismiss = useCallback(() => {
     cancelAll();
     dispatch({ type: 'DISMISS' });
     setShowPhoto(false);
     setActiveViewpoint(null);
+    setLoadedDetail(null);
     zoomBack();
   }, [cancelAll, zoomBack]);
 
@@ -160,5 +192,5 @@ export function useViewpointFlow({
   // ── Cleanup on unmount ───────────────────────────────────────────────
   useEffect(() => () => cancelAll(), [cancelAll]);
 
-  return { state, onMarkerPress, onDismiss, showPhoto, activeViewpoint };
+  return { state, onMarkerPress, onDismiss, requestModalOpen, showPhoto, activeViewpoint };
 }

@@ -63,7 +63,7 @@ const IMAGE_MAP: Record<string, ImageSourcePropType> = {
   mossy_forest:  require('../../assets/images/MossyForest.jpg'),
   camp2:         require('../../assets/images/Camp1.jpg'),
   camp3:         require('../../assets/images/Camp2$3.jpg'),
-  crown_shyness: require('../../assets/images/CrownShines.jpg'),
+  crown_shyness: require('../../assets/images/CrownShines.png'),
   summit_ridge:  require('../../assets/images/SummitRidge.jpg'),
   summit:        require('../../assets/images/Summit.png'),
 };

@@ -16,6 +16,7 @@ import {
   StyleSheet,
   StatusBar,
   TouchableOpacity,
+  Pressable,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -48,6 +49,8 @@ const IMAGE_MAP: Record<string, any> = {
 const VIDEO_MAP: Record<string, any> = {
   waterfall: require('../../assets/WaterfallsFor89.mp4'),
   crown_shyness: require('../../assets/Waterfalls.mp4'),
+  summit_ridge:  require('../../assets/SummitRidge.mp4'),
+  mossy_forest:  require('../../assets/CrownShyeness.mp4'),
 };
 
 // ─── ProfileCard design tokens ────────────────────────────────────────────
@@ -189,9 +192,9 @@ function CenterPin() {
   );
 }
 
-function TrailVideoPlayer({ source, isActive }: { source: any; isActive: boolean }) {
+function TrailVideoPlayer({ source, isActive, onEnd }: { source: any; isActive: boolean; onEnd: () => void }) {
   const player = useVideoPlayer(source, (p) => {
-    p.loop = true;
+    p.loop = false;
     p.muted = true;
     p.staysActiveInBackground = true;
   });
@@ -203,6 +206,13 @@ function TrailVideoPlayer({ source, isActive }: { source: any; isActive: boolean
       player.pause();
     }
   }, [isActive, player]);
+
+  useEffect(() => {
+    const sub = player.addListener('playToEnd', () => {
+      onEnd();
+    });
+    return () => sub.remove();
+  }, [player, onEnd]);
 
   return (
     <VideoView
@@ -244,13 +254,15 @@ export default function TrailMap({
     [],
   );
 
-  const { state, onMarkerPress, onDismiss, showPhoto, activeViewpoint } =
+  const { state, onMarkerPress, onDismiss, requestModalOpen, showPhoto, activeViewpoint } =
     useViewpointFlow({
       mapRef: mapRef as React.RefObject<MapView>,
       overviewCoord: centerCoord,
       overviewZoom:  zoomLevel,
       mountainId,
       fetchDetail,
+      shouldAutoOpenModal: (detail) =>
+        detail ? !VIDEO_MAP[detail.imageKey] : true,
     });
 
   useEffect(() => {
@@ -330,9 +342,11 @@ export default function TrailMap({
       </MapView>
 
       {/* Full-screen photo overlay */}
-      <Animated.View style={[styles.photoOverlay, { opacity: photoOpacity }]} pointerEvents="none">
+      <Animated.View style={[styles.photoOverlay, { opacity: photoOpacity }]} pointerEvents={activeVideo ? 'auto' : 'none'}>
         {activeVideo ? (
-          <TrailVideoPlayer source={activeVideo} isActive={showPhoto} />
+          <Pressable style={styles.photoFill} onPress={requestModalOpen}>
+            <TrailVideoPlayer source={activeVideo} isActive={showPhoto} onEnd={requestModalOpen} />
+          </Pressable>
         ) : activeImage ? (
           <Image source={activeImage} style={styles.photoFill} resizeMode="cover" />
         ) : null}
