@@ -272,15 +272,15 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
                   <>
                     <Text style={styles.weatherTitle}>{weather.description}</Text>
                     <Text style={styles.weatherValue}>{weather.temperature.toFixed(1)}°C</Text>
-                    <Text style={styles.tabPaneBody}>
+                    <Text style={styles.weatherDetails} numberOfLines={2}>
                       Feels like {weather.feelsLike.toFixed(1)}°C · Humidity {weather.humidity}% · Wind {weather.windSpeed.toFixed(1)} m/s
                     </Text>
-                    <Text style={styles.weatherAdvice}>
+                    <Text style={styles.weatherAdvice} numberOfLines={2}>
                       {weatherService.getWeatherSafetyAdvice(weather)}
                     </Text>
                   </>
                 ) : (
-                  <Text style={styles.tabPaneBody}>
+                  <Text style={styles.weatherDetails} numberOfLines={3}>
                     {weatherError || 'Weather data not available. Add an API key and ensure location has been saved.'}
                   </Text>
                 )}
@@ -611,9 +611,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 14,
     paddingTop: 6,
-    paddingBottom: 10,
+    paddingBottom: 12,
     alignItems: 'flex-start',
-    gap: 6,
+    justifyContent: 'space-between',
+    gap: 1,
   },
   tabPaneTitle: {
     color: '#FFFFFF',
@@ -623,8 +624,16 @@ const styles = StyleSheet.create({
   tabPaneBody: {
     color: 'rgba(255,255,255,0.38)',
     fontSize: 10,
-    lineHeight: 15,
-    flex: 1,
+    lineHeight: 14,
+    flexShrink: 1,
+  },
+  weatherDetails: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    lineHeight: 13,
+    marginTop: 6,
+    maxHeight: 38,
+    flexShrink: 1,
   },
   tabPaneBtn: {
     flexDirection: 'row',
@@ -638,6 +647,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(201,169,110,0.25)',
     alignSelf: 'stretch',
     justifyContent: 'center',
+    marginTop: 4,
   },
   tabPaneBtnText: {
     color: '#C9A96E',
@@ -648,28 +658,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 10,
+    marginTop: 6,
   },
   weatherStatusText: {
     color: '#FFFFFF',
     fontSize: 11,
   },
   weatherTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginTop: 10,
+    marginTop: 6,
   },
   weatherValue: {
-    fontSize: 28,
+    fontSize: 24,
     color: '#C9A96E',
     fontWeight: '800',
-    marginTop: 4,
+    marginTop: 2,
   },
   weatherAdvice: {
     color: '#D4C28A',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 10,
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 6,
+    flexShrink: 1,
   },
 });
