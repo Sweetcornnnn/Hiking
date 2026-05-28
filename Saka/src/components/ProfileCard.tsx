@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import { getMountainById } from '../data/mountains';
 import weatherService, { WeatherCondition } from '../services/weatherService';
+import { useLocationTracking } from '../hooks/useLocationTracking';
 
 interface ProfileCardProps {
   visible: boolean;
@@ -48,7 +49,7 @@ interface LocationPayload {
   longitude: number;
 }
 
-type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather';
+type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
 
 export default function ProfileCard({ visible, onClose, onRequestLogout, profileImage, onAvatarPress, onProfileImageSelect }: ProfileCardProps) {
   const router = useRouter();
@@ -61,6 +62,16 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+
+  const {
+    lastLocation,
+    trackingStatus,
+    isLoading: locationLoading,
+    startTracking,
+    stopTracking,
+    permissions: locationPerms,
+    requestPermissions,
+  } = useLocationTracking();
 
   const handleLogoutPress = () => {
     onClose();
@@ -225,7 +236,9 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                   ? 'Schedule'
                   : activeTab === 'wildtrack'
                   ? 'WildTrack'
-                  : 'Weather'}
+                  : activeTab === 'weather'
+                  ? 'Weather'
+                  : 'Location'}
               </Text>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                 <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
@@ -321,38 +334,82 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                 </TouchableOpacity>
               </View>
             )}
-          </View>
 
-          {/* ── Protruding tab strip on the right edge ── */}
-          <View style={styles.tabStrip}>
-            <View style={styles.tabStripInner}>
-              {([
-                { id: 'stats',     icon: 'stats-chart' },
-                { id: 'calendar',  icon: 'calendar-outline' },
-                { id: 'wildtrack', icon: 'book-outline' },
-                { id: 'weather',   icon: 'cloud-outline' },
-              ] as { id: TabId; icon: string }[]).map((tab, i, arr) => (
+            {activeTab === 'location' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="location-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>Location</Text>
+                {locationLoading && !lastLocation ? (
+                  <View style={styles.weatherStatusRow}>
+                    <ActivityIndicator size="small" color="#C9A96E" />
+                    <Text style={styles.weatherStatusText}>Acquiring GPS…</Text>
+                  </View>
+                ) : lastLocation ? (
+                  <>
+                    <Text style={styles.weatherTitle}>
+                      {lastLocation.latitude.toFixed(4)}°, {lastLocation.longitude.toFixed(4)}°
+                    </Text>
+                    <Text style={styles.weatherDetails} numberOfLines={2}>
+                      {lastLocation.accuracy != null ? `±${lastLocation.accuracy.toFixed(0)}m accuracy` : ''}
+                      {lastLocation.altitude != null ? ` · ${lastLocation.altitude.toFixed(0)}m alt` : ''}
+                      {lastLocation.speed != null && lastLocation.speed > 0 ? ` · ${lastLocation.speed.toFixed(1)} m/s` : ''}
+                    </Text>
+                    <View style={styles.weatherStatusRow}>
+                      <View style={[styles.trackingDot, { backgroundColor: trackingStatus.isForegroundActive ? '#6FAF8A' : 'rgba(255,255,255,0.2)' }]} />
+                      <Text style={styles.tabPaneBody}>
+                        {trackingStatus.isForegroundActive ? 'Tracking active' : 'Tracking paused'}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.tabPaneBody}>
+                    {locationPerms.foreground
+                      ? 'Start tracking to see your GPS coordinate  s.'
+                      : 'Location permission required. Tap below to grant access.'}
+                  </Text>
+                )}
                 <TouchableOpacity
-                  key={tab.id}
-                  style={[
-                    styles.tabIconBtn,
-                    i < arr.length - 1 && styles.tabIconBtnBorder,
-                  ]}
-                  onPress={() => setActiveTab(tab.id)}
-                  activeOpacity={0.7}
+                  style={styles.tabPaneBtn}
+                  onPress={() => { onClose(); router.push('/location'); }}
                 >
-                  <Ionicons
-                    name={tab.icon as any}
-                    size={13}
-                    color={activeTab === tab.id ? '#C9A96E' : 'rgba(255,255,255,0.28)'}
-                  />
+                  <Text style={styles.tabPaneBtnText}>Open Location</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
                 </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+              </View>
+            )}
 
-        </View>
-      </View>
+            {/* ── Protruding tab strip on the right edge ── */}
+            <View style={styles.tabStrip}>
+              <View style={styles.tabStripInner}>
+                {([
+                  { id: 'stats',     icon: 'stats-chart' },
+                  { id: 'calendar',  icon: 'calendar-outline' },
+                  { id: 'wildtrack', icon: 'book-outline' },
+                  { id: 'weather',   icon: 'cloud-outline' },
+                  { id: 'location',  icon: 'location-outline' },
+                ] as { id: TabId; icon: string }[]).map((tab, i, arr) => (
+                  <TouchableOpacity
+                    key={tab.id}
+                    style={[
+                      styles.tabIconBtn,
+                      i < arr.length - 1 && styles.tabIconBtnBorder,
+                    ]}
+                    onPress={() => setActiveTab(tab.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={tab.icon as any}
+                      size={13}
+                      color={activeTab === tab.id ? '#C9A96E' : 'rgba(255,255,255,0.28)'}
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+          </View>{/* end rightPanel */}
+        </View>{/* end card */}
+      </View>{/* end centerContainer */}
     </Modal>
   );
 }
@@ -547,7 +604,7 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     borderTopRightRadius: 16,
     borderBottomRightRadius: 16,
-    overflow: 'hidden',
+    overflow: 'visible',
     backgroundColor: '#0E1520',
   },
 
@@ -697,6 +754,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 6,
+  },
+  trackingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   weatherStatusText: {
     color: '#FFFFFF',

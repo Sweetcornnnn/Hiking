@@ -10,6 +10,7 @@ type LandscapeStackOptions = NativeStackNavigationOptions & {
 const stackScreenOptions: LandscapeStackOptions = {
   contentStyle: { backgroundColor: '#F5E6D3' },
   orientation: 'landscape',
+  headerShown: false,
 };
 
 const screenOptionsNoHeader: LandscapeStackOptions = {
