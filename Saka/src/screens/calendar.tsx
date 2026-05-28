@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import { useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useHikesStore } from '../store/hikesStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
@@ -41,11 +42,20 @@ const INITIAL_FORM: HikeFormData = {
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const navigation = useNavigation<any>();
   const { hikes, fetchHikes, createHike, updateHike, deleteHike, isLoading } = useHikesStore();
   const { user } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
   const selectedMountain = getMountainById(selectedMountainId) || getMountainById('1');
+
+  const handleBackPress = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      router.replace('/drawer/home');
+    }
+  };
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -313,11 +323,11 @@ export default function CalendarScreen() {
             </View>
             <TouchableOpacity
               style={styles.homeBtn}
-              onPress={() => router.push('/drawer/home')}
-              accessibilityLabel="Go back home"
+              onPress={handleBackPress}
+              accessibilityLabel="Go back"
               accessibilityRole="button"
             >
-              <Ionicons name="home-outline" size={18} color="#C9A96E" />
+              <Ionicons name="arrow-back-outline" size={18} color="#C9A96E" />
             </TouchableOpacity>
           </View>
 
