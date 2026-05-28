@@ -1,7 +1,30 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Dimensions,
+  Platform,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WildTrackStats } from '../../store/wildtrackStore';
+
+import {
+  BG_PANEL,
+  BG_SUBTLE,
+  BORDER_DEFAULT,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  ACCENT_GOLD,
+  ACCENT_GREEN,
+  RADIUS_CARD,
+  RADIUS_BTN,
+} from '../../theme/designTokens';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const isLandscape = SCREEN_WIDTH >= SCREEN_HEIGHT;
 
 interface ProgressCardProps {
   stats: WildTrackStats | null;
@@ -14,23 +37,87 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
   mountainName = 'Mt. Madjaas',
   onExplorePress,
 }) => {
+  /**
+   * LANDSCAPE-FIRST COMPACT SYSTEM
+   * --------------------------------
+   * Prevents:
+   * - oversized progress sections
+   * - excessive vertical height
+   * - cramped category layouts
+   * - uneven spacing rhythm
+   */
+
+  const layoutConfig = useMemo(() => {
+    if (SCREEN_WIDTH >= 1400) {
+      return {
+        titleSize: 18,
+        percentageSize: 18,
+        padding: 18,
+      };
+    }
+
+    if (SCREEN_WIDTH >= 1000) {
+      return {
+        titleSize: 17,
+        percentageSize: 17,
+        padding: 16,
+      };
+    }
+
+    return {
+      titleSize: 16,
+      percentageSize: 16,
+      padding: 15,
+    };
+  }, []);
+
+  /**
+   * EMPTY STATE
+   */
+
   if (!stats) {
-    // Empty state
     return (
-      <View style={styles.container}>
+      <View
+        style={[
+          styles.container,
+          {
+            padding: layoutConfig.padding,
+          },
+        ]}
+      >
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
-            <Ionicons name="leaf-outline" size={40} color="#8B7355" />
+            <Ionicons
+              name="leaf-outline"
+              size={32}
+              color={ACCENT_GOLD}
+            />
           </View>
-          <Text style={styles.emptyTitle}>Start Your WildTrack Journey</Text>
-          <Text style={styles.emptySubtitle}>
-            Discover plants, birds, and wildlife while hiking.{'\n'}
-            Track species you encounter across mountains.
+
+          <Text style={styles.emptyTitle}>
+            Start Your WildTrack Journey
           </Text>
+
+          <Text style={styles.emptySubtitle}>
+            Discover plants, birds, and wildlife
+            while hiking and track species across
+            mountains.
+          </Text>
+
           {onExplorePress && (
-            <TouchableOpacity onPress={onExplorePress} style={styles.exploreButton}>
-              <Ionicons name="compass-outline" size={20} color="#FFF" />
-              <Text style={styles.exploreButtonText}>Explore Species</Text>
+            <TouchableOpacity
+              onPress={onExplorePress}
+              style={styles.exploreButton}
+            >
+              <Ionicons
+                name="compass-outline"
+                size={18}
+                color="#FFF"
+              />
+
+              <Text style={styles.exploreButtonText}>
+                Explore Species
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -39,168 +126,347 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
   }
 
   const percentage = stats.percentage;
-  const progressWidth = percentage;
+  const progressWidth = `${Math.max(0, Math.min(percentage, 100))}%`;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          padding: layoutConfig.padding,
+        },
+      ]}
+    >
+      {/* HEADER */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Your Discoveries</Text>
-          <Text style={styles.subtitle}>{mountainName}</Text>
+        <View style={styles.headerText}>
+          <Text
+            style={[
+              styles.title,
+              {
+                fontSize: layoutConfig.titleSize,
+              },
+            ]}
+            numberOfLines={1}
+          >
+            Your Discoveries
+          </Text>
+
+          <Text
+            style={styles.subtitle}
+            numberOfLines={1}
+          >
+            {mountainName}
+          </Text>
         </View>
+
         <View style={styles.percentageBadge}>
-          <Text style={styles.percentageText}>{percentage}%</Text>
+          <Text
+            style={[
+              styles.percentageText,
+              {
+                fontSize: layoutConfig.percentageSize,
+              },
+            ]}
+          >
+            {percentage}%
+          </Text>
         </View>
       </View>
 
+      {/* PROGRESS */}
       <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: progressWidth }]} />
+          <View
+            style={[
+              styles.progressFill,
+              {
+                width: progressWidth,
+              },
+            ]}
+          />
         </View>
+
         <View style={styles.progressLabels}>
-          <Text style={styles.progressLabel}>{stats.discovered_count} discovered</Text>
-          <Text style={styles.progressLabel}>of {stats.total_species} species</Text>
+          <Text style={styles.progressLabel}>
+            {stats.discovered_count} discovered
+          </Text>
+
+          <Text style={styles.progressLabel}>
+            of {stats.total_species} species
+          </Text>
         </View>
       </View>
 
-      {/* Category Stats */}
-      {stats.by_category && stats.by_category.length > 0 && (
-        <View style={styles.categoryStats}>
-          {stats.by_category.slice(0, 4).map((cat, index) => (
-            <View key={index} style={styles.categoryItem}>
-              <View style={styles.categoryDot} />
-              <Text style={styles.categoryText}>{cat.category}: {cat.count}</Text>
-            </View>
-          ))}
-        </View>
-      )}
+      {/* CATEGORY STATS */}
+      {stats.by_category &&
+        stats.by_category.length > 0 && (
+          <View style={styles.categoryStats}>
+            {stats.by_category
+              .slice(0, 4)
+              .map((cat, index) => (
+                <View
+                  key={index}
+                  style={styles.categoryItem}
+                >
+                  <View style={styles.categoryDot} />
+
+                  <Text
+                    style={styles.categoryText}
+                    numberOfLines={1}
+                  >
+                    {cat.category}: {cat.count}
+                  </Text>
+                </View>
+              ))}
+          </View>
+        )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  /**
+   * CARD
+   * ------
+   * Compact premium side-panel card.
+   * Optimized for landscape layouts.
+   */
+
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-    marginBottom: 20,
+    backgroundColor: BG_PANEL,
+    borderRadius: RADIUS_CARD,
+
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
+
+    overflow: 'hidden',
+
+    ...(Platform.OS === 'android'
+      ? {
+          elevation: 2,
+        }
+      : {
+          shadowColor: '#000',
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.12,
+          shadowRadius: 10,
+        }),
   },
+
+  /**
+   * EMPTY STATE
+   */
+
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 24,
+    justifyContent: 'center',
+
+    paddingVertical: isLandscape ? 14 : 20,
   },
+
   emptyIcon: {
-    backgroundColor: '#F5E6D3',
-    padding: 16,
+    width: 72,
+    height: 72,
     borderRadius: 999,
-    marginBottom: 16,
+
+    justifyContent: 'center',
+    alignItems: 'center',
+
+    backgroundColor: BG_SUBTLE,
+
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
+
+    marginBottom: 14,
   },
+
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#2C3E50',
+    color: TEXT_PRIMARY,
+
+    textAlign: 'center',
     marginBottom: 8,
-    textAlign: 'center',
   },
+
   emptySubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 12,
+    color: TEXT_MUTED,
+
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
+    lineHeight: 18,
+
+    maxWidth: 320,
+    marginBottom: 18,
   },
+
+  /**
+   * BUTTON
+   */
+
   exploreButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2C3E50',
-    paddingHorizontal: 24,
+    justifyContent: 'center',
+
+    backgroundColor: ACCENT_GREEN,
+
+    paddingHorizontal: 18,
     paddingVertical: 12,
+
     borderRadius: 999,
-    gap: 8,
   },
+
   exploreButtonText: {
     color: '#FFF',
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 8,
   },
+
+  /**
+   * HEADER
+   * --------
+   * Better compact hierarchy.
+   */
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+
+    marginBottom: 14,
   },
+
+  headerText: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
   title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2C3E50',
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    letterSpacing: 0.2,
   },
+
   subtitle: {
-    fontSize: 13,
-    color: '#8B7355',
-    marginTop: 2,
+    fontSize: 11,
+    color: ACCENT_GOLD,
+    marginTop: 3,
   },
+
   percentageBadge: {
-    backgroundColor: '#2C3E50',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
+    minWidth: 74,
+    height: 44,
+
+    borderRadius: 14,
+
+    justifyContent: 'center',
+    alignItems: 'center',
+
+    backgroundColor: BG_SUBTLE,
+
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
+
   percentageText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
+    color: ACCENT_GREEN,
+    fontWeight: '800',
   },
+
+  /**
+   * PROGRESS
+   * ----------
+   * Cleaner compact visual rhythm.
+   */
+
   progressContainer: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
+
   progressBar: {
-    height: 12,
-    backgroundColor: '#F5E6D3',
-    borderRadius: 6,
+    height: 10,
+    borderRadius: 999,
+
+    backgroundColor: BG_SUBTLE,
+
     overflow: 'hidden',
+
     marginBottom: 8,
   },
+
   progressFill: {
     height: '100%',
-    backgroundColor: '#2C3E50',
-    borderRadius: 6,
+    borderRadius: 999,
+
+    backgroundColor: ACCENT_GREEN,
   },
+
   progressLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
+
   progressLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
+    fontSize: 11,
+    color: TEXT_MUTED,
+    fontWeight: '600',
   },
+
+  /**
+   * CATEGORY SECTION
+   * ------------------
+   * Compact + breathable landscape chips.
+   */
+
   categoryStats: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+
+    gap: 10,
+
     paddingTop: 12,
+
     borderTopWidth: 1,
-    borderTopColor: '#F5E6D3',
+    borderTopColor: BORDER_DEFAULT,
   },
+
   categoryItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+
+    backgroundColor: BG_SUBTLE,
+
+    borderRadius: 999,
+
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
+
+    maxWidth: '48%',
   },
+
   categoryDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#D4A574',
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+
+    backgroundColor: ACCENT_GOLD,
+
+    marginRight: 7,
   },
+
   categoryText: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
+    fontSize: 11,
+    color: TEXT_PRIMARY,
+    fontWeight: '600',
   },
 });
