@@ -1391,6 +1391,165 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
       is_featured: true,
       is_endemic: true,
     },
+    // Mayon Volcano
+    {
+      id: 13,
+      scientific_name: 'Platymantis luzonensis',
+      common_name: 'Albay Forest Frog',
+      category: 'Amphibians',
+      conservation_status: 'Near Threatened',
+      image_url: 'https://images..com/photo-1559253664-ca249d4608c6?w=400&h=300&fit=crop',
+      description: 'An endemic frog species found in the forests around Mayon Volcano. Adapted to volcanic soil conditions.',
+      habitat: 'Montane forests',
+      fun_facts: 'This frog has developed resistance to the acidic conditions of volcanic environments.',
+      gbif_id: 2429092,
+      mountains: ['5'],
+      is_featured: true,
+      is_endemic: true,
+      inaturalist_id: 25974,
+    },
+    {
+      id: 14,
+      scientific_name: 'Apomys gracilirostris',
+      common_name: 'Mayon Montane Forest Mouse',
+      category: 'Mammals',
+      conservation_status: 'Vulnerable',
+      image_url: 'https://images..com/photo-1425082661705-1834bfd09dca?w=400&h=300&fit=crop',
+      description: 'A small rodent endemic to the forests of Mayon Volcano. One of the many endemic mammals of the Bicol region.',
+      habitat: 'Montane forests',
+      fun_facts: 'This mouse species has a longer snout than most forest mice, adapted for its diet.',
+      gbif_id: 2441184,
+      mountains: ['5'],
+      is_featured: true,
+      is_endemic: true,
+      inaturalist_id: 74074,
+    },
+    {
+      id: 15,
+      scientific_name: 'Tarsius syrichta',
+      common_name: 'Philippine Tarsier',
+      category: 'Mammals',
+      conservation_status: 'Near Threatened',
+      image_url: 'https://images..com/photo-1544552866-d3ed42536cfd?w=400&h=300&fit=crop',
+      description: 'One of the smallest primates in the world. Found in the forests of southern Luzon including areas near Mayon.',
+      habitat: 'Tropical rainforests',
+      fun_facts: 'Their eyes are larger than their brain and stomach combined.',
+      gbif_id: 2441212,
+      inaturalist_id: 1369286,
+      mountains: ['5'],
+      is_featured: true,
+      is_endemic: true,
+    },
+    // Mt. Kanlaon
+    {
+      id: 16,
+      scientific_name: 'Ptilinopus arcanus',
+      common_name: 'Negros Fruit Dove',
+      category: 'Birds',
+      conservation_status: 'Critically Endangered',
+      image_url: 'https://images..com/photo-1444464666168-49d633b86797?w=400&h=300&fit=crop',
+      description: 'An extremely rare fruit dove endemic to Negros Island. Possibly the rarest bird in the Philippines.',
+      habitat: 'Montane forests',
+      fun_facts: 'This species was only rediscovered in 1993 after being thought extinct for decades.',
+      gbif_id: 2495184,
+      inaturalist_id: 2844,
+      mountains: ['6'],
+      is_featured: true,
+      is_endemic: true,
+    },
+    {
+      id: 17,
+      scientific_name: 'Sus cebifrons',
+      common_name: 'Visayan Warty Pig',
+      category: 'Mammals',
+      conservation_status: 'Critically Endangered',
+      image_url: 'https://images..com/photo-1518709268805-4e9042af9f23?w=400&h=300&fit=crop',
+      description: 'A critically endangered pig species endemic to the Visayas. Found in the forests of Negros including Mt. Kanlaon.',
+      habitat: 'Forest and grassland areas',
+      fun_facts: 'Males grow a distinctive tuft of hair during mating season.',
+      gbif_id: 2441000,
+      inaturalist_id: 42129,
+      mountains: ['6'],
+      is_featured: true,
+      is_endemic: true,
+    },
+    {
+      id: 18,
+      scientific_name: 'Stachyris speciosa',
+      common_name: 'Flame-templed Babbler',
+      category: 'Birds',
+      conservation_status: 'Endangered',
+      image_url: 'https://images..com/photo-1444464666168-49d633b86797?w=400&h=300&fit=crop',
+      description: 'A colorful babbler endemic to Negros and Panay. Named for its distinctive flame-colored crown patch.',
+      habitat: 'Lowland and montane forests',
+      fun_facts: 'This bird is highly territorial and pairs stay together for life.',
+      gbif_id: 2493092,
+      inaturalist_id: 15532,
+      mountains: ['6'],
+      is_featured: true,
+      is_endemic: true,
+    },
+    // Additional species for multiple mountains
+    {
+      id: 19,
+      scientific_name: 'Dicaeum quadricolor',
+      common_name: 'Bicolored Flowerpecker',
+      category: 'Birds',
+      conservation_status: 'Near Threatened',
+      image_url: 'https://images..com/photo-1551085254-e96b210db58a?w=400&h=300&fit=crop',
+      description: 'A small colorful bird endemic to the Philippines. Important for seed dispersal of mistletoe plants.',
+      habitat: 'Forest canopies',
+      fun_facts: 'They play a crucial role in seed dispersal for mistletoe plants.',
+      gbif_id: 2495248,
+      inaturalist_id: 13402,
+      mountains: ['1', '2', '3', '4', '5', '6'],
+      is_endemic: true,
+    },
+    {
+      id: 20,
+      scientific_name: 'Ptilinopus merrilli',
+      common_name: 'Merrill\'s Fruit Dove',
+      category: 'Birds',
+      conservation_status: 'Near Threatened',
+      image_url: 'https://images..com/photo-1444464666168-49d633b86797?w=400&h=300&fit=crop',
+      description: 'A colorful fruit dove endemic to the Philippines. Found in Luzon and some Visayan islands.',
+      habitat: 'Primary and secondary forests',
+      fun_facts: 'They feed almost exclusively on fruits.',
+      gbif_id: 2495180,
+      inaturalist_id: 1650502,
+      mountains: ['1', '3', '4'],
+      is_endemic: true,
+    },
+    {
+      id: 21,
+      scientific_name: 'Naja philippinensis',
+      common_name: 'Philippine Cobra',
+      category: 'Reptiles',
+      conservation_status: 'Near Threatened',
+      image_url: 'https://images..com/photo-1552728089-57bdde30beb3?w=400&h=300&fit=crop',
+      description: 'A highly venomous spitting cobra endemic to the Philippines. Found in forest edges and agricultural areas.',
+      habitat: 'Forest edges, agricultural areas',
+      fun_facts: 'It can spit venom up to 3 meters with accuracy.',
+      gbif_id: 2447280,
+      inaturalist_id: 73875,
+      mountains: ['1', '2', '3', '4', '5', '6'],
+      is_endemic: true,
+    },
+    {
+      id: 22,
+      scientific_name: 'Heteropoda davidbowie',
+      common_name: 'Bowie Spider',
+      category: 'Insects',
+      conservation_status: 'Data Deficient',
+      image_url: 'https://images..com/photo-1559253664-ca249d4608c6?w=400&h=300&fit=crop',
+      description: 'A large huntsman spider named after David Bowie due to its bright orange coloring.',
+      habitat: 'Tropical forests',
+      fun_facts: 'Named after David Bowie due to its bright orange coloring.',
+      gbif_id: 2447320,
+      mountains: ['1', '2', '3', '4'],
+      is_endemic: true,
+      inaturalist_id: 542254,
+    },
   ];
 
   const mountainBiodiversity = [
@@ -1541,4 +1700,41 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
   };
 
   insertSpecies(0);
+});
+
+initializeDatabase(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+
+    // Auto-seed curated WildTrack data on startup (development convenience)
+    try {
+      const options = {
+        hostname: '127.0.0.1',
+        port: PORT,
+        path: '/api/wildtrack/seed-curated',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': 0,
+        },
+      };
+
+      const req = http.request(options, (res: any) => {
+        let body = '';
+        res.on('data', (chunk: any) => { body += chunk; });
+        res.on('end', () => {
+          console.log('[WildTrack] Auto-seed response status:', res.statusCode);
+          try { console.log('[WildTrack] Auto-seed response:', JSON.parse(body)); } catch { console.log('[WildTrack] Auto-seed response (raw):', body); }
+        });
+      });
+
+      req.on('error', (err: any) => {
+        console.error('[WildTrack] Auto-seed request failed:', err.message);
+      });
+
+      req.end();
+    } catch (err: any) {
+      console.error('[WildTrack] Error triggering auto-seed:', err.message);
+    }
+  });
 });
