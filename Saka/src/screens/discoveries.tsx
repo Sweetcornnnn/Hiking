@@ -211,7 +211,7 @@ export default function DiscoveriesScreen() {
 
             <TouchableOpacity
               style={styles.exploreButton}
-              onPress={() => router.push('/wildtrack')}
+              onPress={() => router.replace('/drawer/wildtrack')}
               activeOpacity={0.85}
             >
               <Ionicons

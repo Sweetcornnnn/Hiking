@@ -58,8 +58,8 @@ const styles = StyleSheet.create({
     borderColor: BORDER_DEFAULT,
   },
   title: {
-    fontSize: isLandscape ? 16 : 15,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     color: TEXT_PRIMARY,
     marginBottom: isLandscape ? 16 : 14,
   },
@@ -79,22 +79,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   when: {
-    fontSize: 13,
+    fontSize: 12,
     color: TEXT_PRIMARY,
-    fontWeight: '700',
+    fontWeight: '500',
   },
   where: {
-    fontSize: 12,
+    fontSize: 10,
     color: TEXT_MUTED,
     marginTop: 2,
   },
   meta: {
-    fontSize: 11,
+    fontSize: 9,
     color: TEXT_MUTED,
     marginTop: 2,
   },
   emptyText: {
     color: TEXT_MUTED,
-    fontSize: 12,
+    fontSize: 10,
   },
 });

@@ -50,22 +50,22 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
   const layoutConfig = useMemo(() => {
     if (SCREEN_WIDTH >= 1400) {
       return {
-        titleSize: 18,
-        percentageSize: 18,
+        titleSize: 13,
+        percentageSize: 16,
         padding: 18,
       };
     }
 
     if (SCREEN_WIDTH >= 1000) {
       return {
-        titleSize: 17,
-        percentageSize: 17,
+        titleSize: 13,
+        percentageSize: 16,
         padding: 16,
       };
     }
 
     return {
-      titleSize: 16,
+      titleSize: 13,
       percentageSize: 16,
       padding: 15,
     };
@@ -126,7 +126,7 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
   }
 
   const percentage = stats.percentage;
-  const progressWidth = `${Math.max(0, Math.min(percentage, 100))}%`;
+  const progressWidth = Math.max(0, Math.min(percentage, 100)) as any;
 
   return (
     <View
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   },
 
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: '700',
     color: TEXT_PRIMARY,
 
@@ -294,11 +294,11 @@ const styles = StyleSheet.create({
   },
 
   emptySubtitle: {
-    fontSize: 12,
+    fontSize: 10,
     color: TEXT_MUTED,
 
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 14,
 
     maxWidth: 320,
     marginBottom: 18,
@@ -323,8 +323,8 @@ const styles = StyleSheet.create({
 
   exploreButtonText: {
     color: '#FFF',
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '600',
     marginLeft: 8,
   },
 
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    fontSize: 11,
+    fontSize: 10,
     color: ACCENT_GOLD,
     marginTop: 3,
   },
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   },
 
   progressLabel: {
-    fontSize: 11,
+    fontSize: 9,
     color: TEXT_MUTED,
     fontWeight: '600',
   },
@@ -465,8 +465,8 @@ const styles = StyleSheet.create({
   },
 
   categoryText: {
-    fontSize: 11,
+    fontSize: 10,
     color: TEXT_PRIMARY,
-    fontWeight: '600',
+    fontWeight: '500',
   },
 });

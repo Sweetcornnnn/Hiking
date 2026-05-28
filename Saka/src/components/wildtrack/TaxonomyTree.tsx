@@ -78,12 +78,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: isLandscape ? 16 : 15,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     color: TEXT_PRIMARY,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 10,
     color: TEXT_MUTED,
     marginTop: 2,
   },
@@ -98,12 +98,14 @@ const styles = StyleSheet.create({
     marginBottom: isLandscape ? 12 : 10,
   },
   rank: {
-    fontSize: 12,
+    fontSize: 9,
     color: TEXT_MUTED,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   value: {
-    fontSize: 13,
+    fontSize: 12,
     color: TEXT_PRIMARY,
-    fontWeight: '700',
+    fontWeight: '500',
   },
 });

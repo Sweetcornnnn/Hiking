@@ -51,6 +51,7 @@ export default function SpeciesSearchScreen() {
 
   const {
     detail,
+    isLoading: detailLoading,
     loadSpeciesDetails,
     clearSpeciesDetails,
   } = useSpeciesDetails();
@@ -73,9 +74,9 @@ export default function SpeciesSearchScreen() {
 
   const handleSelectSpecies = async (item: any) => {
     setSelectedSpecies(item);
-    setModalOpen(true);
 
     await loadSpeciesDetails(item);
+    setModalOpen(true);
   };
 
   const handleMarkDiscovered = async () => {
@@ -117,12 +118,9 @@ export default function SpeciesSearchScreen() {
     </View>
   );
 
-  const horizontalPadding = isLandscape ? 440 : 48;
+  const horizontalPadding = isLandscape ? 16 : 12;
 
-  const cardWidth = Math.max(
-    (width - horizontalPadding) / 2,
-    250
-  );
+  const cardWidth = (width - horizontalPadding - 8) / 2;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -179,7 +177,7 @@ export default function SpeciesSearchScreen() {
                 <View
                   style={{
                     width: cardWidth,
-                    marginBottom: 16,
+                    marginBottom: 4,
                   }}
                 >
                   <SpeciesCard
@@ -273,6 +271,14 @@ export default function SpeciesSearchScreen() {
               contentContainerStyle={styles.modalContentContainer}
               showsVerticalScrollIndicator={false}
             >
+              {detailLoading ? (
+                <View style={styles.modalLoading}>
+                  <ActivityIndicator color="#D4A574" size="large" />
+                  <Text style={styles.modalLoadingText}>
+                    Loading species details...
+                  </Text>
+                </View>
+              ) : detail ? (
               <View
                 style={[
                   styles.modalBody,
@@ -374,6 +380,7 @@ export default function SpeciesSearchScreen() {
                   </View>
                 </View>
               </View>
+              ) : null}
             </ScrollView>
 
             {/* FOOTER */}
@@ -431,18 +438,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
     backgroundColor: '#0B1220',
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
 
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#111827',
     alignItems: 'center',
     justifyContent: 'center',
@@ -455,11 +462,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#111827',
-    borderRadius: 22,
-    paddingHorizontal: 14,
+    borderRadius: 18,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#233047',
-    height: 44,
+    height: 36,
   },
 
   searchIcon: {
@@ -469,7 +476,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: '#F8FAFC',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
 
@@ -480,8 +487,8 @@ const styles = StyleSheet.create({
 
   resultsContainer: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
 
   resultScroll: {
@@ -489,25 +496,25 @@ const styles = StyleSheet.create({
   },
 
   resultScrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 8,
   },
 
   columnWrapper: {
-    justifyContent: 'space-between',
-    gap: isLandscape ? 16 : 14,
+    justifyContent: 'flex-start',
+    gap: 8,
   },
 
   emptyState: {
-    marginTop: 90,
+    marginTop: 60,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
 
   emptyIconWrapper: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#172033',
     alignItems: 'center',
     justifyContent: 'center',
@@ -515,16 +522,16 @@ const styles = StyleSheet.create({
 
   emptyTitle: {
     marginTop: 18,
-    fontSize: 20,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#F8FAFC',
     textAlign: 'center',
   },
 
   emptyText: {
     marginTop: 12,
-    fontSize: 13,
-    lineHeight: 21,
+    fontSize: 10,
+    lineHeight: 14,
     color: '#94A3B8',
     textAlign: 'center',
     maxWidth: 420,
@@ -532,17 +539,17 @@ const styles = StyleSheet.create({
 
   loadMoreButton: {
     alignSelf: 'center',
-    marginTop: 8,
+    marginTop: 6,
     backgroundColor: '#D4A574',
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
 
   loadMoreText: {
     color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 13,
+    fontWeight: '600',
+    fontSize: 10,
   },
 
   skeletonGrid: {
@@ -553,11 +560,11 @@ const styles = StyleSheet.create({
   },
 
   skeletonCard: {
-    width: 280,
-    height: 280,
-    borderRadius: 24,
+    width: 200,
+    height: 200,
+    borderRadius: 18,
     backgroundColor: '#172033',
-    marginBottom: 16,
+    marginBottom: 12,
   },
 
   modalOverlay: {
@@ -596,15 +603,15 @@ const styles = StyleSheet.create({
   },
 
   modalTitle: {
-    fontSize: 24,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#F8FAFC',
   },
 
   modalScientific: {
     marginTop: 6,
     color: '#D4A574',
-    fontSize: 13,
+    fontSize: 10,
     fontStyle: 'italic',
   },
 
@@ -648,8 +655,8 @@ const styles = StyleSheet.create({
   },
 
   cardTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#F8FAFC',
     marginBottom: 10,
   },
@@ -660,16 +667,16 @@ const styles = StyleSheet.create({
 
   factLabel: {
     color: '#64748B',
-    fontSize: 11,
+    fontSize: 9,
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
 
   factText: {
     marginTop: 5,
     color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '500',
   },
 
   infoSection: {
@@ -689,7 +696,20 @@ const styles = StyleSheet.create({
 
   timelineLoadingText: {
     color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 10,
+  },
+
+  modalLoading: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+
+  modalLoadingText: {
+    color: '#94A3B8',
+    fontSize: 10,
+    marginTop: 8,
   },
 
   modalFooter: {
@@ -727,13 +747,13 @@ const styles = StyleSheet.create({
 
   modalActionTextSecondary: {
     color: '#E2E8F0',
-    fontWeight: '800',
-    fontSize: 13,
+    fontWeight: '600',
+    fontSize: 10,
   },
 
   modalActionTextPrimary: {
     color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 13,
+    fontWeight: '600',
+    fontSize: 10,
   },
 });
