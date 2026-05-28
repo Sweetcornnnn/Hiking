@@ -19,7 +19,7 @@ const getDevApiHost = () => {
 
   // Android emulator (Android Studio) maps host machine localhost to 10.0.2.2
   if (Platform.OS === 'android' && !Constants.isDevice) {
-    return '10.236.247.102';
+    return '192.168.18.10';
   }
 
   // iOS simulator and other non-device runtimes can use localhost
@@ -34,7 +34,7 @@ const getDevApiHost = () => {
   }
 
   // Last resort default (replaceable)
-  return '10.0.0.20';
+  return '192.168.18.10';
 };
 
 // API configuration for different environments

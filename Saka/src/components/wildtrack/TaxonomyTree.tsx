@@ -1,7 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TaxonomyNode } from '../../types/wildtrack';
+import {
+  BG_PANEL,
+  BG_SUBTLE,
+  BORDER_DEFAULT,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  ACCENT_GOLD,
+  ACCENT_GREEN,
+} from '../../theme/designTokens';
+
+const { width, height } = Dimensions.get('window');
+const isLandscape = width >= height;
 
 interface TaxonomyTreeProps {
   taxonomy?: TaxonomyNode;
@@ -49,51 +61,49 @@ export const TaxonomyTree: React.FC<TaxonomyTreeProps> = ({ taxonomy }) => {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: BG_PANEL,
     borderRadius: 22,
-    padding: 16,
+    padding: isLandscape ? 18 : 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: isLandscape ? 14 : 12,
   },
   titleRow: {
     flex: 1,
   },
   title: {
-    fontSize: 15,
+    fontSize: isLandscape ? 16 : 15,
     fontWeight: '800',
-    color: '#111827',
+    color: TEXT_PRIMARY,
   },
   subtitle: {
     fontSize: 12,
-    color: '#475569',
+    color: TEXT_MUTED,
     marginTop: 2,
   },
   list: {
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingTop: 12,
+    borderTopColor: BORDER_DEFAULT,
+    paddingTop: isLandscape ? 14 : 12,
   },
   entryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: isLandscape ? 12 : 10,
   },
   rank: {
     fontSize: 12,
-    color: '#64748B',
+    color: TEXT_MUTED,
   },
   value: {
     fontSize: 13,
-    color: '#0F172A',
+    color: TEXT_PRIMARY,
     fontWeight: '700',
   },
 });

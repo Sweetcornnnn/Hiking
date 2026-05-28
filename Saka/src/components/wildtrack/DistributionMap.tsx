@@ -1,6 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { OccurrenceRecord } from '../../types/wildtrack';
+import {
+  BG_PANEL,
+  BG_SUBTLE,
+  BORDER_DEFAULT,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  ACCENT_GOLD,
+  ACCENT_GREEN,
+} from '../../theme/designTokens';
+
+const { width, height } = Dimensions.get('window');
+const isLandscape = width >= height;
 
 interface DistributionMapProps {
   occurrences?: OccurrenceRecord[];
@@ -42,99 +55,103 @@ export const DistributionMap: React.FC<DistributionMapProps> = ({ occurrences = 
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: BG_PANEL,
     borderRadius: 24,
-    padding: 16,
+    padding: isLandscape ? 18 : 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
   headerRow: {
-    marginBottom: 14,
+    marginBottom: isLandscape ? 16 : 14,
   },
   title: {
-    fontSize: 15,
+    fontSize: isLandscape ? 16 : 15,
     fontWeight: '800',
-    color: '#111827',
+    color: TEXT_PRIMARY,
   },
   subtitle: {
     fontSize: 12,
-    color: '#475569',
+    color: TEXT_MUTED,
     marginTop: 4,
   },
   mapCard: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: BG_SUBTLE,
     borderRadius: 22,
-    padding: 14,
-    flexDirection: 'row',
+    padding: isLandscape ? 16 : 14,
+    flexDirection: isLandscape ? 'row' : 'column',
     alignItems: 'center',
-    gap: 12,
+    gap: isLandscape ? 16 : 12,
   },
   mapBackground: {
-    width: 140,
-    height: 120,
+    width: isLandscape ? 180 : 140,
+    height: isLandscape ? 140 : 120,
     borderRadius: 18,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1220',
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
   marker: {
     position: 'absolute',
     width: 14,
     height: 14,
     borderRadius: 99,
-    backgroundColor: '#14B8A6',
+    backgroundColor: ACCENT_GREEN,
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: TEXT_PRIMARY,
   },
   markerNorth: {
     top: 18,
-    left: 52,
+    left: isLandscape ? 70 : 52,
   },
   markerCentral: {
     top: 38,
-    left: 98,
+    left: isLandscape ? 130 : 98,
   },
   markerSouth: {
     top: 76,
-    left: 34,
+    left: isLandscape ? 50 : 34,
   },
   mapStats: {
     flex: 1,
   },
   statTitle: {
     fontSize: 13,
-    color: '#0F172A',
+    color: TEXT_PRIMARY,
     fontWeight: '700',
     marginBottom: 10,
   },
   statValue: {
-    fontSize: 28,
+    fontSize: isLandscape ? 32 : 28,
     fontWeight: '900',
-    color: '#0F766E',
+    color: ACCENT_GREEN,
     marginBottom: 4,
   },
   statDetail: {
     fontSize: 12,
-    color: '#475569',
+    color: TEXT_MUTED,
     marginBottom: 2,
   },
   badgeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginTop: 14,
   },
   badge: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: BG_SUBTLE,
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
   badgeText: {
     fontSize: 12,
-    color: '#0F172A',
+    color: TEXT_PRIMARY,
+    fontWeight: '600',
   },
 });
