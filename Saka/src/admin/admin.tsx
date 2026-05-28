@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
 import { useNotificationStore } from '../store/notificationStore';
+import { API_BASE_URL } from '../config/api';
 import UserLocationModal from './UserLocationModal';
 
 // ---------- User Store (local, using authToken) ----------
@@ -54,7 +55,7 @@ export default function AdminRoute() {
     if (!authToken) return;
     setUsersLoading(true);
     try {
-      const res = await fetch('http://10.236.247.102:3000/api/admin/users', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json();
@@ -74,7 +75,7 @@ export default function AdminRoute() {
   const updateUserAdmin = async (userId: number, isAdmin: boolean) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`http://10.236.247.102:3000/api/admin/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -98,7 +99,7 @@ export default function AdminRoute() {
   const resetUserPassword = async (userId: number, password: string) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`http://10.236.247.102:3000/api/admin/users/${userId}/reset-password`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -121,7 +122,7 @@ export default function AdminRoute() {
   const deleteUser = async (userId: number) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`http://10.236.247.102:3000/api/admin/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${authToken}` },
       });
@@ -434,10 +435,13 @@ export default function AdminRoute() {
                       <View style={styles.hikeDot} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.hikeName} numberOfLines={1}>
-                          {hike.user?.name || hike.user?.email || 'Unknown'}
+                          {hike.user?.name || hike.user?.email || hike.name || hike.email || 'Unknown'}
                         </Text>
                         <Text style={styles.hikeSub} numberOfLines={1}>
-                          {hike.start_time} → {hike.end_time}  ·  {hike.tagalongs} along
+                          {(hike.mountain_name || hike.mountain_id) ? `${hike.mountain_name || hike.mountain_id} · ` : ''}{hike.start_time} → {hike.end_time}  ·  {hike.tagalongs} along
+                        </Text>
+                        <Text style={styles.hikeMeta} numberOfLines={1}>
+                          Contact: {hike.contact_number || 'N/A'} · Emergency: {hike.emergency_contact || 'N/A'}
                         </Text>
                       </View>
                       <Text style={styles.hikeMeta}>

@@ -155,6 +155,7 @@ export default function CalendarScreen() {
       tagalongs: parseInt(formData.tagalongs) || 1,
       contact_number: formData.contact_number,
       emergency_contact: formData.emergency_contact,
+      mountain_id: editingHike?.mountain_id || selectedMountainId,
     };
 
     if (editingHike) {
