@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import weatherService, { WeatherCondition } from '../services/weatherService';
 interface ProfileCardProps {
   visible: boolean;
   onClose: () => void;
+  onRequestLogout: () => void;
   profileImage?: string | null;
   onAvatarPress?: () => void;
   onProfileImageSelect?: (uri: string) => void;
@@ -49,9 +50,9 @@ interface LocationPayload {
 
 type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather';
 
-export default function ProfileCard({ visible, onClose, profileImage, onAvatarPress, onProfileImageSelect }: ProfileCardProps) {
+export default function ProfileCard({ visible, onClose, onRequestLogout, profileImage, onAvatarPress, onProfileImageSelect }: ProfileCardProps) {
   const router = useRouter();
-  const { user, signOut } = useAuthStore();
+  const { user } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
   const selectedMountain = getMountainById(selectedMountainId) || getMountainById('1');
   const [location, setLocation] = useState<string>('Loading...');
@@ -60,6 +61,11 @@ export default function ProfileCard({ visible, onClose, profileImage, onAvatarPr
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+
+  const handleLogoutPress = () => {
+    onClose();
+    onRequestLogout();
+  };
 
   useEffect(() => {
     if (visible) {
@@ -93,12 +99,6 @@ export default function ProfileCard({ visible, onClose, profileImage, onAvatarPr
     } finally {
       setWeatherLoading(false);
     }
-  };
-
-  const handleLogout = async () => {
-    onClose();
-    await signOut();
-    router.replace('/login');
   };
 
   const handleSettings = () => {
@@ -204,7 +204,7 @@ export default function ProfileCard({ visible, onClose, profileImage, onAvatarPr
               <Text style={styles.settingsBtnText}>Settings</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+<TouchableOpacity style={styles.logoutBtn} onPress={handleLogoutPress}>
               <Ionicons name="log-out-outline" size={13} color="#E07070" />
               <Text style={styles.logoutBtnText}>Logout</Text>
             </TouchableOpacity>
@@ -715,5 +715,74 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     marginTop: 6,
     flexShrink: 1,
+  },
+
+  logoutToast: {
+    position: 'absolute',
+    bottom: 14,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
+    backgroundColor: '#141E2D',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.2)',
+    overflow: 'hidden',
+    zIndex: 20,
+  },
+  logoutToastBar: {
+    width: 3,
+    backgroundColor: '#BF6A6A',
+    alignSelf: 'stretch',
+  },
+  logoutToastInner: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  logoutToastTitle: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  logoutToastMsg: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 10,
+    lineHeight: 13,
+    marginBottom: 8,
+  },
+  logoutToastActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  logoutToastCancel: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  logoutToastCancelText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  logoutToastConfirm: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#BF6A6A',
+  },
+  logoutToastConfirmText: {
+    color: '#0E1520',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
-  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView, TextInput,
+  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView, TextInput, Animated, Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -179,11 +179,32 @@ export default function AdminRoute() {
     else Alert.alert('Success', 'Password change rejected');
   };
 
-  const handleLogout = async () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', onPress: async () => { await signOut(); router.replace('/login'); }, style: 'destructive' },
-    ]);
+  // ── Themed logout confirm toast ─────────────────────────────────────────
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const logoutToastOpacity = useRef(new Animated.Value(0)).current;
+  const logoutToastY = useRef(new Animated.Value(-6)).current;
+
+  const openLogoutConfirm = () => {
+    setShowLogoutConfirm(true);
+    logoutToastOpacity.setValue(0);
+    logoutToastY.setValue(-6);
+    Animated.parallel([
+      Animated.timing(logoutToastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY,       { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  };
+
+  const dismissLogoutConfirm = () => {
+    Animated.parallel([
+      Animated.timing(logoutToastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY,       { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+    ]).start(() => setShowLogoutConfirm(false));
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutConfirm(false);
+    await signOut();
+    router.replace('/login');
   };
 
   const confirmResetPassword = () => {
@@ -354,7 +375,7 @@ export default function AdminRoute() {
               <Text style={styles.refreshBtnText}>Refresh</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+            <TouchableOpacity style={styles.logoutBtn} onPress={openLogoutConfirm}>
               <Ionicons name="log-out-outline" size={13} color="#E07070" />
               <Text style={styles.logoutBtnText}>Logout</Text>
             </TouchableOpacity>
@@ -502,6 +523,26 @@ export default function AdminRoute() {
           </View>
         </View>
       </View>
+
+      {/* ── Logout confirm toast — rendered at screen level to avoid overflow:hidden clipping ── */}
+      {showLogoutConfirm && (
+        <Animated.View style={[styles.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
+          <View style={styles.logoutToastBar} />
+          <View style={styles.logoutToastInner}>
+            <Text style={styles.logoutToastTitle}>Sign out?</Text>
+            <Text style={styles.logoutToastMsg}>You'll be logged out of the admin panel.</Text>
+            <View style={styles.logoutToastActions}>
+              <TouchableOpacity style={styles.logoutToastCancel} onPress={dismissLogoutConfirm}>
+                <Text style={styles.logoutToastCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.logoutToastConfirm} onPress={confirmLogout}>
+                <Ionicons name="log-out-outline" size={11} color="#0E1520" />
+                <Text style={styles.logoutToastConfirmText}>Sign out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animated.View>
+      )}
     </>
   );
 }
@@ -988,5 +1029,77 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: '700',
     fontSize: 14,
+  },
+
+  // ── Logout confirm toast ─────────────────────────────────────────────
+  logoutToast: {
+    position: 'absolute',
+    bottom: 40,
+    left: '50%',
+    marginLeft: -140,
+    width: 280,
+    flexDirection: 'row',
+    backgroundColor: '#141E2D',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.2)',
+    overflow: 'hidden',
+    zIndex: 100,
+    elevation: 10,
+  },
+  logoutToastBar: {
+    width: 3,
+    backgroundColor: '#BF6A6A',
+    alignSelf: 'stretch',
+  },
+  logoutToastInner: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  logoutToastTitle: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  logoutToastMsg: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 10,
+    lineHeight: 13,
+    marginBottom: 8,
+  },
+  logoutToastActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  logoutToastCancel: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  logoutToastCancelText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  logoutToastConfirm: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#BF6A6A',
+  },
+  logoutToastConfirmText: {
+    color: '#0E1520',
+    fontSize: 10,
+    fontWeight: '700',
   },
 });

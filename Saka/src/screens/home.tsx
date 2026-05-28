@@ -1,12 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   Dimensions,
   Animated,
+  Easing,
   StyleSheet,
   Image,
   TouchableOpacity,
+  BackHandler,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -233,15 +235,60 @@ export default function HomeScreen() {
     const subscription = Dimensions.addEventListener('change', ({ screen }) => {
       setDimensions(screen);
     });
+
     return () => {
       subscription?.remove();
-      // Restore default orientation on unmount
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.DEFAULT);
     };
   }, []);
 
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
+
+  // ── Logout confirm toast (shown on back-press when no modal open) ─────
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const logoutToastOpacity = useRef(new Animated.Value(0)).current;
+  const logoutToastY       = useRef(new Animated.Value(-6)).current;
+
+  const openLogoutConfirm = useCallback(() => {
+    setShowLogoutConfirm(true);
+    logoutToastOpacity.setValue(0);
+    logoutToastY.setValue(-6);
+    Animated.parallel([
+      Animated.timing(logoutToastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY,       { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const dismissLogoutConfirm = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(logoutToastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY,       { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+    ]).start(() => setShowLogoutConfirm(false));
+  }, []);
+
+  const confirmLogout = useCallback(async () => {
+    setShowLogoutConfirm(false);
+    await signOut();
+    router.replace('/login');
+  }, [signOut, router]);
+
+  // ── BackHandler: close ProfileCard first; otherwise show logout confirm ─
+  useEffect(() => {
+    const onBack = () => {
+      if (profileCardVisible) {
+        closeProfileCard();
+        return true; // consumed — do NOT logout
+      }
+      if (showLogoutConfirm) {
+        dismissLogoutConfirm();
+        return true;
+      }
+      openLogoutConfirm();
+      return true; // always consume — never let RN default back-navigate
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [profileCardVisible, showLogoutConfirm, openLogoutConfirm, dismissLogoutConfirm]);
 
   // Video Player Component - Always mounted, controlled by isActive
   const VideoViewPlayer = ({ source, isActive }: { source: any; isActive: boolean }) => {
@@ -429,6 +476,10 @@ export default function HomeScreen() {
       <ProfileCard
         visible={profileCardVisible}
         onClose={closeProfileCard}
+        onRequestLogout={() => {
+          closeProfileCard();
+          openLogoutConfirm();
+        }}
         profileImage={profileImage}
         onProfileImageSelect={setProfileImage}
       />
@@ -480,6 +531,24 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* ── Logout confirm toast overlay ── */}
+      {showLogoutConfirm && (
+        <Animated.View style={[styles.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
+          <View style={styles.logoutToastBar} />
+          <View style={styles.logoutToastInner}>
+            <Text style={styles.logoutToastTitle}>Sign out?</Text>
+            <Text style={styles.logoutToastMsg}>You'll be returned to the login screen.</Text>
+            <View style={styles.logoutToastActions}>
+              <TouchableOpacity style={styles.logoutToastCancel} onPress={dismissLogoutConfirm}>
+                <Text style={styles.logoutToastCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.logoutToastConfirm} onPress={confirmLogout}>
+                <Text style={styles.logoutToastConfirmText}>Sign out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -925,4 +994,70 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  logoutToast: {
+    position: 'absolute',
+    bottom: 32,
+    left: '10%',
+    right: '10%',
+    flexDirection: 'row',
+    backgroundColor: '#141E2D',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.2)',
+    overflow: 'hidden',
+    zIndex: 999,
+    elevation: 20,
+  },
+  logoutToastBar: {
+    width: 3,
+    backgroundColor: '#BF6A6A',
+    alignSelf: 'stretch',
+  },
+  logoutToastInner: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  logoutToastTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  logoutToastMsg: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 11,
+    lineHeight: 15,
+    marginBottom: 10,
+  },
+  logoutToastActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  logoutToastCancel: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  logoutToastCancelText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  logoutToastConfirm: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#BF6A6A',
+  },
+  logoutToastConfirmText: {
+    color: '#0E1520',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });
