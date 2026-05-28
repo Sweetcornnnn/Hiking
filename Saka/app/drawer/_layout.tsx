@@ -1,8 +1,15 @@
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Drawer } from 'expo-router/drawer';
+import { usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useAuthStore } from '../../src/store/authStore';
 
 export default function DrawerLayout() {
+  const pathname = usePathname();
+  const { user } = useAuthStore();
+  const adminRouteActive = pathname?.startsWith('/drawer/admin');
+  const swipeEnabled = Boolean(user?.is_admin && adminRouteActive);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar hidden={true} />
@@ -15,7 +22,7 @@ export default function DrawerLayout() {
             width: 280,
           },
           overlayColor: 'transparent',
-          swipeEnabled: true,
+          swipeEnabled,
           orientation: 'landscape',
         }}
       >
