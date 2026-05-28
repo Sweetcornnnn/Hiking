@@ -9,7 +9,7 @@ import {
   Dimensions,
   Easing,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import {
   BG_PANEL,
@@ -32,7 +32,9 @@ export default function LoadingScreen({
   loadingDuration = 5000,
 }: LoadingScreenProps) {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { user } = useAuthStore();
+  const nextRoute = params.next as string | undefined;
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -79,6 +81,8 @@ export default function LoadingScreen({
     const navigationTimer = setTimeout(() => {
       if (onComplete) {
         onComplete();
+      } else if (nextRoute) {
+        router.replace(nextRoute);
       } else {
         // Navigate based on user role
         if (user?.is_admin) {
