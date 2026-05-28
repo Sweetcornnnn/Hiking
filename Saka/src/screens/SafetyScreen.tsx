@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import locationService from '../services/locationService';
+import weatherService, { WeatherCondition } from '../services/weatherService';
 
 // Get screen dimensions for responsive design
 const screenWidth = Dimensions.get('window').width;
@@ -52,11 +53,43 @@ export default function SafetyScreen() {
     background: false,
   });
   const [sosLoading, setSosLoading] = useState(false);
+  const [weather, setWeather] = useState<WeatherCondition | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [weatherAdvice, setWeatherAdvice] = useState<string>('Weather data unavailable');
 
   // Initialize on component mount
   useEffect(() => {
     initializeTracking();
   }, []);
+
+  useEffect(() => {
+    if (lastLocation) {
+      loadWeather(lastLocation);
+    }
+  }, [lastLocation]);
+
+  const loadWeather = async (location: LocationData) => {
+    try {
+      setWeatherLoading(true);
+      setWeatherError(null);
+
+      const currentWeather = await weatherService.getCurrentWeather(
+        location.latitude,
+        location.longitude
+      );
+
+      setWeather(currentWeather);
+      setWeatherAdvice(weatherService.getWeatherSafetyAdvice(currentWeather));
+    } catch (error: any) {
+      console.error('Weather fetch failed:', error);
+      setWeather(null);
+      setWeatherAdvice('Unable to retrieve weather information.');
+      setWeatherError(error?.message || 'Weather service error');
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
 
   /**
    * Initialize location tracking and check permissions
@@ -422,6 +455,36 @@ export default function SafetyScreen() {
             </Text>
           )}
         </View>
+
+        {/* Weather Safety Card */}
+        <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>Weather Safety</Text>
+          {weatherLoading ? (
+            <View style={styles.weatherLoadingRow}>
+              <ActivityIndicator size="small" color="#1976D2" />
+              <Text style={styles.statusDetail}>Loading weather data...</Text>
+            </View>
+          ) : weather ? (
+            <>
+              <Text style={styles.weatherText}>
+                {weather.description}, {weather.temperature.toFixed(1)}°C
+              </Text>
+              <Text style={styles.statusDetail}>
+                Feels like {weather.feelsLike.toFixed(1)}°C · Humidity {weather.humidity}% · Wind {weather.windSpeed.toFixed(1)} m/s
+              </Text>
+              {weather.precipitationMm > 0 && (
+                <Text style={styles.statusDetail}>
+                  Precipitation {weather.precipitationMm.toFixed(1)} mm
+                </Text>
+              )}
+              <Text style={styles.weatherAdvice}>{weatherAdvice}</Text>
+            </>
+          ) : (
+            <Text style={[styles.statusDetail, styles.weatherErrorText]}>
+              {weatherError || 'Weather unavailable. Add a weather API key and restart the app.'}
+            </Text>
+          )}
+        </View>
       </View>
 
       {/* Action Buttons */}
@@ -597,6 +660,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     marginTop: 4,
+  },
+  weatherLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  weatherText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333',
+    marginTop: 8,
+  },
+  weatherAdvice: {
+    fontSize: 13,
+    color: '#444',
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  weatherErrorText: {
+    color: '#d32f2f',
   },
   locationText: {
     fontSize: 16,
