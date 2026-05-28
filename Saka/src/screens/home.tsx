@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -54,7 +54,7 @@ const MOUNTAINS: MountainData[] = [
     elevation: '2,117 m',
     difficulty: 'Hard',
     funnyWarning: '⚠️ Warning: Cloud formations may make you feel like a god. Side effects include poetry and crying.',
-    videoSource: require('../../assets/Mt.Majaas.mp4'),
+    videoSource: require('../../assets/Mt. Madja-as.mp4'),
     viewpoints: [
       { id: 'v1', name: 'Camp 1', x: 25, y: 65, latitude: 11.3717, longitude: 122.1088 },
       { id: 'v2', name: 'Summit', x: 50, y: 25, latitude: 11.3892, longitude: 122.1629 },
@@ -217,6 +217,136 @@ const MOUNTAINS: MountainData[] = [
   },
 ];
 
+const DIFFICULTY_COLORS: Record<string, string> = {
+  Easy: '#4CAF81',
+  Moderate: '#F0A500',
+  Hard: '#E05C3A',
+  Expert: '#C0392B',
+};
+
+// Outside HomeScreen — stable identity means React never remounts it on parent re-renders
+function VideoViewPlayer({ source, isActive }: { source: any; isActive: boolean }) {
+  const player = useVideoPlayer(source, (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.staysActiveInBackground = true;
+  });
+
+  useEffect(() => {
+    if (isActive) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isActive, player]);
+
+  // Fires when the video reaches the end. player.loop = true is already set
+  // in the initializer — re-assigning it here triggers a native bridge update
+  // mid-playback that causes the buffer/stutter. Only replay() is needed.
+  useEffect(() => {
+    const sub = player.addListener('playToEnd', () => {
+      player.replay();
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  return (
+    <VideoView
+      style={[styles.fullScreenVideo, !isActive && styles.hiddenVideo]}
+      player={player}
+      nativeControls={false}
+      contentFit="cover"
+    />
+  );
+}
+
+// Memoized — only re-renders when isActive, width, height, or isPortrait change.
+// Swiping changes isActive on exactly two slides; the other 8 stay frozen.
+const MountainSlide = memo(function MountainSlide({
+  mountain,
+  index,
+  isActive,
+  width,
+  height,
+  isPortrait,
+}: {
+  mountain: MountainData;
+  index: number;
+  isActive: boolean;
+  width: number;
+  height: number;
+  isPortrait: boolean;
+}) {
+  const locked = mountain.id !== '1';
+  const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
+  const previousMountain = locked ? MOUNTAINS[index - 1] : null;
+
+  return (
+    <View style={[styles.fullScreenContainer, { width, height }]}>
+      <View style={styles.videoWrapper}>
+        {mountain.videoSource ? (
+          <VideoViewPlayer source={mountain.videoSource} isActive={isActive} />
+        ) : mountain.imageSource ? (
+          <Image source={mountain.imageSource} style={styles.fullScreenImage} resizeMode="cover" />
+        ) : (
+          <View style={styles.fullScreenImagePlaceholder}>
+            <Ionicons name="image-outline" size={80} color="#8B7355" />
+          </View>
+        )}
+      </View>
+
+      <View style={[styles.fullScreenGradient, locked && styles.fullScreenGradientLocked]} />
+
+      {!locked && (
+        <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
+          {mountain.funnyWarning && (
+            <Text style={styles.funnyWarningText}>{mountain.funnyWarning}</Text>
+          )}
+          <View style={styles.infoMetaRow}>
+            <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
+              <View style={[styles.difficultyDot, { backgroundColor: diffColor }]} />
+              <Text style={[styles.difficultyText, { color: diffColor }]}>{mountain.difficulty}</Text>
+            </View>
+            <View style={styles.elevationPill}>
+              <Ionicons name="trending-up-outline" size={11} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.elevationText}>{mountain.elevation}</Text>
+            </View>
+          </View>
+          <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]} numberOfLines={1}>
+            {mountain.name}
+          </Text>
+          <Text style={styles.mountainDescription} numberOfLines={2}>
+            {mountain.description}
+          </Text>
+        </View>
+      )}
+
+      {locked && (
+        <View style={styles.lockOverlay}>
+          <View style={styles.lockCard}>
+            <Ionicons name="lock-closed" size={22} color="rgba(255,255,255,0.6)" />
+            <View style={styles.lockCardText}>
+              <Text style={styles.lockCardName} numberOfLines={1}>{mountain.name}</Text>
+              {previousMountain && (
+                <Text style={styles.lockCardSub}>
+                  <Text style={styles.lockCardSubItalic}>
+                    {`"Summit `}
+                    <Text style={styles.lockCardSubBold}>{previousMountain.name}</Text>
+                    {` first to unlock this peak."`}
+                  </Text>
+                </Text>
+              )}
+            </View>
+          </View>
+          {mountain.funnyWarning && (
+            <Text style={styles.funnyWarningLocked}>{mountain.funnyWarning}</Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+});
+
 export default function HomeScreen() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
@@ -241,6 +371,12 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const scrollViewRef = useRef<any>(null);
+
+  // When dimensions change (e.g. orientation), scroll to keep active index in view
+  useEffect(() => {
+    scrollViewRef.current?.scrollTo({ x: activeIndex * dimensions.width, animated: false });
+  }, [dimensions]);
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
 
@@ -290,139 +426,11 @@ export default function HomeScreen() {
     return () => sub.remove();
   }, [profileCardVisible, showLogoutConfirm, openLogoutConfirm, dismissLogoutConfirm]);
 
-  // Video Player Component - Always mounted, controlled by isActive
-  const VideoViewPlayer = ({ source, isActive }: { source: any; isActive: boolean }) => {
-    const player = useVideoPlayer(source, (player) => {
-      player.loop = true;
-      player.muted = true;
-      player.staysActiveInBackground = true;
-    });
-
-    // Handle play/pause based on active state
-    useEffect(() => {
-      if (isActive) {
-        player.play();
-      } else {
-        player.pause();
-      }
-    }, [isActive, player]);
-
-    return (
-      <VideoView
-        style={[styles.fullScreenVideo, !isActive && styles.hiddenVideo]}
-        player={player}
-        nativeControls={false}
-        contentFit="cover"
-      />
-    );
-  };
-
-  const DIFFICULTY_COLORS: Record<string, string> = {
-    Easy: '#4CAF81',
-    Moderate: '#F0A500',
-    Hard: '#E05C3A',
-    Expert: '#C0392B',
-  };
-
-  const renderMountainScreen = (mountain: MountainData, index: number) => {
-    const isActive = index === activeIndex;
-    const { width, height } = dimensions;
-    const locked = mountain.id !== '1';
-    const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
-    const previousMountain = locked ? MOUNTAINS[index - 1] : null;
-
-    return (
-      <View
-        key={mountain.id}
-        style={[styles.fullScreenContainer, { width, height }]}
-      >
-        {/* Background */}
-        <View style={styles.videoWrapper}>
-          {mountain.videoSource ? (
-            <VideoViewPlayer source={mountain.videoSource} isActive={isActive} />
-          ) : mountain.imageSource ? (
-            <Image
-              source={mountain.imageSource}
-              style={styles.fullScreenImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.fullScreenImagePlaceholder}>
-              <Ionicons name="image-outline" size={80} color="#8B7355" />
-            </View>
-          )}
-        </View>
-
-        {/* Gradient overlay — stronger at bottom for legibility */}
-        <View style={[styles.fullScreenGradient, locked && styles.fullScreenGradientLocked]} />
-
-        {/* ── Unlocked: info panel ── */}
-        {!locked && (
-          <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
-            {/* Funny warning */}
-            {mountain.funnyWarning && (
-              <Text style={styles.funnyWarningText}>{mountain.funnyWarning}</Text>
-            )}
-            {/* Difficulty + elevation row */}
-            <View style={styles.infoMetaRow}>
-              <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
-                <View style={[styles.difficultyDot, { backgroundColor: diffColor }]} />
-                <Text style={[styles.difficultyText, { color: diffColor }]}>{mountain.difficulty}</Text>
-              </View>
-              <View style={styles.elevationPill}>
-                <Ionicons name="trending-up-outline" size={11} color="rgba(255,255,255,0.7)" />
-                <Text style={styles.elevationText}>{mountain.elevation}</Text>
-              </View>
-            </View>
-
-            {/* Mountain name */}
-            <Text
-              style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}
-              numberOfLines={1}
-            >
-              {mountain.name}
-            </Text>
-
-            {/* Short description */}
-            <Text style={styles.mountainDescription} numberOfLines={2}>
-              {mountain.description}
-            </Text>
-          </View>
-        )}
-
-        {/* Per-page CTA removed — global CTA rendered outside scroll for reliable touches */}
-
-        {/* ── Locked: atmospheric overlay ── */}
-        {locked && (
-          <View style={styles.lockOverlay}>
-            <View style={styles.lockCard}>
-              <Ionicons name="lock-closed" size={22} color="rgba(255,255,255,0.6)" />
-              <View style={styles.lockCardText}>
-                <Text style={styles.lockCardName} numberOfLines={1}>{mountain.name}</Text>
-                {previousMountain && (
-                  <Text style={styles.lockCardSub}>
-                    <Text style={styles.lockCardSubItalic}>
-                      {`"Summit `}
-                      <Text style={styles.lockCardSubBold}>{previousMountain.name}</Text>
-                      {` first to unlock this peak."`}
-                    </Text>
-                  </Text>
-                )}
-              </View>
-            </View>
-            {mountain.funnyWarning && (
-              <Text style={styles.funnyWarningLocked}>{mountain.funnyWarning}</Text>
-            )}
-          </View>
-        )}
-      </View>
-    );
-  };
-
   return (
     <View style={styles.immersiveContainer}>
       {/* Full Screen Horizontal Scroll */}
       <Animated.ScrollView
+        ref={scrollViewRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -435,9 +443,18 @@ export default function HomeScreen() {
           setActiveIndex(newIndex);
         }}
         decelerationRate="fast"
-        key={`${dimensions.width}x${dimensions.height}`}
       >
-        {MOUNTAINS.map((mountain, index) => renderMountainScreen(mountain, index))}
+        {MOUNTAINS.map((mountain, index) => (
+          <MountainSlide
+            key={mountain.id}
+            mountain={mountain}
+            index={index}
+            isActive={index === activeIndex}
+            width={dimensions.width}
+            height={dimensions.height}
+            isPortrait={isPortrait}
+          />
+        ))}
       </Animated.ScrollView>
 
       {/* Floating Header */}
