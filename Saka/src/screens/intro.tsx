@@ -77,7 +77,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 48,
-    paddingTop: 48, 
   },
 
   // Logo
