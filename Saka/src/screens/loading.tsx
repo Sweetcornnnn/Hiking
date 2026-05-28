@@ -29,7 +29,7 @@ interface LoadingScreenProps {
 
 export default function LoadingScreen({
   onComplete,
-  loadingDuration = 3500,
+  loadingDuration = 5000,
 }: LoadingScreenProps) {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -61,13 +61,13 @@ export default function LoadingScreen({
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.03,
-          duration: 1500,
+          duration: 2500,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 1500,
+          duration: 2500,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
@@ -178,7 +178,8 @@ const styles = StyleSheet.create({
   },
 
   progressContainer: {
-    width: isLandscape ? 320 : 260,
+    width: '100%',
+    paddingHorizontal: isLandscape ? 48 : 32,
     marginBottom: isLandscape ? 18 : 14,
   },
 
