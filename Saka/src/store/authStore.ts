@@ -3,6 +3,16 @@ import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../config/api';
 
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+};
+
 interface User {
   id: string;
   email: string;
@@ -42,11 +52,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const base = (global as any).__API_BASE__ ?? API_BASE_URL;
       console.log(`Attempting login to ${base}/api/login`);
-      const response = await fetch(`${base}/api/login`, {
+      const response = await fetchWithTimeout(`${base}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
-      });
+      }, 10000);
 
       console.log('Response status:', response.status);
       const data = await response.json();
@@ -74,9 +84,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       return { error: null };
     } catch (error: any) {
-      console.log('Login error:', error.message);
+      const message = error.name === 'AbortError' ? 'Request timed out' : error.message || 'Network error';
+      console.log('Login error:', message, error);
       set({ isLoading: false });
-      return { error: error.message || 'Network error' };
+      return { error: message };
     }
   },
 
@@ -86,11 +97,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const base = (global as any).__API_BASE__ ?? API_BASE_URL;
       console.log(`Attempting signup to ${base}/api/register`);
-      const response = await fetch(`${base}/api/register`, {
+      const response = await fetchWithTimeout(`${base}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name }),
-      });
+      }, 10000);
 
       console.log('Response status:', response.status);
       const data = await response.json();
