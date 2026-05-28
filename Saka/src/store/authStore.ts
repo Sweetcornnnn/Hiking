@@ -18,6 +18,7 @@ interface User {
   email: string;
   name: string;
   is_admin: boolean;
+  contact_number?: string;
 }
 
 interface AuthState {
@@ -30,7 +31,7 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setAuthToken: (token: string | null) => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, name: string, contactNumber: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   checkAuth: () => Promise<void>;
   // (demo mode removed)
@@ -73,6 +74,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           email: data.user.email,
           name: data.user.name,
           is_admin: Boolean(data.user.is_admin),
+          contact_number: data.user.contact_number || '',
         },
         authToken: data.token,
         isAuthenticated: true,
@@ -91,7 +93,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  signUp: async (email, password, name) => {
+  signUp: async (email, password, name, contactNumber) => {
     set({ isLoading: true });
     
     try {
@@ -100,7 +102,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const response = await fetchWithTimeout(`${base}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, name, contact_number: contactNumber }),
       }, 10000);
 
       console.log('Response status:', response.status);

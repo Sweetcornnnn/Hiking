@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, ScrollView, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, ScrollView, Image, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
@@ -10,8 +10,10 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const { signUp, isLoading } = useAuthStore();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -43,15 +45,15 @@ export default function SignupScreen() {
   const reqs = checkReqs(password);
   const allReqsMet = Object.values(reqs).every(Boolean);
   const passwordsMatch = password === confirmPassword && password.length > 0;
-  const canSubmit = allReqsMet && passwordsMatch && !isLoading;
+  const canSubmit = allReqsMet && passwordsMatch && phone.trim().length > 0 && !isLoading;
 
   const handleSignup = async () => {
-    if (!email || !password || !confirmPassword || !name) { Alert.alert('Error', 'Please fill in all fields'); return; }
+    if (!email || !password || !confirmPassword || !name || !phone.trim()) { Alert.alert('Error', 'Please fill in all fields'); return; }
     if (password !== confirmPassword) { Alert.alert('Error', 'Passwords do not match'); return; }
     if (!allReqsMet) { Alert.alert('Error', 'Password does not meet all requirements'); return; }
-    const { error } = await signUp(email, password, name);
+    const { error } = await signUp(email, password, name, phone.trim());
     if (error) Alert.alert('Error', error);
-    else { Alert.alert('Success', 'Account created! Please sign in.'); router.replace('/login'); }
+    else setShowSuccessModal(true);
   };
 
   const REQ_ITEMS = [
@@ -130,6 +132,14 @@ export default function SignupScreen() {
                 value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" editable={!isLoading} />
             </View>
 
+            {/* Phone Number */}
+            <Text style={styles.fieldLabel}>PHONE NUMBER</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="call-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="09xx xxx xxxx" placeholderTextColor="rgba(255,255,255,0.18)"
+                value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoCapitalize="none" editable={!isLoading} />
+            </View>
+
             {/* Password */}
             <Text style={styles.fieldLabel}>PASSWORD</Text>
             <View style={styles.inputRow}>
@@ -180,6 +190,34 @@ export default function SignupScreen() {
         </View>
 
       </Animated.View>
+
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.successModalCard}>
+            <View style={styles.successIconWrap}>
+              <Ionicons name="checkmark-circle" size={32} color="#6FAF8A" />
+            </View>
+            <Text style={styles.successModalTitle}>Account created</Text>
+            <Text style={styles.successModalMessage}>Your account has been created successfully. Please sign in to continue.</Text>
+            <TouchableOpacity
+              style={styles.successModalButton}
+              onPress={() => {
+                setShowSuccessModal(false);
+                router.replace('/login');
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.successModalButtonText}>Go to sign in</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -363,5 +401,62 @@ const styles = StyleSheet.create({
     color: '#C9A96E',
     fontSize: 11,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#0E1520',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    padding: 22,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  successIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(111,175,138,0.14)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  successModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  successModalMessage: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+  },
+  successModalButton: {
+    backgroundColor: '#C9A96E',
+    borderRadius: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+  },
+  successModalButtonText: {
+    color: '#0E1520',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

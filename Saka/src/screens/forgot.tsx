@@ -3,16 +3,41 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, E
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
-import { API_BASE_URL } from '../config/api';
+import { resolveApiBaseUrl } from '../config/api';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { user, authToken } = useAuthStore();
+  const { authToken } = useAuthStore();
+  const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // ── Success toast ─────────────────────────────────────────────────────────
+  const [successVisible, setSuccessVisible] = useState(false);
+  const successOpacity = useRef(new Animated.Value(0)).current;
+  const successY = useRef(new Animated.Value(10)).current;
+
+  const showSuccessToast = () => {
+    setSuccessVisible(true);
+    successOpacity.setValue(0);
+    successY.setValue(10);
+    Animated.parallel([
+      Animated.timing(successOpacity, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(successY,       { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(successOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(successY,       { toValue: 10, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      ]).start(() => {
+        setSuccessVisible(false);
+        router.replace('/login');
+      });
+    }, 2600);
+  };
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -43,9 +68,10 @@ export default function ForgotPasswordScreen() {
   const reqs = checkReqs(newPassword);
   const allReqsMet = Object.values(reqs).every(Boolean);
   const passwordsMatch = newPassword === confirmPassword && newPassword.length > 0;
-  const canSubmit = allReqsMet && passwordsMatch && !isLoading;
+  const canSubmit = email.trim().length > 0 && allReqsMet && passwordsMatch && !isLoading;
 
   const handleReset = async () => {
+    if (!email.trim()) { Alert.alert('Error', 'Please enter your email address'); return; }
     if (!newPassword) { Alert.alert('Error', 'Please enter your new password'); return; }
     if (!confirmPassword) { Alert.alert('Error', 'Please confirm your password'); return; }
     if (newPassword !== confirmPassword) { Alert.alert('Error', 'Passwords do not match'); return; }
@@ -53,16 +79,20 @@ export default function ForgotPasswordScreen() {
 
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/password-change-request`, {
+      const body = { email: email.trim().toLowerCase(), newPassword };
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+      const base = await resolveApiBaseUrl();
+
+      const response = await fetch(`${base}/api/password-change-request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify({ userId: user?.id, newPassword }),
+        headers,
+        body: JSON.stringify(body),
       });
       const data = await response.json();
       if (!response.ok) { setIsLoading(false); Alert.alert('Error', data.error || 'Failed to request password change'); return; }
       setIsLoading(false);
-      Alert.alert('Request Sent ✓', 'Your password change request has been sent to admin for approval.',
-        [{ text: 'OK', onPress: () => router.replace('/login') }]);
+      showSuccessToast();
     } catch (error: any) {
       setIsLoading(false);
       Alert.alert('Error', error.message || 'Network error');
@@ -134,6 +164,22 @@ export default function ForgotPasswordScreen() {
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
 
+            {/* Email */}
+            <Text style={styles.fieldLabel}>EMAIL</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="mail-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your email"
+                placeholderTextColor="rgba(255,255,255,0.18)"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                editable={!isLoading}
+              />
+            </View>
+
             {/* New Password */}
             <Text style={styles.fieldLabel}>NEW PASSWORD</Text>
             <View style={styles.inputRow}>
@@ -197,6 +243,22 @@ export default function ForgotPasswordScreen() {
         </View>
 
       </Animated.View>
+
+      {/* ── Success toast ── */}
+      {successVisible && (
+        <Animated.View style={[styles.successToast, { opacity: successOpacity, transform: [{ translateY: successY }] }]}>
+          <View style={styles.successToastBar} />
+          <View style={styles.successToastIconWrap}>
+            <Ionicons name="checkmark-circle" size={22} color="#6FAF8A" />
+          </View>
+          <View style={styles.successToastContent}>
+            <Text style={styles.successToastTitle}>Request Sent</Text>
+            <Text style={styles.successToastMsg}>
+              Your password change has been submitted for admin approval. Redirecting to login…
+            </Text>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -402,5 +464,52 @@ const styles = StyleSheet.create({
   backText: {
     color: 'rgba(255,255,255,0.25)',
     fontSize: 11,
+  },
+
+  // ── Success toast ─────────────────────────────────────────────────────────
+  successToast: {
+    position: 'absolute',
+    bottom: 32,
+    left: '50%',
+    marginLeft: -152,
+    width: 304,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111927',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(111,175,138,0.25)',
+    overflow: 'hidden',
+    zIndex: 200,
+    elevation: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  successToastBar: {
+    width: 3,
+    alignSelf: 'stretch',
+    backgroundColor: '#6FAF8A',
+  },
+  successToastIconWrap: {
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  successToastContent: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingRight: 14,
+  },
+  successToastTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  successToastMsg: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 10,
+    lineHeight: 14,
   },
 });
