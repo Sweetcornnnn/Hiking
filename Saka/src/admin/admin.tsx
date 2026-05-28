@@ -435,10 +435,13 @@ export default function AdminRoute() {
                       <View style={styles.hikeDot} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.hikeName} numberOfLines={1}>
-                          {hike.user?.name || hike.user?.email || 'Unknown'}
+                          {hike.user?.name || hike.user?.email || hike.name || hike.email || 'Unknown'}
                         </Text>
                         <Text style={styles.hikeSub} numberOfLines={1}>
-                          {hike.start_time} → {hike.end_time}  ·  {hike.tagalongs} along
+                          {(hike.mountain_name || hike.mountain_id) ? `${hike.mountain_name || hike.mountain_id} · ` : ''}{hike.start_time} → {hike.end_time}  ·  {hike.tagalongs} along
+                        </Text>
+                        <Text style={styles.hikeMeta} numberOfLines={1}>
+                          Contact: {hike.contact_number || 'N/A'} · Emergency: {hike.emergency_contact || 'N/A'}
                         </Text>
                       </View>
                       <Text style={styles.hikeMeta}>

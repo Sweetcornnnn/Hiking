@@ -125,11 +125,24 @@ const initializeDatabase = (callback: () => void) => {
         tagalongs INTEGER NOT NULL DEFAULT 1,
         contact_number TEXT,
         emergency_contact TEXT,
+        mountain_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `, (err: Error | null) => {
       if (err) console.error('Error creating hikes table:', err.message);
+    });
+
+    db.all('PRAGMA table_info(hikes)', (err: Error | null, columns: any[]) => {
+      if (err) {
+        console.error('Error reading hikes schema:', err.message);
+        return;
+      }
+      if (!columns.some((col: any) => col.name === 'mountain_id')) {
+        db.run('ALTER TABLE hikes ADD COLUMN mountain_id TEXT', (alterErr: Error | null) => {
+          if (alterErr) console.error('Error adding mountain_id to hikes:', alterErr.message);
+        });
+      }
     });
 
     db.run(`
@@ -331,7 +344,13 @@ app.get('/api/profile', (req: any, res: any) => {
 app.get('/api/hikes', authenticateToken, (req: any, res: any) => {
   console.log('[API] GET /api/hikes', { userId: req.user?.id, ip: req.ip, headers: { authorization: Boolean(req.headers.authorization) } });
   db.all(
-    'SELECT * FROM hikes WHERE user_id = ? ORDER BY date ASC, start_time ASC',
+    `
+      SELECT h.*, COALESCE(m.name, h.mountain_id) AS mountain_name
+      FROM hikes h
+      LEFT JOIN mountain_biodiversity m ON h.mountain_id = m.id
+      WHERE h.user_id = ?
+      ORDER BY h.date ASC, h.start_time ASC
+    `,
     [req.user.id],
     (err: Error | null, rows: any[]) => {
       if (err) {
@@ -344,15 +363,15 @@ app.get('/api/hikes', authenticateToken, (req: any, res: any) => {
 });
 
 app.post('/api/hikes', authenticateToken, (req: any, res: any) => {
-  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact } = req.body;
+  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact, mountain_id } = req.body;
 
-  if (!date || !start_time || !end_time) {
-    return res.status(400).json({ error: 'date, start_time, and end_time are required' });
+  if (!date || !start_time || !end_time || !mountain_id) {
+    return res.status(400).json({ error: 'date, start_time, end_time, and mountain_id are required' });
   }
 
   db.run(
-    'INSERT INTO hikes (user_id, date, start_time, end_time, tagalongs, contact_number, emergency_contact) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [req.user.id, date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || ''],
+    'INSERT INTO hikes (user_id, date, start_time, end_time, tagalongs, contact_number, emergency_contact, mountain_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [req.user.id, date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || '', mountain_id],
     function(this: { lastID: number }, err: Error | null) {
       if (err) {
         console.error('Error creating hike:', err.message);
@@ -372,15 +391,15 @@ app.post('/api/hikes', authenticateToken, (req: any, res: any) => {
 
 app.put('/api/hikes/:id', authenticateToken, (req: any, res: any) => {
   const hikeId = req.params.id;
-  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact } = req.body;
+  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact, mountain_id } = req.body;
 
-  if (!date || !start_time || !end_time) {
-    return res.status(400).json({ error: 'date, start_time, and end_time are required' });
+  if (!date || !start_time || !end_time || !mountain_id) {
+    return res.status(400).json({ error: 'date, start_time, end_time, and mountain_id are required' });
   }
 
   db.run(
-    'UPDATE hikes SET date = ?, start_time = ?, end_time = ?, tagalongs = ?, contact_number = ?, emergency_contact = ? WHERE id = ? AND user_id = ?',
-    [date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || '', hikeId, req.user.id],
+    'UPDATE hikes SET date = ?, start_time = ?, end_time = ?, tagalongs = ?, contact_number = ?, emergency_contact = ?, mountain_id = ? WHERE id = ? AND user_id = ?',
+    [date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || '', mountain_id, hikeId, req.user.id],
     function(this: { changes: number }, err: Error | null) {
       if (err) {
         console.error('Error updating hike:', err.message);
@@ -462,16 +481,25 @@ app.get('/api/admin/hikes', authenticateToken, (req: any, res: any) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
   db.all(`
-    SELECT h.*, u.email, u.name 
+    SELECT h.*, u.email AS user_email, u.name AS user_name, COALESCE(m.name, h.mountain_id) AS mountain_name
     FROM hikes h 
     JOIN users u ON h.user_id = u.id 
+    LEFT JOIN mountain_biodiversity m ON h.mountain_id = m.id
     ORDER BY h.date DESC, h.start_time DESC
   `, (err: Error | null, rows: any[]) => {
     if (err) {
       console.error('Error fetching hikes:', err.message);
       return res.status(500).json({ error: 'Failed to fetch hikes' });
     }
-    res.json({ hikes: rows });
+    const hikes = rows.map((row: any) => ({
+      ...row,
+      mountain_name: row.mountain_name,
+      user: {
+        email: row.user_email,
+        name: row.user_name,
+      },
+    }));
+    res.json({ hikes });
   });
 });
 
