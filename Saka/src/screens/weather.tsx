@@ -235,4 +235,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 10,
   },
+  dividerV: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: 0,
+  },
 });
