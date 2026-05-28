@@ -22,6 +22,10 @@ export default function RootLayout() {
           name="(drawer)" 
           options={{ headerShown: false }} 
         />
+        <Stack.Screen 
+          name="location" 
+          options={{ headerShown: false }} 
+        />
       </Stack>
     </>
   );

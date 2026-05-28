@@ -1,10 +1,13 @@
 import './global.css';
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { API_BASE_URL } from './src/config/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuthStore } from './src/store/authStore';
+import { API_BASE_URL } from './src/config/api';
 
 export default function App() {
+  const checkAuth = useAuthStore((state) => state.checkAuth);
   console.log('[App] API_BASE_URL =', API_BASE_URL);
   // Wrap global.fetch to log failing request URLs and options for debugging
   try {
@@ -24,6 +27,11 @@ export default function App() {
   } catch (e) {
     // ignore errors during patching
   }
+
+  // Restore auth state on cold launch so authToken is available for admin / API calls.
+  useEffect(() => {
+    checkAuth().catch((error) => console.warn('[App] checkAuth failed', error));
+  }, [checkAuth]);
 
   // Apply runtime API host override from AsyncStorage (key: API_HOST_OVERRIDE)
   (async () => {

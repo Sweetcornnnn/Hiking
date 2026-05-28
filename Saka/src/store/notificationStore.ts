@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { API_BASE_URL } from '../config/api';
+import { resolveApiBaseUrl } from '../config/api';
 
 export interface PasswordChangeRequest {
   id: string;
@@ -31,8 +31,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   fetchPasswordChangeRequests: async (authToken: string) => {
     set({ isLoading: true });
     try {
-      console.log(`Fetching password change requests from ${API_BASE_URL}/api/password-change-requests`);
-      const response = await fetch(`${API_BASE_URL}/api/password-change-requests`, {
+      const base = await resolveApiBaseUrl();
+      console.log(`Fetching password change requests from ${base}/api/password-change-requests`);
+      const response = await fetch(`${base}/api/password-change-requests`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -64,8 +65,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   approvePasswordChange: async (requestId: string, authToken: string) => {
     try {
+      const base = await resolveApiBaseUrl();
       console.log(`Approving password change request ${requestId}`);
-      const response = await fetch(`${API_BASE_URL}/api/password-change-requests/${requestId}/approve`, {
+      const response = await fetch(`${base}/api/password-change-requests/${requestId}/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -101,8 +103,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   rejectPasswordChange: async (requestId: string, authToken: string) => {
     try {
+      const base = await resolveApiBaseUrl();
       console.log(`Rejecting password change request ${requestId}`);
-      const response = await fetch(`${API_BASE_URL}/api/password-change-requests/${requestId}/reject`, {
+      const response = await fetch(`${base}/api/password-change-requests/${requestId}/reject`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

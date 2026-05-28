@@ -46,6 +46,7 @@ export const INaturalistService = {
         occurrence_count: item.observations_count,
         last_observed: item.last_observation_at,
         observation_sources: item.preferred_common_name ? [item.preferred_common_name] : [],
+        description: item.wikipedia_summary || `${item.rank || 'Species'} - ${item.observations_count || 0} observations recorded`,
       }));
     } catch (error) {
       console.error('[INaturalistService] searchTaxa error', error);

@@ -76,6 +76,7 @@ const initializeDatabase = (callback: () => void) => {
         email TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         name TEXT,
+        contact_number TEXT,
         is_admin BOOLEAN DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -87,6 +88,18 @@ const initializeDatabase = (callback: () => void) => {
             console.error('Error checking users schema:', pragmaErr.message);
           } else {
             const hasIsAdmin = rows.some((row: any) => row.name === 'is_admin');
+            const hasContactNumber = rows.some((row: any) => row.name === 'contact_number');
+
+            if (!hasContactNumber) {
+              db.run('ALTER TABLE users ADD COLUMN contact_number TEXT', (alterErr: Error | null) => {
+                if (alterErr) {
+                  console.error('Error adding contact_number column:', alterErr.message);
+                } else {
+                  console.log('Added contact_number column to users table.');
+                }
+              });
+            }
+
             if (!hasIsAdmin) {
               db.run('ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0', (alterErr: Error | null) => {
                 if (alterErr) {
@@ -125,11 +138,24 @@ const initializeDatabase = (callback: () => void) => {
         tagalongs INTEGER NOT NULL DEFAULT 1,
         contact_number TEXT,
         emergency_contact TEXT,
+        mountain_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `, (err: Error | null) => {
       if (err) console.error('Error creating hikes table:', err.message);
+    });
+
+    db.all('PRAGMA table_info(hikes)', (err: Error | null, columns: any[]) => {
+      if (err) {
+        console.error('Error reading hikes schema:', err.message);
+        return;
+      }
+      if (!columns.some((col: any) => col.name === 'mountain_id')) {
+        db.run('ALTER TABLE hikes ADD COLUMN mountain_id TEXT', (alterErr: Error | null) => {
+          if (alterErr) console.error('Error adding mountain_id to hikes:', alterErr.message);
+        });
+      }
     });
 
     db.run(`
@@ -238,10 +264,10 @@ const initializeDatabase = (callback: () => void) => {
 
 app.post('/api/register', async (req: any, res: any) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, contact_number } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    if (!email || !password || !contact_number) {
+      return res.status(400).json({ error: 'Email, password, and phone number are required' });
     }
 
     db.get('SELECT id FROM users WHERE email = ?', [email], (err: Error | null, row: any) => {
@@ -251,10 +277,13 @@ app.post('/api/register', async (req: any, res: any) => {
       const hashedPassword = bcrypt.hashSync(password, 10);
 
       db.run(
-        'INSERT INTO users (email, password, name, is_admin) VALUES (?, ?, ?, ?)',
-        [email, hashedPassword, name || null, 0],
+        'INSERT INTO users (email, password, name, contact_number, is_admin) VALUES (?, ?, ?, ?, ?)',
+        [email, hashedPassword, name || null, contact_number || '', 0],
         function(err: Error | null) {
-          if (err) return res.status(500).json({ error: 'Failed to create user' });
+          if (err) {
+            console.error('Error inserting user:', err.message);
+            return res.status(500).json({ error: 'Failed to create user' });
+          }
           res.status(201).json({ message: 'User created successfully' });
         }
       );
@@ -296,7 +325,8 @@ app.post('/api/login', async (req: any, res: any) => {
             id: user.id,
             email: user.email,
             name: user.name,
-            is_admin: Boolean(user.is_admin)
+            is_admin: Boolean(user.is_admin),
+            contact_number: user.contact_number || ''
           }
         });
       } catch (bcryptError) {
@@ -317,7 +347,7 @@ app.get('/api/profile', (req: any, res: any) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
 
-    db.get('SELECT id, email, name, is_admin FROM users WHERE id = ?', [decoded.userId], (err: Error | null, user: any) => {
+    db.get('SELECT id, email, name, is_admin, contact_number FROM users WHERE id = ?', [decoded.userId], (err: Error | null, user: any) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json({ user });
@@ -325,6 +355,102 @@ app.get('/api/profile', (req: any, res: any) => {
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
   }
+});
+
+// User hike CRUD endpoints
+app.get('/api/hikes', authenticateToken, (req: any, res: any) => {
+  console.log('[API] GET /api/hikes', { userId: req.user?.id, ip: req.ip, headers: { authorization: Boolean(req.headers.authorization) } });
+  db.all(
+    `
+      SELECT h.*, COALESCE(m.name, h.mountain_id) AS mountain_name
+      FROM hikes h
+      LEFT JOIN mountain_biodiversity m ON h.mountain_id = m.id
+      WHERE h.user_id = ?
+      ORDER BY h.date ASC, h.start_time ASC
+    `,
+    [req.user.id],
+    (err: Error | null, rows: any[]) => {
+      if (err) {
+        console.error('Error fetching user hikes:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch hikes' });
+      }
+      res.json({ hikes: rows });
+    }
+  );
+});
+
+app.post('/api/hikes', authenticateToken, (req: any, res: any) => {
+  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact, mountain_id } = req.body;
+
+  if (!date || !start_time || !end_time || !mountain_id) {
+    return res.status(400).json({ error: 'date, start_time, end_time, and mountain_id are required' });
+  }
+
+  db.run(
+    'INSERT INTO hikes (user_id, date, start_time, end_time, tagalongs, contact_number, emergency_contact, mountain_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [req.user.id, date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || '', mountain_id],
+    function(this: { lastID: number }, err: Error | null) {
+      if (err) {
+        console.error('Error creating hike:', err.message);
+        return res.status(500).json({ error: 'Failed to create hike' });
+      }
+
+      db.get('SELECT * FROM hikes WHERE id = ?', [this.lastID], (selectErr: Error | null, row: any) => {
+        if (selectErr) {
+          console.error('Error loading created hike:', selectErr.message);
+          return res.status(500).json({ error: 'Hike created but could not be loaded' });
+        }
+        res.status(201).json({ hike: row });
+      });
+    }
+  );
+});
+
+app.put('/api/hikes/:id', authenticateToken, (req: any, res: any) => {
+  const hikeId = req.params.id;
+  const { date, start_time, end_time, tagalongs, contact_number, emergency_contact, mountain_id } = req.body;
+
+  if (!date || !start_time || !end_time || !mountain_id) {
+    return res.status(400).json({ error: 'date, start_time, end_time, and mountain_id are required' });
+  }
+
+  db.run(
+    'UPDATE hikes SET date = ?, start_time = ?, end_time = ?, tagalongs = ?, contact_number = ?, emergency_contact = ?, mountain_id = ? WHERE id = ? AND user_id = ?',
+    [date, start_time, end_time, tagalongs || 1, contact_number || '', emergency_contact || '', mountain_id, hikeId, req.user.id],
+    function(this: { changes: number }, err: Error | null) {
+      if (err) {
+        console.error('Error updating hike:', err.message);
+        return res.status(500).json({ error: 'Failed to update hike' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Hike not found or access denied' });
+      }
+
+      res.json({ message: 'Hike updated successfully' });
+    }
+  );
+});
+
+app.delete('/api/hikes/:id', authenticateToken, (req: any, res: any) => {
+  const hikeId = req.params.id;
+
+  db.run(
+    'DELETE FROM hikes WHERE id = ? AND user_id = ?',
+    [hikeId, req.user.id],
+    function(this: { changes: number }, err: Error | null) {
+      if (err) {
+        console.error('Error deleting hike:', err.message);
+        return res.status(500).json({ error: 'Failed to delete hike' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Hike not found or access denied' });
+      }
+
+      res.json({ message: 'Hike deleted successfully' });
+    }
+  );
 });
 
 // Set admin status - for development/testing
@@ -372,16 +498,25 @@ app.get('/api/admin/hikes', authenticateToken, (req: any, res: any) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
   db.all(`
-    SELECT h.*, u.email, u.name 
+    SELECT h.*, u.email AS user_email, u.name AS user_name, COALESCE(m.name, h.mountain_id) AS mountain_name
     FROM hikes h 
     JOIN users u ON h.user_id = u.id 
+    LEFT JOIN mountain_biodiversity m ON h.mountain_id = m.id
     ORDER BY h.date DESC, h.start_time DESC
   `, (err: Error | null, rows: any[]) => {
     if (err) {
       console.error('Error fetching hikes:', err.message);
       return res.status(500).json({ error: 'Failed to fetch hikes' });
     }
-    res.json({ hikes: rows });
+    const hikes = rows.map((row: any) => ({
+      ...row,
+      mountain_name: row.mountain_name,
+      user: {
+        email: row.user_email,
+        name: row.user_name,
+      },
+    }));
+    res.json({ hikes });
   });
 });
 
@@ -417,7 +552,7 @@ app.get('/api/admin/stats', authenticateToken, (req: any, res: any) => {
 app.get('/api/admin/users', authenticateToken, (req: any, res: any) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
-  db.all('SELECT id, email, name, is_admin, created_at FROM users ORDER BY created_at DESC', (err: Error | null, rows: any[]) => {
+  db.all('SELECT id, email, name, contact_number, is_admin, created_at FROM users ORDER BY created_at DESC', (err: Error | null, rows: any[]) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ users: rows });
   });
@@ -490,27 +625,52 @@ app.delete('/api/admin/users/:id', authenticateToken, (req: any, res: any) => {
 // ─────────────────────────────────────────
 
 // Request password change (user endpoint)
-app.post('/api/password-change-request', authenticateToken, async (req: any, res: any) => {
+app.post('/api/password-change-request', async (req: any, res: any) => {
   try {
-    const { newPassword } = req.body;
-    const userId = req.user.id;
-
+    const { newPassword, email } = req.body;
     if (!newPassword) return res.status(400).json({ error: 'New password is required' });
     if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-    const hashedPassword = bcrypt.hashSync(newPassword, 10);
-
-    db.run(
-      'INSERT INTO password_change_requests (user_id, new_password, status) VALUES (?, ?, ?)',
-      [userId, hashedPassword, 'pending'],
-      function(this: { lastID: number }, err: Error | null) {
-        if (err) {
-          console.error('Error creating password change request:', err.message);
-          return res.status(500).json({ error: 'Failed to create password change request' });
+    const createRequest = (userId: number) => {
+      const hashedPassword = bcrypt.hashSync(newPassword, 10);
+      db.run(
+        'INSERT INTO password_change_requests (user_id, new_password, status) VALUES (?, ?, ?)',
+        [userId, hashedPassword, 'pending'],
+        function(this: { lastID: number }, err: Error | null) {
+          if (err) {
+            console.error('Error creating password change request:', err.message);
+            return res.status(500).json({ error: 'Failed to create password change request' });
+          }
+          res.json({ message: 'Password change request sent to admin', requestId: this.lastID });
         }
-        res.json({ message: 'Password change request sent to admin', requestId: this.lastID });
+      );
+    };
+
+    if (email) {
+      const normalizedEmail = email.trim().toLowerCase();
+      db.get('SELECT id FROM users WHERE email = ?', [normalizedEmail], (err: Error | null, user: any) => {
+        if (err) {
+          console.error('Error finding user by email:', err.message);
+          return res.status(500).json({ error: 'Database error' });
+        }
+        if (!user) {
+          return res.status(404).json({ error: 'User with that email not found' });
+        }
+        createRequest(user.id);
+      });
+    } else {
+      const authHeader = req.headers['authorization'];
+      const token = authHeader && authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(400).json({ error: 'Email or auth token required' });
       }
-    );
+      jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
+        if (err) {
+          return res.status(403).json({ error: 'Invalid or expired token' });
+        }
+        createRequest(decoded.userId);
+      });
+    }
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ error: 'Server error' });

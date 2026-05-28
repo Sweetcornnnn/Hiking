@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -51,7 +50,7 @@ export default function WeatherScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
+    <View style={styles.page}>
       <View style={styles.card}>
         <View style={styles.leftPanel}>
           <Text style={styles.pageTitle}>Weather Overview</Text>
@@ -104,13 +103,13 @@ export default function WeatherScreen() {
           </View>
         </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   page: {
-    flexGrow: 1,
+    flex: 1,
     backgroundColor: '#0E1520',
     padding: 24,
     justifyContent: 'center',
@@ -235,5 +234,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 6,
     marginBottom: 10,
+  },
+  dividerV: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: 0,
   },
 });

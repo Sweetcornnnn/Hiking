@@ -14,6 +14,8 @@ export interface Hike {
   tagalongs: number;
   contact_number: string;
   emergency_contact: string;
+  mountain_id?: string;
+  mountain_name?: string;
   created_at: string;
   user?: {
     email: string;

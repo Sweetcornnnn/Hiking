@@ -1,42 +1,166 @@
 import React, { useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 interface SpeciesGalleryProps {
   images?: string[];
 }
 
-export const SpeciesGallery: React.FC<SpeciesGalleryProps> = ({ images = [] }) => {
+export const SpeciesGallery: React.FC<SpeciesGalleryProps> = ({
+  images = [],
+}) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const [open, setOpen] = useState(false);
 
-  if (images.length === 0) {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
+  if (!images.length) {
     return (
-      <View style={styles.emptyGallery}>
-        <Text style={styles.emptyText}>No image gallery available yet.</Text>
+      <View style={styles.empty}>
+        <Ionicons name="images-outline" size={22} color="#64748B" />
+        <Text style={styles.emptyText}>
+          No image data available
+        </Text>
       </View>
     );
   }
 
+  const openViewer = (index: number) => {
+    setActiveIndex(index);
+    setOpen(true);
+  };
+
   return (
     <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>Image gallery</Text>
-        <Text style={styles.counter}>{`${activeIndex + 1} / ${images.length}`}</Text>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Ionicons name="images-outline" size={16} color="#D4A574" />
+
+          <Text style={styles.title}>Gallery</Text>
+        </View>
+
+        <View style={styles.counterPill}>
+          <Text style={styles.counterText}>
+            {activeIndex + 1} / {images.length}
+          </Text>
+        </View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slider}>
-        {images.map((uri, index) => (
-          <Pressable key={`${uri}-${index}`} onPress={() => { setActiveIndex(index); setOpen(true); }} style={styles.imageTile}>
-            <Image source={{ uri }} style={styles.image} resizeMode="cover" />
-          </Pressable>
-        ))}
+
+      {/* STRIP */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.strip}
+      >
+        {images.map((uri, index) => {
+          const active = index === activeIndex;
+
+          return (
+            <Pressable
+              key={`${uri}-${index}`}
+              onPress={() => openViewer(index)}
+              style={[
+                styles.thumb,
+                active && styles.thumbActive,
+              ]}
+            >
+              <Image
+                source={{ uri }}
+                style={styles.thumbImage}
+                resizeMode="cover"
+              />
+
+              {active && <View style={styles.activeOverlay} />}
+            </Pressable>
+          );
+        })}
       </ScrollView>
 
-      <Modal visible={open} animationType="slide" transparent>
+      {/* FULLSCREEN VIEWER */}
+      <Modal visible={open} animationType="fade" transparent>
         <View style={styles.modalBackdrop}>
-          <Pressable style={styles.closeArea} onPress={() => setOpen(false)} />
-          <View style={styles.modalContent}>
-            <Image source={{ uri: images[activeIndex] }} style={styles.modalImage} resizeMode="contain" />
-            <Text style={styles.modalCaption}>{images[activeIndex]}</Text>
+          <Pressable
+            style={styles.backdropTap}
+            onPress={() => setOpen(false)}
+          />
+
+          <View
+            style={[
+              styles.modalCard,
+              {
+                height: isLandscape ? '92%' : '80%',
+                width: isLandscape ? '85%' : '92%',
+              },
+            ]}
+          >
+            {/* TOP BAR */}
+            <View style={styles.modalTopBar}>
+              <Text style={styles.modalCounter}>
+                {activeIndex + 1} / {images.length}
+              </Text>
+
+              <Pressable
+                onPress={() => setOpen(false)}
+                style={styles.closeBtn}
+              >
+                <Ionicons
+                  name="close"
+                  size={18}
+                  color="#CBD5E1"
+                />
+              </Pressable>
+            </View>
+
+            {/* IMAGE */}
+            <Image
+              source={{ uri: images[activeIndex] }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+
+            {/* NAV */}
+            <View style={styles.navRow}>
+              <Pressable
+                onPress={() =>
+                  setActiveIndex((p) =>
+                    p > 0 ? p - 1 : images.length - 1
+                  )
+                }
+                style={styles.navBtn}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={20}
+                  color="#E2E8F0"
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  setActiveIndex((p) =>
+                    p < images.length - 1 ? p + 1 : 0
+                  )
+                }
+                style={styles.navBtn}
+              >
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color="#E2E8F0"
+                />
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -46,81 +170,150 @@ export const SpeciesGallery: React.FC<SpeciesGalleryProps> = ({ images = [] }) =
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#111827',
     borderRadius: 24,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 13,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    padding: 14,
   },
-  headerRow: {
+
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
+
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
   title: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#F8FAFC',
   },
-  counter: {
-    fontSize: 12,
-    color: '#64748B',
+
+  counterPill: {
+    backgroundColor: '#172033',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#233047',
   },
-  slider: {
-    gap: 12,
+
+  counterText: {
+    fontSize: 10,
+    color: '#CBD5E1',
+    fontWeight: '600',
   },
-  imageTile: {
-    width: 160,
-    height: 130,
-    borderRadius: 20,
+
+  strip: {
+    gap: 10,
+  },
+
+  thumb: {
+    width: 150,
+    height: 110,
+    borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: '#1E293B',
   },
-  image: {
+
+  thumbActive: {
+    borderColor: '#D4A574',
+  },
+
+  thumbImage: {
     width: '100%',
     height: '100%',
   },
-  emptyGallery: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 20,
-    padding: 20,
+
+  activeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(212,165,116,0.12)',
+  },
+
+  empty: {
+    backgroundColor: '#111827',
+    borderRadius: 22,
+    padding: 18,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    gap: 8,
   },
+
   emptyText: {
-    color: '#475569',
-    fontSize: 13,
+    color: '#64748B',
+    fontSize: 10,
+    fontWeight: '600',
   },
+
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    backgroundColor: 'rgba(2,6,23,0.9)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeArea: {
+
+  backdropTap: {
     ...StyleSheet.absoluteFillObject,
   },
-  modalContent: {
-    width: '92%',
-    height: '80%',
-    backgroundColor: '#0F172A',
-    borderRadius: 24,
+
+  modalCard: {
+    backgroundColor: '#0B1220',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: '#1E293B',
     overflow: 'hidden',
     justifyContent: 'center',
+  },
+
+  modalTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 14,
   },
+
+  modalCounter: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#172033',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   modalImage: {
+    flex: 1,
     width: '100%',
-    height: '88%',
   },
-  modalCaption: {
-    color: '#E2E8F0',
-    fontSize: 12,
-    marginTop: 8,
-    paddingHorizontal: 14,
-    textAlign: 'center',
+
+  navRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 14,
+  },
+
+  navBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#172033',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

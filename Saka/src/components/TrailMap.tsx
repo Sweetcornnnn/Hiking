@@ -33,15 +33,15 @@ import type { ViewpointDetail } from '../types/viewpointTypes';
 const PLACEHOLDER = require('../../assets/viewpoints/placeholder.png');
 const IMAGE_MAP: Record<string, any> = {
   trailhead:     require('../../assets/images/TrailHead.jpg'),
-  bantang_river: PLACEHOLDER,
-  camp1:         PLACEHOLDER,
-  waterfall:     PLACEHOLDER,
-  mossy_forest:  PLACEHOLDER,
-  camp2:         PLACEHOLDER,
-  camp3:         PLACEHOLDER,
-  crown_shyness: PLACEHOLDER,
-  summit_ridge:  PLACEHOLDER,
-  summit:        PLACEHOLDER,
+  bantang_river: require('../../assets/images/BantangRiverWide.jpg'),
+  camp1:         require('../../assets/images/Camp1.jpg'),
+  waterfall:     require('../../assets/images/WaterfallsWide.jpg'),
+  mossy_forest:  require('../../assets/images/MossyForestWide.jpg'),
+  camp2:         require('../../assets/images/Camp2$3.jpg'),
+  camp3:         require('../../assets/images/Camp2$3.jpg'),
+  crown_shyness: require('../../assets/images/CrownShines.jpg'),
+  summit_ridge:  require('../../assets/images/MadjaasRidgeWide.jpg'),
+  summit:        require('../../assets/images/MadjaasSummit.jpg'),
 };
 
 // ─── ProfileCard design tokens ────────────────────────────────────────────

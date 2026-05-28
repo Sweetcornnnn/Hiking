@@ -505,7 +505,10 @@ export default function HomeScreen() {
       {MOUNTAINS[activeIndex] && MOUNTAINS[activeIndex].id === '1' && (
         <TouchableOpacity
           style={[styles.ctaButton, styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
-          onPress={() => { console.log('Tara Saka pressed'); router.push('/MountainTop'); }}
+          onPress={() => {
+            console.log('Tara Saka pressed');
+            router.push('/loading?next=/MountainTop');
+          }}
           activeOpacity={0.85}
         >
           <View style={styles.logoPlaceholder}>

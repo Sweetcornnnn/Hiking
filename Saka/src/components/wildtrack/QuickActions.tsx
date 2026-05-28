@@ -1,6 +1,18 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  BG_PANEL,
+  BG_SUBTLE,
+  BORDER_DEFAULT,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  ACCENT_GOLD,
+  ACCENT_GREEN,
+} from '../../theme/designTokens';
+
+const { width, height } = Dimensions.get('window');
+const isLandscape = width >= height;
 
 interface QuickAction {
   icon: keyof typeof Ionicons.glyphMap;
@@ -36,32 +48,31 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
+    gap: isLandscape ? 14 : 12,
+    marginBottom: isLandscape ? 16 : 20,
   },
   actionButton: {
     flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#FFFFFF',
+    minWidth: isLandscape ? '30%' : '45%',
+    backgroundColor: BG_PANEL,
     borderRadius: 16,
-    padding: 16,
+    padding: isLandscape ? 18 : 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
   iconContainer: {
-    backgroundColor: '#F5E6D3',
+    backgroundColor: BG_SUBTLE,
     padding: 12,
     borderRadius: 12,
-    marginBottom: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
   actionLabel: {
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: TEXT_PRIMARY,
     textAlign: 'center',
   },
 });
