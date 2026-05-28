@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
 import { useNotificationStore } from '../store/notificationStore';
-import { API_BASE_URL } from '../config/api';
+import { API_BASE_URL, resolveApiBaseUrl } from '../config/api';
 import UserLocationModal from './UserLocationModal';
 
 // ---------- User Store (local, using authToken) ----------
@@ -55,7 +55,8 @@ export default function AdminRoute() {
     if (!authToken) return;
     setUsersLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
+      const base = await resolveApiBaseUrl();
+      const res = await fetch(`${base}/api/admin/users`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json();
@@ -75,7 +76,8 @@ export default function AdminRoute() {
   const updateUserAdmin = async (userId: number, isAdmin: boolean) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
+      const base = await resolveApiBaseUrl();
+      const res = await fetch(`${base}/api/admin/users/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -99,7 +101,8 @@ export default function AdminRoute() {
   const resetUserPassword = async (userId: number, password: string) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/reset-password`, {
+      const base = await resolveApiBaseUrl();
+      const res = await fetch(`${base}/api/admin/users/${userId}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -122,7 +125,8 @@ export default function AdminRoute() {
   const deleteUser = async (userId: number) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
+      const base = await resolveApiBaseUrl();
+      const res = await fetch(`${base}/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${authToken}` },
       });
@@ -146,6 +150,7 @@ export default function AdminRoute() {
     }
     fetchAllHikes();
     fetchAdminStats();
+
     if (authToken) {
       fetchPasswordChangeRequests(authToken);
       fetchUsers();
@@ -435,7 +440,7 @@ export default function AdminRoute() {
                       <View style={styles.hikeDot} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.hikeName} numberOfLines={1}>
-                          {hike.user?.name || hike.user?.email || hike.name || hike.email || 'Unknown'}
+                          {hike.user?.name || hike.user?.email || 'Unknown'}
                         </Text>
                         <Text style={styles.hikeSub} numberOfLines={1}>
                           {(hike.mountain_name || hike.mountain_id) ? `${hike.mountain_name || hike.mountain_id} · ` : ''}{hike.start_time} → {hike.end_time}  ·  {hike.tagalongs} along
@@ -492,7 +497,7 @@ export default function AdminRoute() {
                         {/* Admin toggle button */}
                         <TouchableOpacity
                           onPress={() => {
-                            if (u.id === user?.id) {
+                            if (u.id === Number(user?.id)) {
                               Alert.alert('Not allowed', 'You cannot change your own admin status.');
                               return;
                             }
@@ -529,7 +534,7 @@ export default function AdminRoute() {
                         {/* Delete button */}
                         <TouchableOpacity
                           onPress={() => {
-                            if (u.id === user?.id) {
+                            if (u.id === Number(user?.id)) {
                               Alert.alert('Not allowed', 'You cannot delete your own account from here.');
                               return;
                             }
