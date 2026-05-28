@@ -58,14 +58,14 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// Database setup - exact copy from spa-api
+// Database setup
 const dbPath = path.resolve(__dirname, 'hiking.db');
 const db = new sqlite3.Database(dbPath, (err: Error | null) => {
-    if (err) {
-        console.error('Error connecting to the database:', err.message);
-    } else {
-        console.log('Connected to hiking.db at', dbPath);
-    }
+  if (err) {
+    console.error('Error connecting to the database:', err.message);
+  } else {
+    console.log('Connected to hiking.db at', dbPath);
+  }
 });
 
 const initializeDatabase = (callback: () => void) => {
@@ -129,9 +129,7 @@ const initializeDatabase = (callback: () => void) => {
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `, (err: Error | null) => {
-      if (err) {
-        console.error('Error creating hikes table:', err.message);
-      }
+      if (err) console.error('Error creating hikes table:', err.message);
     });
 
     db.run(`
@@ -145,9 +143,7 @@ const initializeDatabase = (callback: () => void) => {
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `, (err: Error | null) => {
-      if (err) {
-        console.error('Error creating password_change_requests table:', err.message);
-      }
+      if (err) console.error('Error creating password_change_requests table:', err.message);
     });
 
     // WildTrack: Species table
@@ -236,9 +232,10 @@ const initializeDatabase = (callback: () => void) => {
   });
 };
 
-initializeDatabase(() => {});
+// ─────────────────────────────────────────
+// AUTH & USER ENDPOINTS
+// ─────────────────────────────────────────
 
-// Register endpoint - exact pattern from spa-api
 app.post('/api/register', async (req: any, res: any) => {
   try {
     const { email, password, name } = req.body;
@@ -247,28 +244,17 @@ app.post('/api/register', async (req: any, res: any) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Check if user already exists
     db.get('SELECT id FROM users WHERE email = ?', [email], (err: Error | null, row: any) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (row) return res.status(400).json({ error: 'User already exists' });
 
-      if (row) {
-        return res.status(400).json({ error: 'User already exists' });
-      }
-
-      // Hash password
       const hashedPassword = bcrypt.hashSync(password, 10);
 
-      // Insert new user
       db.run(
         'INSERT INTO users (email, password, name, is_admin) VALUES (?, ?, ?, ?)',
         [email, hashedPassword, name || null, 0],
         function(err: Error | null) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to create user' });
-          }
-
+          if (err) return res.status(500).json({ error: 'Failed to create user' });
           res.status(201).json({ message: 'User created successfully' });
         }
       );
@@ -278,7 +264,6 @@ app.post('/api/register', async (req: any, res: any) => {
   }
 });
 
-// Login endpoint - exact pattern from spa-api
 app.post('/api/login', async (req: any, res: any) => {
   try {
     const { email, password } = req.body;
@@ -287,25 +272,18 @@ app.post('/api/login', async (req: any, res: any) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Find user
     db.get('SELECT * FROM users WHERE email = ?', [email], async (err: Error | null, user: any) => {
       if (err) {
         console.error('Database error:', err);
         return res.status(500).json({ error: 'Database error' });
       }
 
-      if (!user) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
+      if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
       try {
-        // Compare password
         const match = await bcrypt.compare(password, user.password);
-        if (!match) {
-          return res.status(401).json({ error: 'Invalid credentials' });
-        }
+        if (!match) return res.status(401).json({ error: 'Invalid credentials' });
 
-        // Generate JWT token with admin claim
         const token = jwt.sign(
           { userId: user.id, email: user.email, is_admin: Boolean(user.is_admin) },
           JWT_SECRET
@@ -331,26 +309,17 @@ app.post('/api/login', async (req: any, res: any) => {
   }
 });
 
-// Get user profile - exact pattern from spa-api
 app.get('/api/profile', (req: any, res: any) => {
   const token = req.headers.authorization?.split(' ')[1];
 
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
+  if (!token) return res.status(401).json({ error: 'No token provided' });
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    
+
     db.get('SELECT id, email, name, is_admin FROM users WHERE id = ?', [decoded.userId], (err: Error | null, user: any) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-
+      if (err) return res.status(500).json({ error: 'Database error' });
+      if (!user) return res.status(404).json({ error: 'User not found' });
       res.json({ user });
     });
   } catch (error) {
@@ -363,9 +332,7 @@ app.post('/api/set-admin', (req: any, res: any) => {
   const { email, isAdmin } = req.body;
   const adminValue = isAdmin ? 1 : 0;
 
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
+  if (!email) return res.status(400).json({ error: 'Email is required' });
 
   const updateAdminStatus = () => {
     db.run(
@@ -375,9 +342,7 @@ app.post('/api/set-admin', (req: any, res: any) => {
         if (err) {
           if (err.message?.includes('no such column: is_admin')) {
             db.run('ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0', (alterErr: Error | null) => {
-              if (alterErr) {
-                return res.status(500).json({ error: 'Failed to update database schema' });
-              }
+              if (alterErr) return res.status(500).json({ error: 'Failed to update database schema' });
               updateAdminStatus();
             });
             return;
@@ -385,10 +350,7 @@ app.post('/api/set-admin', (req: any, res: any) => {
           return res.status(500).json({ error: 'Failed to update user' });
         }
 
-        if (this.changes === 0) {
-          return res.status(404).json({ error: 'User not found' });
-        }
-
+        if (this.changes === 0) return res.status(404).json({ error: 'User not found' });
         res.json({ message: `User admin status set to ${isAdmin}` });
       }
     );
@@ -402,11 +364,12 @@ app.get('/api/health', (req: any, res: any) => {
   res.json({ status: 'Server is running', timestamp: new Date().toISOString() });
 });
 
-// Get all hikes (admin only)
+// ─────────────────────────────────────────
+// ADMIN: HIKES & STATS
+// ─────────────────────────────────────────
+
 app.get('/api/admin/hikes', authenticateToken, (req: any, res: any) => {
-  if (!req.user.is_admin) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
   db.all(`
     SELECT h.*, u.email, u.name 
@@ -422,20 +385,15 @@ app.get('/api/admin/hikes', authenticateToken, (req: any, res: any) => {
   });
 });
 
-// Get user statistics (admin only)
 app.get('/api/admin/stats', authenticateToken, (req: any, res: any) => {
-  if (!req.user.is_admin) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
-  // Get total hikes count
   db.get('SELECT COUNT(*) as total_hikes FROM hikes', (err: Error | null, hikeRow: any) => {
     if (err) {
       console.error('Error fetching hike count:', err.message);
       return res.status(500).json({ error: 'Failed to fetch statistics' });
     }
 
-    // Get total users count
     db.get('SELECT COUNT(*) as total_users FROM users', (err: Error | null, userRow: any) => {
       if (err) {
         console.error('Error fetching user count:', err.message);
@@ -451,6 +409,83 @@ app.get('/api/admin/stats', authenticateToken, (req: any, res: any) => {
 });
 
 // ─────────────────────────────────────────
+// ADMIN: USER MANAGEMENT
+// (added from spa-api, not present in wildtrack-api)
+// ─────────────────────────────────────────
+
+// Get all users
+app.get('/api/admin/users', authenticateToken, (req: any, res: any) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+  db.all('SELECT id, email, name, is_admin, created_at FROM users ORDER BY created_at DESC', (err: Error | null, rows: any[]) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ users: rows });
+  });
+});
+
+// Update user (name and/or is_admin)
+app.put('/api/admin/users/:id', authenticateToken, (req: any, res: any) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+  const { name, is_admin } = req.body;
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+  if (is_admin !== undefined) { updates.push('is_admin = ?'); values.push(is_admin ? 1 : 0); }
+  if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+  values.push(req.params.id);
+
+  db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values, function(this: { changes: number }, err: Error | null) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ updated: this.changes });
+  });
+});
+
+// Force password reset for a user (admin creates a pending password change request)
+app.post('/api/admin/users/:id/reset-password', authenticateToken, (req: any, res: any) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+
+  const hashed = bcrypt.hashSync(newPassword, 10);
+
+  db.run(
+    'INSERT INTO password_change_requests (user_id, new_password, status) VALUES (?, ?, ?)',
+    [req.params.id, hashed, 'pending'],
+    function(this: { lastID: number }, err: Error | null) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: 'Password reset request created', requestId: this.lastID });
+    }
+  );
+});
+
+// Delete user (also removes their hikes, password requests, and discoveries)
+app.delete('/api/admin/users/:id', authenticateToken, (req: any, res: any) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+  const userId = req.params.id;
+
+  if (parseInt(userId) === req.user.id) {
+    return res.status(400).json({ error: 'You cannot delete your own admin account' });
+  }
+
+  db.serialize(() => {
+    db.run('DELETE FROM discoveries WHERE user_id = ?', [userId]);
+    db.run('DELETE FROM hikes WHERE user_id = ?', [userId]);
+    db.run('DELETE FROM password_change_requests WHERE user_id = ?', [userId]);
+    db.run('DELETE FROM users WHERE id = ?', [userId], function(this: { changes: number }, err: Error | null) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ deleted: this.changes });
+    });
+  });
+});
+
+// ─────────────────────────────────────────
 // PASSWORD CHANGE REQUEST ENDPOINTS
 // ─────────────────────────────────────────
 
@@ -460,18 +495,11 @@ app.post('/api/password-change-request', authenticateToken, async (req: any, res
     const { newPassword } = req.body;
     const userId = req.user.id;
 
-    if (!newPassword) {
-      return res.status(400).json({ error: 'New password is required' });
-    }
+    if (!newPassword) return res.status(400).json({ error: 'New password is required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
-
-    // Hash the new password
     const hashedPassword = bcrypt.hashSync(newPassword, 10);
 
-    // Create password change request
     db.run(
       'INSERT INTO password_change_requests (user_id, new_password, status) VALUES (?, ?, ?)',
       [userId, hashedPassword, 'pending'],
@@ -480,11 +508,7 @@ app.post('/api/password-change-request', authenticateToken, async (req: any, res
           console.error('Error creating password change request:', err.message);
           return res.status(500).json({ error: 'Failed to create password change request' });
         }
-
-        res.json({
-          message: 'Password change request sent to admin',
-          requestId: this.lastID,
-        });
+        res.json({ message: 'Password change request sent to admin', requestId: this.lastID });
       }
     );
   } catch (error) {
@@ -495,9 +519,7 @@ app.post('/api/password-change-request', authenticateToken, async (req: any, res
 
 // Get all password change requests (admin only)
 app.get('/api/password-change-requests', authenticateToken, (req: any, res: any) => {
-  if (!req.user.is_admin) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
   db.all(`
     SELECT pcr.id, pcr.user_id, u.email as userEmail, u.name as userName, 
@@ -510,22 +532,16 @@ app.get('/api/password-change-requests', authenticateToken, (req: any, res: any)
       console.error('Error fetching password change requests:', err.message);
       return res.status(500).json({ error: 'Failed to fetch requests' });
     }
-
-    res.json({
-      requests: rows || [],
-    });
+    res.json({ requests: rows || [] });
   });
 });
 
 // Approve password change request (admin only)
 app.post('/api/password-change-requests/:id/approve', authenticateToken, (req: any, res: any) => {
-  if (!req.user.is_admin) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
   const requestId = req.params.id;
 
-  // Get the password change request
   db.get(
     'SELECT user_id, new_password FROM password_change_requests WHERE id = ? AND status = ?',
     [requestId, 'pending'],
@@ -534,52 +550,36 @@ app.post('/api/password-change-requests/:id/approve', authenticateToken, (req: a
         console.error('Error fetching password change request:', err.message);
         return res.status(500).json({ error: 'Database error' });
       }
+      if (!row) return res.status(404).json({ error: 'Request not found or already processed' });
 
-      if (!row) {
-        return res.status(404).json({ error: 'Request not found or already processed' });
-      }
-
-      // Update user's password
-      db.run(
-        'UPDATE users SET password = ? WHERE id = ?',
-        [row.new_password, row.user_id],
-        (updateErr: Error | null) => {
-          if (updateErr) {
-            console.error('Error updating user password:', updateErr.message);
-            return res.status(500).json({ error: 'Failed to update password' });
-          }
-
-          // Mark the request as approved
-          db.run(
-            'UPDATE password_change_requests SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?',
-            ['approved', requestId],
-            (approveErr: Error | null) => {
-              if (approveErr) {
-                console.error('Error updating request status:', approveErr.message);
-                return res.status(500).json({ error: 'Failed to update request status' });
-              }
-
-              res.json({
-                message: 'Password change approved',
-                requestId,
-              });
-            }
-          );
+      db.run('UPDATE users SET password = ? WHERE id = ?', [row.new_password, row.user_id], (updateErr: Error | null) => {
+        if (updateErr) {
+          console.error('Error updating user password:', updateErr.message);
+          return res.status(500).json({ error: 'Failed to update password' });
         }
-      );
+
+        db.run(
+          'UPDATE password_change_requests SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?',
+          ['approved', requestId],
+          (approveErr: Error | null) => {
+            if (approveErr) {
+              console.error('Error updating request status:', approveErr.message);
+              return res.status(500).json({ error: 'Failed to update request status' });
+            }
+            res.json({ message: 'Password change approved', requestId });
+          }
+        );
+      });
     }
   );
 });
 
 // Reject password change request (admin only)
 app.post('/api/password-change-requests/:id/reject', authenticateToken, (req: any, res: any) => {
-  if (!req.user.is_admin) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
   const requestId = req.params.id;
 
-  // Mark the request as rejected
   db.run(
     'UPDATE password_change_requests SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?',
     ['rejected', requestId, 'pending'],
@@ -588,59 +588,16 @@ app.post('/api/password-change-requests/:id/reject', authenticateToken, (req: an
         console.error('Error updating request status:', err.message);
         return res.status(500).json({ error: 'Failed to update request status' });
       }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Request not found or already processed' });
-      }
-
-      res.json({
-        message: 'Password change rejected',
-        requestId,
-      });
+      if (this.changes === 0) return res.status(404).json({ error: 'Request not found or already processed' });
+      res.json({ message: 'Password change rejected', requestId });
     }
   );
-});
-
-initializeDatabase(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-
-    // Auto-seed curated WildTrack data on startup (development convenience)
-    try {
-      const options = {
-        hostname: '127.0.0.1',
-        port: PORT,
-        path: '/api/wildtrack/seed-curated',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': 0,
-        },
-      };
-
-      const req = http.request(options, (res: any) => {
-        let body = '';
-        res.on('data', (chunk: any) => { body += chunk; });
-        res.on('end', () => {
-          console.log('[WildTrack] Auto-seed response status:', res.statusCode);
-          try { console.log('[WildTrack] Auto-seed response:', JSON.parse(body)); } catch { console.log('[WildTrack] Auto-seed response (raw):', body); }
-        });
-      });
-
-      req.on('error', (err: any) => {
-        console.error('[WildTrack] Auto-seed request failed:', err.message);
-      });
-
-      req.end();
-    } catch (err: any) {
-      console.error('[WildTrack] Error triggering auto-seed:', err.message);
-    }
-  });
 });
 
 // ─────────────────────────────────────────
 // WildTrack API
 // Full species, mountain, discovery, and stats integration.
+// ─────────────────────────────────────────
 
 app.get('/api/wildtrack/featured', (req: any, res: any) => {
   const { mountain_id } = req.query;
@@ -672,22 +629,14 @@ app.get('/api/wildtrack/featured', (req: any, res: any) => {
 app.get('/api/wildtrack/mountain-info/:id', (req: any, res: any) => {
   const { id } = req.params;
 
-  db.get(
-    'SELECT * FROM mountain_biodiversity WHERE id = ?',
-    [id],
-    (err: Error | null, info: any) => {
-      if (err) {
-        console.error('[WildTrack] Error fetching mountain info:', err.message);
-        return res.status(500).json({ error: 'Failed to fetch mountain info' });
-      }
-
-      if (!info) {
-        return res.status(404).json({ error: 'Mountain info not found' });
-      }
-
-      res.json({ info });
+  db.get('SELECT * FROM mountain_biodiversity WHERE id = ?', [id], (err: Error | null, info: any) => {
+    if (err) {
+      console.error('[WildTrack] Error fetching mountain info:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch mountain info' });
     }
-  );
+    if (!info) return res.status(404).json({ error: 'Mountain info not found' });
+    res.json({ info });
+  });
 });
 
 app.get('/api/wildtrack/mountain/:id', (req: any, res: any) => {
@@ -705,7 +654,7 @@ app.get('/api/wildtrack/mountain/:id', (req: any, res: any) => {
     WHERE ms.mountain_id = ?
     ORDER BY s.common_name ASC
   `;
-  
+
   const params: any[] = user_id ? [user_id, id] : [id];
 
   db.all(query, params, (err: Error | null, rows: any[]) => {
@@ -719,7 +668,7 @@ app.get('/api/wildtrack/mountain/:id', (req: any, res: any) => {
 
 app.get('/api/wildtrack/species', (req: any, res: any) => {
   const { mountain_id, category } = req.query;
-  
+
   let query = `
     SELECT s.*, ms.is_endemic, ms.mountain_id
     FROM species s
@@ -732,7 +681,6 @@ app.get('/api/wildtrack/species', (req: any, res: any) => {
     query += ' AND ms.mountain_id = ?';
     params.push(mountain_id);
   }
-
   if (category) {
     query += ' AND s.category = ?';
     params.push(category);
@@ -752,22 +700,14 @@ app.get('/api/wildtrack/species', (req: any, res: any) => {
 app.get('/api/wildtrack/species/:id', (req: any, res: any) => {
   const { id } = req.params;
 
-  db.get(
-    'SELECT * FROM species WHERE id = ?',
-    [id],
-    (err: Error | null, species: any) => {
-      if (err) {
-        console.error('Error fetching species:', err.message);
-        return res.status(500).json({ error: 'Failed to fetch species' });
-      }
-
-      if (!species) {
-        return res.status(404).json({ error: 'Species not found' });
-      }
-
-      res.json({ species });
+  db.get('SELECT * FROM species WHERE id = ?', [id], (err: Error | null, species: any) => {
+    if (err) {
+      console.error('Error fetching species:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch species' });
     }
-  );
+    if (!species) return res.status(404).json({ error: 'Species not found' });
+    res.json({ species });
+  });
 });
 
 app.get('/api/wildtrack/discoveries', authenticateToken, (req: any, res: any) => {
@@ -785,7 +725,6 @@ app.get('/api/wildtrack/discoveries', authenticateToken, (req: any, res: any) =>
     query += ' AND d.mountain_id = ?';
     params.push(mountain_id);
   }
-
   if (category) {
     query += ' AND s.category = ?';
     params.push(category);
@@ -817,10 +756,7 @@ app.post('/api/wildtrack/discover', authenticateToken, (req: any, res: any) => {
         console.error('Error checking existing discovery:', err.message);
         return res.status(500).json({ error: 'Database error' });
       }
-
-      if (existing) {
-        return res.status(400).json({ error: 'Species already discovered on this mountain' });
-      }
+      if (existing) return res.status(400).json({ error: 'Species already discovered on this mountain' });
 
       db.run(
         'INSERT INTO discoveries (user_id, species_id, mountain_id, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?)',
@@ -830,11 +766,7 @@ app.post('/api/wildtrack/discover', authenticateToken, (req: any, res: any) => {
             console.error('Error creating discovery:', err.message);
             return res.status(500).json({ error: 'Failed to create discovery' });
           }
-
-          res.status(201).json({
-            message: 'Discovery recorded',
-            discovery_id: this.lastID,
-          });
+          res.status(201).json({ message: 'Discovery recorded', discovery_id: this.lastID });
         }
       );
     }
@@ -852,10 +784,7 @@ app.delete('/api/wildtrack/discovery/:id', authenticateToken, (req: any, res: an
         console.error('Error checking discovery:', err.message);
         return res.status(500).json({ error: 'Database error' });
       }
-
-      if (!discovery) {
-        return res.status(404).json({ error: 'Discovery not found' });
-      }
+      if (!discovery) return res.status(404).json({ error: 'Discovery not found' });
 
       db.run(
         'DELETE FROM discoveries WHERE id = ? AND user_id = ?',
@@ -865,7 +794,6 @@ app.delete('/api/wildtrack/discovery/:id', authenticateToken, (req: any, res: an
             console.error('Error deleting discovery:', err.message);
             return res.status(500).json({ error: 'Failed to delete discovery' });
           }
-
           res.json({ message: 'Discovery removed successfully' });
         }
       );
@@ -943,15 +871,14 @@ app.get('/api/wildtrack/stats', authenticateToken, (req: any, res: any) => {
   });
 });
 
-// ============ ENHANCED API INTEGRATION ENDPOINTS ============
+// ─────────────────────────────────────────
+// WildTrack: ENHANCED API INTEGRATION ENDPOINTS
+// ─────────────────────────────────────────
 
 // Search species using GBIF and iNaturalist APIs
 app.get('/api/wildtrack/api-search', async (req: any, res: any) => {
   const { q } = req.query;
-
-  if (!q) {
-    return res.status(400).json({ error: 'Query parameter "q" is required' });
-  }
+  if (!q) return res.status(400).json({ error: 'Query parameter "q" is required' });
 
   console.log(`[WildTrack] API search for: ${q}`);
 
@@ -1006,10 +933,7 @@ app.get('/api/wildtrack/api-search', async (req: any, res: any) => {
 // Get species by location (for mountain-specific biodiversity)
 app.get('/api/wildtrack/location-species', async (req: any, res: any) => {
   const { lat, lng, radius = 50 } = req.query;
-
-  if (!lat || !lng) {
-    return res.status(400).json({ error: 'Latitude and longitude are required' });
-  }
+  if (!lat || !lng) return res.status(400).json({ error: 'Latitude and longitude are required' });
 
   console.log(`[WildTrack] Location species search: ${lat}, ${lng}, radius: ${radius}km`);
 
@@ -1064,7 +988,7 @@ app.get('/api/wildtrack/location-species', async (req: any, res: any) => {
   }
 });
 
-// Get complete species data from APIs
+// Get complete species data from external APIs
 app.get('/api/wildtrack/api-species/:id', async (req: any, res: any) => {
   const { id } = req.params;
   const { source } = req.query;
@@ -1077,7 +1001,7 @@ app.get('/api/wildtrack/api-species/:id', async (req: any, res: any) => {
     if (source === 'gbif' || !source) {
       const gbifResponse = await fetch(`https://api.gbif.org/v1/species/${id}`);
       const gbifData: any = await gbifResponse.json();
-      
+
       if (gbifData) {
         data.scientific_name = gbifData.scientificName || gbifData.canonicalName;
         data.gbif_id = parseInt(id);
@@ -1113,10 +1037,7 @@ app.get('/api/wildtrack/api-species/:id', async (req: any, res: any) => {
       }
     }
 
-    if (Object.keys(data).length === 0) {
-      return res.status(404).json({ error: 'Species not found' });
-    }
-
+    if (Object.keys(data).length === 0) return res.status(404).json({ error: 'Species not found' });
     res.json({ species: data });
   } catch (error) {
     console.error('[WildTrack] API species data error:', error);
@@ -1127,17 +1048,13 @@ app.get('/api/wildtrack/api-species/:id', async (req: any, res: any) => {
 // Cache mountain species checklist for offline access
 app.post('/api/wildtrack/cache-checklist', (req: any, res: any) => {
   const { mountain_id, species_list } = req.body;
-
   if (!mountain_id || !species_list) {
     return res.status(400).json({ error: 'mountain_id and species_list are required' });
   }
 
   console.log(`[WildTrack] Caching checklist for mountain: ${mountain_id}`);
 
-  const cacheData = JSON.stringify({
-    species_list,
-    cached_at: new Date().toISOString(),
-  });
+  const cacheData = JSON.stringify({ species_list, cached_at: new Date().toISOString() });
 
   db.run(
     'INSERT OR REPLACE INTO cached_species_data (species_id, cached_data, cached_at) VALUES (?, ?, ?)',
@@ -1147,7 +1064,6 @@ app.post('/api/wildtrack/cache-checklist', (req: any, res: any) => {
         console.error('[WildTrack] Error caching checklist:', err.message);
         return res.status(500).json({ error: 'Failed to cache checklist' });
       }
-
       console.log(`[WildTrack] Checklist cached for mountain: ${mountain_id}`);
       res.json({ message: 'Checklist cached successfully' });
     }
@@ -1166,10 +1082,7 @@ app.get('/api/wildtrack/cached-checklist/:mountain_id', (req: any, res: any) => 
         console.error('[WildTrack] Error getting cached checklist:', err.message);
         return res.status(500).json({ error: 'Database error' });
       }
-
-      if (!row) {
-        return res.status(404).json({ error: 'No cached checklist found' });
-      }
+      if (!row) return res.status(404).json({ error: 'No cached checklist found' });
 
       const cacheAge = Date.now() - new Date(row.cached_at).getTime();
       const maxCacheAge = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -1181,8 +1094,8 @@ app.get('/api/wildtrack/cached-checklist/:mountain_id', (req: any, res: any) => 
 
       try {
         const cachedData = JSON.parse(row.cached_data);
-        res.json({ 
-          data: cachedData, 
+        res.json({
+          data: cachedData,
           cached_at: row.cached_at,
           age_hours: Math.floor(cacheAge / (1000 * 60 * 60))
         });
@@ -1391,7 +1304,6 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
       is_featured: true,
       is_endemic: true,
     },
-    // Mayon Volcano
     {
       id: 13,
       scientific_name: 'Platymantis luzonensis',
@@ -1440,7 +1352,6 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
       is_featured: true,
       is_endemic: true,
     },
-    // Mt. Kanlaon
     {
       id: 16,
       scientific_name: 'Ptilinopus arcanus',
@@ -1489,7 +1400,6 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
       is_featured: true,
       is_endemic: true,
     },
-    // Additional species for multiple mountains
     {
       id: 19,
       scientific_name: 'Dicaeum quadricolor',
@@ -1626,8 +1536,7 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
     }
 
     const species = curatedSpecies[index];
-    
-    // Check if species already exists
+
     db.get('SELECT id FROM species WHERE id = ?', [species.id], (err: Error | null, existing: any) => {
       if (err) {
         console.error('[WildTrack] Error checking species:', err.message);
@@ -1644,8 +1553,8 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
       db.run(
         `INSERT INTO species (id, scientific_name, common_name, category, conservation_status, image_url, description, habitat, fun_facts, gbif_id, inaturalist_id) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [species.id, species.scientific_name, species.common_name, species.category, 
-         species.conservation_status, species.image_url, species.description, 
+        [species.id, species.scientific_name, species.common_name, species.category,
+         species.conservation_status, species.image_url, species.description,
          species.habitat, species.fun_facts, species.gbif_id, species.inaturalist_id],
         function(this: any, err: Error | null) {
           if (err) {
@@ -1673,7 +1582,7 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
     if (index >= mountainBiodiversity.length) {
       console.log(`[WildTrack] Inserted ${insertedMountains} mountain biodiversity records`);
       console.log(`[WildTrack] Seed complete: ${insertedSpecies} species, ${insertedMountains} mountains`);
-      return res.json({ 
+      return res.json({
         message: 'Curated species and mountain biodiversity seeded successfully',
         species_count: insertedSpecies,
         mountain_count: insertedMountains
@@ -1681,7 +1590,7 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
     }
 
     const mountain = mountainBiodiversity[index];
-    
+
     db.run(
       `INSERT OR REPLACE INTO mountain_biodiversity (id, name, curated_species_count, description, endemic_species_count, key_species, ecosystem, conservation_status) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1701,6 +1610,10 @@ app.post('/api/wildtrack/seed-curated', (req: any, res: any) => {
 
   insertSpecies(0);
 });
+
+// ─────────────────────────────────────────
+// START SERVER
+// ─────────────────────────────────────────
 
 initializeDatabase(() => {
   app.listen(PORT, () => {
@@ -1724,7 +1637,8 @@ initializeDatabase(() => {
         res.on('data', (chunk: any) => { body += chunk; });
         res.on('end', () => {
           console.log('[WildTrack] Auto-seed response status:', res.statusCode);
-          try { console.log('[WildTrack] Auto-seed response:', JSON.parse(body)); } catch { console.log('[WildTrack] Auto-seed response (raw):', body); }
+          try { console.log('[WildTrack] Auto-seed response:', JSON.parse(body)); }
+          catch { console.log('[WildTrack] Auto-seed response (raw):', body); }
         });
       });
 

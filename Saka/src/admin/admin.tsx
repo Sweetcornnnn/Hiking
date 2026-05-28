@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
 import { useNotificationStore } from '../store/notificationStore';
+import UserLocationModal from './UserLocationModal';
 
 // ---------- User Store (local, using authToken) ----------
 interface AdminUser {
@@ -44,12 +45,16 @@ export default function AdminRoute() {
   const [processRequests, setProcessingRequests] = useState<Set<string>>(new Set());
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
 
+  // User location modal state
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [locationModalUser, setLocationModalUser] = useState<AdminUser | null>(null);
+
   // ---------- Fetch users ----------
   const fetchUsers = async () => {
     if (!authToken) return;
     setUsersLoading(true);
     try {
-      const res = await fetch('http://10.127.50.102:3000/api/admin/users', {
+      const res = await fetch('http://10.236.247.102:3000/api/admin/users', {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json();
@@ -69,7 +74,7 @@ export default function AdminRoute() {
   const updateUserAdmin = async (userId: number, isAdmin: boolean) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`http://10.127.50.102:3000/api/admin/users/${userId}`, {
+      const res = await fetch(`http://10.236.247.102:3000/api/admin/users/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -80,7 +85,7 @@ export default function AdminRoute() {
       const data = await res.json();
       if (res.ok) {
         Alert.alert('Success', `User admin status updated`);
-        fetchUsers(); // refresh list
+        fetchUsers();
       } else {
         Alert.alert('Error', data.error || 'Failed to update user');
       }
@@ -93,7 +98,7 @@ export default function AdminRoute() {
   const resetUserPassword = async (userId: number, password: string) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`http://10.127.50.102:3000/api/admin/users/${userId}/reset-password`, {
+      const res = await fetch(`http://10.236.247.102:3000/api/admin/users/${userId}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,14 +121,14 @@ export default function AdminRoute() {
   const deleteUser = async (userId: number) => {
     if (!authToken) return;
     try {
-      const res = await fetch(`http://10.127.50.102:3000/api/admin/users/${userId}`, {
+      const res = await fetch(`http://10.236.247.102:3000/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json();
       if (res.ok) {
         Alert.alert('Success', 'User deleted');
-        fetchUsers(); // refresh list
+        fetchUsers();
       } else {
         Alert.alert('Error', data.error || 'Failed to delete user');
       }
@@ -146,7 +151,7 @@ export default function AdminRoute() {
     }
   }, [user?.is_admin, authToken]);
 
-  // Password request handlers (unchanged)
+  // Password request handlers
   const filteredRequests = passwordChangeRequests.filter(req =>
     filterStatus === 'all' ? true : req.status === filterStatus
   );
@@ -222,7 +227,14 @@ export default function AdminRoute() {
   // ---------- Render ----------
   return (
     <>
-      {/* Password Requests Modal (unchanged) */}
+      {/* User Location Modal */}
+      <UserLocationModal
+        visible={locationModalVisible}
+        user={locationModalUser}
+        onClose={() => setLocationModalVisible(false)}
+      />
+
+      {/* Password Requests Modal */}
       <Modal
         transparent
         visible={notificationModalVisible}
@@ -462,6 +474,18 @@ export default function AdminRoute() {
                         </Text>
                       </View>
                       <View style={styles.userActions}>
+                        {/* Location button */}
+                        <TouchableOpacity
+                          onPress={() => {
+                            setLocationModalUser(u);
+                            setLocationModalVisible(true);
+                          }}
+                          style={styles.actionIcon}
+                        >
+                          <Ionicons name="location-outline" size={16} color="#C9A96E" />
+                        </TouchableOpacity>
+
+                        {/* Admin toggle button */}
                         <TouchableOpacity
                           onPress={() => {
                             if (u.id === user?.id) {
@@ -485,6 +509,8 @@ export default function AdminRoute() {
                             color={u.is_admin ? '#C9A96E' : 'rgba(255,255,255,0.5)'}
                           />
                         </TouchableOpacity>
+
+                        {/* Reset password button */}
                         <TouchableOpacity
                           onPress={() => {
                             setSelectedUserId(u.id);
@@ -495,6 +521,8 @@ export default function AdminRoute() {
                         >
                           <Ionicons name="key-outline" size={16} color="#6FAF8A" />
                         </TouchableOpacity>
+
+                        {/* Delete button */}
                         <TouchableOpacity
                           onPress={() => {
                             if (u.id === user?.id) {
@@ -524,7 +552,7 @@ export default function AdminRoute() {
         </View>
       </View>
 
-      {/* ── Logout confirm toast — rendered at screen level to avoid overflow:hidden clipping ── */}
+      {/* ── Logout confirm toast ── */}
       {showLogoutConfirm && (
         <Animated.View style={[styles.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
           <View style={styles.logoutToastBar} />
@@ -549,7 +577,6 @@ export default function AdminRoute() {
 
 // ---------- Styles ----------
 const styles = StyleSheet.create({
-  // --- Existing styles (unchanged) ---
   screen: {
     flex: 1,
     backgroundColor: '#0E1520',
@@ -754,8 +781,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(255,255,255,0.35)',
   },
-
-  // --- Modal styles (unchanged) ---
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -938,8 +963,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 11,
   },
-
-  // --- New styles for user list and tabs ---
   tabContainer: {
     flexDirection: 'row',
     gap: 16,
@@ -1030,8 +1053,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-
-  // ── Logout confirm toast ─────────────────────────────────────────────
   logoutToast: {
     position: 'absolute',
     bottom: 40,
