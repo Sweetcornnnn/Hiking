@@ -61,6 +61,13 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="weather"
+          options={{
+            headerShown: false,
+            orientation: 'landscape',
+          }}
+        />
+        <Stack.Screen
           name="settings"
           options={{
             headerShown: false,

@@ -8,10 +8,14 @@ import {
   Image,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useRouter } from 'expo-router';
+import { useWildTrackStore } from '../store/wildtrackStore';
+import { getMountainById } from '../data/mountains';
+import weatherService, { WeatherCondition } from '../services/weatherService';
 
 interface ProfileCardProps {
   visible: boolean;
@@ -34,22 +38,58 @@ const MOUNTAINS_DATA = [
 
 const screenDimensions = Dimensions.get('screen');
 
-type TabId = 'stats' | 'calendar' | 'wildtrack';
+interface LocationPayload {
+  latitude: number;
+  longitude: number;
+}
+
+type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather';
 
 export default function ProfileCard({ visible, onClose, profileImage }: ProfileCardProps) {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
+  const { selectedMountainId } = useWildTrackStore();
+  const selectedMountain = getMountainById(selectedMountainId) || getMountainById('1');
   const [location, setLocation] = useState<string>('Loading...');
   const [unlockedCount, setUnlockedCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabId>('stats');
+  const [weather, setWeather] = useState<WeatherCondition | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
       const count = MOUNTAINS_DATA.filter(m => m.unlocked).length;
       setUnlockedCount(count);
-      setLocation('Mountain Trail');
+      setLocation(selectedMountain?.name ?? 'Mountain Trail');
+      loadWeather();
     }
-  }, [visible]);
+  }, [visible, selectedMountain]);
+
+  const loadWeather = async () => {
+    try {
+      setWeatherLoading(true);
+      setWeatherError(null);
+
+      if (!selectedMountain) {
+        setWeather(null);
+        setWeatherError('No mountain selected for weather lookup.');
+        return;
+      }
+
+      const currentWeather = await weatherService.getCurrentWeather(
+        selectedMountain.latitude,
+        selectedMountain.longitude
+      );
+      setWeather(currentWeather);
+    } catch (error: any) {
+      console.error('Weather load failed:', error);
+      setWeather(null);
+      setWeatherError(error?.message || 'Unable to load weather.');
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     onClose();
@@ -82,7 +122,7 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
       presentationStyle="overFullScreen"
     >
       <View style={styles.centerContainer}>
-        <TouchableOpacity activeOpacity={1} style={styles.card} onPress={onClose}>
+        <View style={styles.card}>
 
           {/* ── Left panel ── */}
           <View style={styles.leftPanel}>
@@ -151,7 +191,13 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
             {/* Header row: title + close */}
             <View style={styles.listHeader}>
               <Text style={styles.listTitle}>
-                {activeTab === 'stats' ? 'Mountains' : activeTab === 'calendar' ? 'Schedule' : 'WildTrack'}
+                {activeTab === 'stats'
+                  ? 'Mountains'
+                  : activeTab === 'calendar'
+                  ? 'Schedule'
+                  : activeTab === 'wildtrack'
+                  ? 'WildTrack'
+                  : 'Weather'}
               </Text>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                 <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
@@ -212,6 +258,41 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
                 </TouchableOpacity>
               </View>
             )}
+
+            {activeTab === 'weather' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="cloud-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>Weather</Text>
+                {weatherLoading ? (
+                  <View style={styles.weatherStatusRow}>
+                    <ActivityIndicator size="small" color="#C9A96E" />
+                    <Text style={styles.weatherStatusText}>Loading weather...</Text>
+                  </View>
+                ) : weather ? (
+                  <>
+                    <Text style={styles.weatherTitle}>{weather.description}</Text>
+                    <Text style={styles.weatherValue}>{weather.temperature.toFixed(1)}°C</Text>
+                    <Text style={styles.tabPaneBody}>
+                      Feels like {weather.feelsLike.toFixed(1)}°C · Humidity {weather.humidity}% · Wind {weather.windSpeed.toFixed(1)} m/s
+                    </Text>
+                    <Text style={styles.weatherAdvice}>
+                      {weatherService.getWeatherSafetyAdvice(weather)}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.tabPaneBody}>
+                    {weatherError || 'Weather data not available. Add an API key and ensure location has been saved.'}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={styles.tabPaneBtn}
+                  onPress={() => { onClose(); router.push('/weather'); }}
+                >
+                  <Text style={styles.tabPaneBtnText}>Open Full Weather</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           {/* ── Protruding tab strip on the right edge ── */}
@@ -220,6 +301,7 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
               { id: 'stats',     icon: 'stats-chart' },
               { id: 'calendar',  icon: 'calendar-outline' },
               { id: 'wildtrack', icon: 'book-outline' },
+              { id: 'weather',   icon: 'cloud-outline' },
             ] as { id: TabId; icon: string }[]).map((tab) => (
               <TouchableOpacity
                 key={tab.id}
@@ -236,7 +318,7 @@ export default function ProfileCard({ visible, onClose, profileImage }: ProfileC
             ))}
           </View>
 
-        </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
@@ -561,5 +643,33 @@ const styles = StyleSheet.create({
     color: '#C9A96E',
     fontSize: 10,
     fontWeight: '600',
+  },
+  weatherStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  weatherStatusText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+  },
+  weatherTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 10,
+  },
+  weatherValue: {
+    fontSize: 28,
+    color: '#C9A96E',
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  weatherAdvice: {
+    color: '#D4C28A',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 10,
   },
 });

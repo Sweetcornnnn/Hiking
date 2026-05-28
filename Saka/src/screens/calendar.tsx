@@ -15,6 +15,9 @@ import { Calendar, DateData } from 'react-native-calendars';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useHikesStore } from '../store/hikesStore';
+import { useWildTrackStore } from '../store/wildtrackStore';
+import { getMountainById } from '../data/mountains';
+import { getWeatherForecast } from '../services/weatherService';
 import { Hike } from '../types';
 import { useAuthStore } from '../store/authStore';
 
@@ -40,16 +43,51 @@ export default function CalendarScreen() {
   const router = useRouter();
   const { hikes, fetchHikes, createHike, updateHike, deleteHike, isLoading } = useHikesStore();
   const { user } = useAuthStore();
+  const { selectedMountainId } = useWildTrackStore();
+
+  const selectedMountain = getMountainById(selectedMountainId) || getMountainById('1');
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingHike, setEditingHike] = useState<Hike | null>(null);
   const [formData, setFormData] = useState<HikeFormData>(INITIAL_FORM);
   const [refreshing, setRefreshing] = useState(false);
+  const [forecastByDate, setForecastByDate] = useState<Record<string, { icon: string; description: string; tempMin: number; tempMax: number }>>({});
+  const [forecastLoading, setForecastLoading] = useState(false);
 
   useEffect(() => {
     fetchHikes();
   }, []);
+
+  useEffect(() => {
+    const loadForecast = async () => {
+      if (!selectedMountain) {
+        return;
+      }
+
+      setForecastLoading(true);
+      try {
+        const forecast = await getWeatherForecast(selectedMountain.latitude, selectedMountain.longitude);
+        const mappedForecast = forecast.reduce((acc, day) => {
+          acc[day.date] = {
+            icon: day.icon,
+            description: day.description,
+            tempMin: day.tempMin,
+            tempMax: day.tempMax,
+          };
+          return acc;
+        }, {} as Record<string, { icon: string; description: string; tempMin: number; tempMax: number }>);
+        setForecastByDate(mappedForecast);
+      } catch (error) {
+        console.warn('[Calendar] Failed to load weather forecast', error);
+        setForecastByDate({});
+      } finally {
+        setForecastLoading(false);
+      }
+    };
+
+    loadForecast();
+  }, [selectedMountain?.latitude, selectedMountain?.longitude]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -168,7 +206,89 @@ export default function CalendarScreen() {
     });
   };
 
+  const getWeatherIconName = (iconCode: string) => {
+    if (!iconCode) {
+      return 'cloud-outline';
+    }
+
+    if (iconCode.startsWith('01')) return iconCode.endsWith('n') ? 'moon-outline' : 'sunny-outline';
+    if (iconCode.startsWith('02')) return iconCode.endsWith('n') ? 'cloudy-night-outline' : 'partly-sunny-outline';
+    if (iconCode.startsWith('03')) return 'cloud-outline';
+    if (iconCode.startsWith('04')) return 'cloudy-outline';
+    if (iconCode.startsWith('09') || iconCode.startsWith('10')) return 'rainy-outline';
+    if (iconCode.startsWith('11')) return 'thunderstorm-outline';
+    if (iconCode.startsWith('13')) return 'snow-outline';
+    if (iconCode.startsWith('50')) return 'cloud-outline';
+    return 'cloud-outline';
+  };
+
+  const getWeatherIconColor = (iconCode?: string, isSelected?: boolean) => {
+    if (!iconCode) {
+      return isSelected ? '#0E1520' : 'rgba(201,169,110,0.35)';
+    }
+
+    if (iconCode.startsWith('01')) return '#F2C94C';
+    if (iconCode.startsWith('02')) return '#F4D48F';
+    if (iconCode.startsWith('03') || iconCode.startsWith('04')) return '#A1B0C4';
+    if (iconCode.startsWith('09') || iconCode.startsWith('10')) return '#70B7FF';
+    if (iconCode.startsWith('11')) return '#A86DFF';
+    if (iconCode.startsWith('13')) return '#D8F0FF';
+    if (iconCode.startsWith('50')) return '#B0B8C2';
+    return '#C9A96E';
+  };
+
+  const hikeDates = new Set(hikes.map((hike) => hike.date));
   const hikesOnSelectedDate = hikes.filter((h) => h.date === selectedDate);
+  const todayDateString = new Date().toISOString().split('T')[0];
+
+  const renderDayComponent = ({ date, state, onPress }: { date?: DateData; state?: string; onPress?: (date: DateData) => void }) => {
+    if (!date) {
+      return null;
+    }
+
+    const weather = forecastByDate[date.dateString];
+    const hasHike = hikeDates.has(date.dateString);
+    const isSelected = date.dateString === selectedDate;
+    const isToday = date.dateString === todayDateString;
+    const isDisabled = state === 'disabled';
+    const weatherIconName = getWeatherIconName(weather?.icon);
+    const weatherIconColor = getWeatherIconColor(weather?.icon, isSelected);
+
+    return (
+      <TouchableOpacity
+        onPress={() => !isDisabled && onPress?.(date)}
+        style={[
+          styles.dayContainer,
+          isSelected && styles.daySelected,
+          !isSelected && isToday && styles.dayToday,
+          isDisabled && styles.dayDisabled,
+        ]}
+        activeOpacity={0.7}
+      >
+        <Text style={[
+          styles.dayNumber,
+          isDisabled && styles.dayNumberDisabled,
+          isSelected && styles.dayNumberSelected,
+          !isSelected && isToday && styles.dayNumberToday,
+        ]}>
+          {date.day}
+        </Text>
+
+        <Ionicons
+          name={weatherIconName}
+          size={14}
+          color={weatherIconColor}
+          style={[styles.weatherMarker, !weather && styles.weatherMarkerPlaceholder]}
+        />
+
+        {hasHike ? (
+          <View style={styles.hikeMarker}>
+            <Ionicons name="people-outline" size={10} color="#C9A96E" />
+          </View>
+        ) : null}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -186,6 +306,9 @@ export default function CalendarScreen() {
               <View>
                 <Text style={styles.calendarTitle}>Calendar</Text>
                 <Text style={styles.calendarSubTitle}>Tap a date to schedule a hike</Text>
+                {forecastLoading ? (
+                  <Text style={styles.forecastLoadingText}>Updating forecast for selected mountain...</Text>
+                ) : null}
               </View>
             </View>
             <TouchableOpacity
@@ -202,6 +325,7 @@ export default function CalendarScreen() {
             style={styles.calendar}
             onDayPress={handleDayPress}
             markedDates={markedDates}
+            dayComponent={renderDayComponent}
             theme={{
               backgroundColor: 'transparent',
               calendarBackground: 'transparent',
@@ -232,6 +356,17 @@ export default function CalendarScreen() {
               </View>
             )}
           />
+
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <Ionicons name="partly-sunny-outline" size={12} color="#C9A96E" />
+              <Text style={styles.legendText}>Weather</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <Ionicons name="people-outline" size={12} color="#C9A96E" />
+              <Text style={styles.legendText}>Hike scheduled</Text>
+            </View>
+          </View>
         </View>
 
         {/* Hike list for selected date */}
@@ -511,6 +646,79 @@ const styles = StyleSheet.create({
   },
   calendar: {
     width: '100%',
+  },
+  dayContainer: {
+    width: 42,
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    borderRadius: 14,
+    marginVertical: 2,
+  },
+  daySelected: {
+    backgroundColor: '#C9A96E',
+  },
+  dayToday: {
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.6)',
+  },
+  dayDisabled: {
+    opacity: 0.4,
+  },
+  dayNumber: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  dayNumberToday: {
+    color: '#C9A96E',
+  },
+  dayNumberDisabled: {
+    color: 'rgba(255,255,255,0.28)',
+  },
+  dayNumberSelected: {
+    color: '#0E1520',
+  },
+  weatherMarker: {
+    marginTop: 4,
+  },
+  weatherMarkerPlaceholder: {
+    opacity: 0.28,
+  },
+  hikeMarker: {
+    marginTop: 4,
+    backgroundColor: 'rgba(201,169,110,0.12)',
+    padding: 2,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 12,
+    marginTop: 10,
+    paddingHorizontal: 4,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  legendText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+  },
+  forecastLoadingText: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 10,
+    marginTop: 2,
   },
   arrowWrapper: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -824,7 +1032,7 @@ const styles = StyleSheet.create({
   },
   modalFormScroll: {
     paddingHorizontal: 14,
-    paddingBottom: 0,
+    paddingBottom: 1,
     gap: 6,
   },
   fieldGroupLabel: {
@@ -888,6 +1096,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     backgroundColor: '#C9A96E',
+    marginBottom: 12,
   },
   saveBtnDisabled: {
     backgroundColor: 'rgba(201,169,110,0.3)',

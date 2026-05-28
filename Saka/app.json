@@ -46,6 +46,9 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "extra": {
+      "WEATHER_API_KEY": "8354d134719c19d5c918ac8a014dc925"
+    },
     "plugins": [
       "expo-router",
       [
