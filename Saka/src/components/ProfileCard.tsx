@@ -325,25 +325,30 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
 
           {/* ── Protruding tab strip on the right edge ── */}
           <View style={styles.tabStrip}>
-            {([
-              { id: 'stats',     icon: 'stats-chart' },
-              { id: 'calendar',  icon: 'calendar-outline' },
-              { id: 'wildtrack', icon: 'book-outline' },
-              { id: 'weather',   icon: 'cloud-outline' },
-            ] as { id: TabId; icon: string }[]).map((tab) => (
-              <TouchableOpacity
-                key={tab.id}
-                style={[styles.tabBtn, activeTab === tab.id && styles.tabBtnActive]}
-                onPress={() => setActiveTab(tab.id)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={tab.icon as any}
-                  size={13}
-                  color={activeTab === tab.id ? '#C9A96E' : 'rgba(255,255,255,0.28)'}
-                />
-              </TouchableOpacity>
-            ))}
+            <View style={styles.tabStripInner}>
+              {([
+                { id: 'stats',     icon: 'stats-chart' },
+                { id: 'calendar',  icon: 'calendar-outline' },
+                { id: 'wildtrack', icon: 'book-outline' },
+                { id: 'weather',   icon: 'cloud-outline' },
+              ] as { id: TabId; icon: string }[]).map((tab, i, arr) => (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[
+                    styles.tabIconBtn,
+                    i < arr.length - 1 && styles.tabIconBtnBorder,
+                  ]}
+                  onPress={() => setActiveTab(tab.id)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={tab.icon as any}
+                    size={13}
+                    color={activeTab === tab.id ? '#C9A96E' : 'rgba(255,255,255,0.28)'}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
         </View>
@@ -613,30 +618,30 @@ const styles = StyleSheet.create({
   // ── Tab strip — protrudes from the right edge of the card ────────────
   tabStrip: {
     position: 'absolute',
-    right: -22,          // half-protrudes outside the card
+    right: -24,
     top: 0,
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 2,
   },
-  tabBtn: {
-    width: 22,
-    height: 28,
-    borderRadius: 6,
+  tabStripInner: {
     backgroundColor: '#0E1520',
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
-    // left edge flush with the card's right border
     borderLeftWidth: 0,
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+    overflow: 'hidden',
   },
-  tabBtnActive: {
-    backgroundColor: '#111927',
-    borderColor: 'rgba(201,169,110,0.35)',
+  tabIconBtn: {
+    width: 24,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconBtnBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
 
   // ── Tab pane (calendar + wildtrack) ──────────────────────────────────
