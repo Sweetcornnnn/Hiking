@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, ScrollView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
@@ -68,10 +68,13 @@ export default function SignupScreen() {
 
         {/* ── Left panel ── */}
         <View style={styles.leftPanel}>
-          <View style={styles.logoMark}>
-            <Text style={styles.logoEmoji}>🏔️</Text>
-          </View>
-          <Text style={styles.brandName}>TaraSaka</Text>
+          <TouchableOpacity activeOpacity={0.75} style={styles.logoMark}>
+            <Image
+              source={require('../../assets/images/SakaLogo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
           <Text style={styles.brandTagline}>Join thousands of{'\n'}Filipino hikers.</Text>
 
           <View style={styles.dividerH} />
@@ -207,32 +210,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 20,
     paddingBottom: 18,
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   logoMark: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(201,169,110,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.25)',
+    marginBottom: -20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
   },
-  logoEmoji: { fontSize: 17 },
-  brandName: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-    marginBottom: 4,
+  logoImage: {
+    width: 102,
+    height: 102,
   },
   brandTagline: {
     color: 'rgba(255,255,255,0.28)',
     fontSize: 10,
     lineHeight: 15,
     marginBottom: 14,
+    textAlign: 'center',
   },
   dividerH: {
     height: 1,
