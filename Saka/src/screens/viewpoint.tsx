@@ -58,14 +58,14 @@ const PC = {
 const IMAGE_MAP: Record<string, ImageSourcePropType> = {
   trailhead:     require('../../assets/images/TrailHead.jpg'),
   bantang_river: require('../../assets/images/Bantang River.jpg'),
-  camp1:         require('../../assets/images/Camp1.jpg'),
+  camp1:         require('../../assets/images/Camp1.png'),
   waterfall:     require('../../assets/images/Waterfalss.jpg'),
   mossy_forest:  require('../../assets/images/MossyForest.jpg'),
   camp2:         require('../../assets/images/Camp1.jpg'),
   camp3:         require('../../assets/images/Camp2$3.jpg'),
   crown_shyness: require('../../assets/images/CrownShines.jpg'),
   summit_ridge:  require('../../assets/images/SummitRidge.jpg'),
-  summit:        require('../../assets/images/Summit.jpg'),
+  summit:        require('../../assets/images/Summit.png'),
 };
 
 interface StatChipProps {
