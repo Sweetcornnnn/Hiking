@@ -34,7 +34,6 @@
 import React, {
   useRef,
   useEffect,
-  useCallback,
   useState,
 } from 'react';
 import {
@@ -43,40 +42,22 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   StyleSheet,
   Animated,
   Easing,
-  ScrollView,
-  Platform,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import {
   BG_CARD,
-  BG_PANEL,
-  BG_SUBTLE,
   BG_AVATAR,
   BORDER_DEFAULT,
-  BORDER_GOLD,
   BORDER_SUBTLE,
-  TEXT_PRIMARY,
   TEXT_SECONDARY,
-  TEXT_MUTED,
-  TEXT_FAINT,
-  TEXT_FAINTEST,
   ACCENT_GOLD,
-  ACCENT_GREEN,
-  ACCENT_TRAIL,
-  TEXT_DANGER,
-  BORDER_DANGER,
   RADIUS_CARD,
   RADIUS_BTN,
-  FONT,
-  SPACING,
-  ANIM,
 } from '../theme/designTokens';
 import type {
   ViewpointModalProps,
@@ -99,186 +80,7 @@ const IMAGE_MAP: Record<string, any> = {
   summit:        require('../../assets/images/Summit.jpg'),
 };
 
-// ─── Viewport Mini-Map Header ──────────────────────────────────────────────
-/**
- * Renders a compact representation of the captured viewport state
- * at the top of the modal.
- *
- * We do NOT re-mount a full MapView here (too heavy, causes Android jank).
- * Instead we render a styled data-row that communicates the context:
- * trail name, coordinates, and selected viewpoint number.
- *
- * For a richer thumbnail, pass screenshotUri from an html2canvas capture
- * and it will render as a preview image instead.
- */
-function CapturedViewportHeader({ snapshot, accentColor }: {
-  snapshot: ViewportSnapshot;
-  accentColor: string;
-}) {
-  const { selectedViewpoint, screenshotUri, centerCoord } = snapshot;
 
-  return (
-    <View style={[headerStyles.wrap, { borderBottomColor: BORDER_DEFAULT }]}>
-      {screenshotUri ? (
-        <Image
-          source={{ uri: screenshotUri }}
-          style={headerStyles.screenshot}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={[headerStyles.coordBadge, { backgroundColor: BG_AVATAR }]}>
-          <Ionicons name="map-outline" size={11} color={ACCENT_TRAIL} />
-          <Text style={headerStyles.coordText}>
-            {centerCoord.latitude.toFixed(4)}° N {' '}
-            {Math.abs(centerCoord.longitude).toFixed(4)}° E
-          </Text>
-        </View>
-      )}
-
-      <View style={headerStyles.titleRow}>
-        <View style={[headerStyles.dot, { backgroundColor: accentColor }]} />
-        <Text style={headerStyles.viewpointName} numberOfLines={1}>
-          {selectedViewpoint.name}
-        </Text>
-        {selectedViewpoint.elevation && (
-          <Text style={headerStyles.elevation}>{selectedViewpoint.elevation}</Text>
-        )}
-      </View>
-    </View>
-  );
-}
-
-const headerStyles = StyleSheet.create({
-  wrap: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    gap:             10,
-    paddingHorizontal: SPACING.cardPadH,
-    paddingVertical:  8,
-    borderBottomWidth: 1,
-  },
-  screenshot: {
-    width:        48,
-    height:       32,
-    borderRadius: 4,
-  },
-  coordBadge: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    gap:             4,
-    paddingHorizontal: 8,
-    paddingVertical:   4,
-    borderRadius:   RADIUS_BTN,
-  },
-  coordText: {
-    fontSize: 9,
-    color:    ACCENT_TRAIL,
-    fontWeight: '600' as const,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  titleRow: {
-    flex:           1,
-    flexDirection:  'row',
-    alignItems:     'center',
-    gap:             6,
-  },
-  dot: {
-    width:        6,
-    height:       6,
-    borderRadius: 3,
-  },
-  viewpointName: {
-    flex:       1,
-    fontSize:   11,
-    fontWeight: '700' as const,
-    color:      TEXT_PRIMARY,
-  },
-  elevation: {
-    fontSize: 10,
-    color:    TEXT_MUTED,
-    fontWeight: '600' as const,
-  },
-});
-
-// ─── Feature row ───────────────────────────────────────────────────────────
-function FeatureRow({ icon, text, safe }: { icon: string; text: string; safe: boolean }) {
-  return (
-    <View style={featureStyles.row}>
-      <View style={[featureStyles.icon, { backgroundColor: safe ? '#1B3A1B' : '#3A1B1B' }]}>
-        <Ionicons
-          name={icon as any}
-          size={11}
-          color={safe ? ACCENT_GREEN : TEXT_DANGER}
-        />
-      </View>
-      <Text
-        style={[featureStyles.text, !safe && { color: TEXT_DANGER }]}
-        numberOfLines={2}
-      >
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-const featureStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems:    'flex-start',
-    gap:           6,
-    flex:          1,
-  },
-  icon: {
-    width:        20,
-    height:       20,
-    borderRadius: 5,
-    alignItems:   'center',
-    justifyContent: 'center',
-    flexShrink:   0,
-  },
-  text: {
-    fontSize: 10,
-    color:    TEXT_SECONDARY,
-    flex:     1,
-    lineHeight: 14,
-  },
-});
-
-// ─── Stat chip (compact) ───────────────────────────────────────────────────
-function MiniStat({ icon, label, value, accent }: {
-  icon: string; label: string; value: string; accent: string;
-}) {
-  return (
-    <View style={miniStatStyles.wrap}>
-      <Ionicons name={icon as any} size={12} color={accent} />
-      <Text style={miniStatStyles.label}>{label}</Text>
-      <Text style={miniStatStyles.value} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
-
-const miniStatStyles = StyleSheet.create({
-  wrap: {
-    alignItems: 'center',
-    gap:         2,
-    flex:        1,
-  },
-  label: {
-    fontSize: 8,
-    color:    TEXT_FAINT,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
-    fontWeight: '600' as const,
-  },
-  value: {
-    fontSize: 10,
-    color:    TEXT_PRIMARY,
-    fontWeight: '700' as const,
-    textAlign: 'center' as const,
-  },
-});
-
-// ─── Main modal ────────────────────────────────────────────────────────────
 export default function ViewpointModal({
   visible,
   snapshot,
@@ -288,67 +90,54 @@ export default function ViewpointModal({
 }: ViewpointModalProps) {
   const router    = useRouter();
   const fadeAnim  = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.94)).current;
+  const slideAnim = useRef(new Animated.Value(60)).current;
+  const scaleAnim = useRef(new Animated.Value(0.92)).current;
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError]   = useState(false);
 
-  // slideAnim: card slides up from 80px below its resting position
-  const slideAnim = useRef(new Animated.Value(40)).current;
-
-  // ── Entrance animation — smooth slide-up + fade ──────────────────────
   useEffect(() => {
     if (visible) {
       setImageLoaded(false);
       setImageError(false);
-      // Start from offset position
-      slideAnim.setValue(400);
+      slideAnim.setValue(60);
       fadeAnim.setValue(0);
-      scaleAnim.setValue(0.906);
+      scaleAnim.setValue(0.92);
       Animated.parallel([
         Animated.timing(fadeAnim, {
-          toValue:         1,
-          duration:        1200,
-          easing:          Easing.out(Easing.exp),
+          toValue: 1, duration: 500,
+          easing: Easing.out(Easing.exp),
           useNativeDriver: true,
         }),
         Animated.timing(slideAnim, {
-          toValue:         0,
-          duration:        1200,
-          easing:          Easing.out(Easing.exp),
+          toValue: 0, duration: 500,
+          easing: Easing.out(Easing.exp),
           useNativeDriver: true,
         }),
         Animated.timing(scaleAnim, {
-          toValue:         1,
-          duration:        3200,
-          easing:          Easing.out(Easing.exp),
+          toValue: 1, duration: 600,
+          easing: Easing.out(Easing.exp),
           useNativeDriver: true,
         }),
       ]).start();
     } else {
-      // Slide back down on dismiss
       Animated.parallel([
         Animated.timing(fadeAnim, {
-          toValue:   0,
-          duration:  2000,
-          easing:    Easing.in(Easing.quad),
+          toValue: 0, duration: 280,
+          easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(slideAnim, {
-          toValue:   30,
-          duration:  2000,
-          easing:    Easing.in(Easing.quad),
+          toValue: 40, duration: 280,
+          easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
       ]).start();
     }
-  }, [visible, fadeAnim, scaleAnim, slideAnim]);
+  }, [visible]);
 
-  // ── Keyboard dismiss (web / desktop) ────────────────────────────────
   useEffect(() => {
     if (!visible) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onDismiss();
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onDismiss(); };
     if (typeof document !== 'undefined') {
       document.addEventListener('keydown', handler);
       return () => document.removeEventListener('keydown', handler);
@@ -357,12 +146,8 @@ export default function ViewpointModal({
 
   if (!snapshot || !detail) return null;
 
-  const accent     = detail.accentColor;
-  const heroImage  = IMAGE_MAP[detail.imageKey];
-  const { width: SCREEN_W } = Dimensions.get('window');
-
-  // ── Image column width — scales with screen width up to 160px ──────
-  const imageColW  = Math.min(SCREEN_W * 0.38, 160);
+  const accent    = detail.accentColor ?? ACCENT_GOLD;
+  const heroImage = IMAGE_MAP[detail.imageKey];
 
   return (
     <Modal
@@ -372,138 +157,112 @@ export default function ViewpointModal({
       onRequestClose={onDismiss}
       statusBarTranslucent
       presentationStyle="overFullScreen"
-      // Accessibility
       accessibilityViewIsModal
     >
-      {/* ── No backdrop — photo behind stays visible until dismiss ── */}
+      {/* Tap-outside-to-dismiss backdrop */}
+      <TouchableOpacity
+        style={styles.backdrop}
+        activeOpacity={1}
+        onPress={onDismiss}
+        accessible={false}
+      />
 
-      {/* ── Animated card — slides up from bottom ── */}
+      {/* ── Animated card slides up from bottom ── */}
       <Animated.View
         style={[
-          styles.cardWrap,
+          styles.card,
           {
             opacity:   fadeAnim,
-            transform: [
-              { scale:       scaleAnim },
-              { translateY:  slideAnim },
-            ],
+            transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
           },
         ]}
-        // aria-modal="true" via accessibilityViewIsModal above
-        accessibilityLabel={`${detail.name} viewpoint details`}
+        accessibilityLabel={`${detail.name} viewpoint`}
         accessibilityLiveRegion="polite"
       >
-        {/* ══ HEADER: captured viewport context ══ */}
-        <CapturedViewportHeader snapshot={snapshot} accentColor={accent} />
+        {/* ── Full-bleed hero image ── */}
+        <View style={styles.imageWrap}>
+          {!imageError && heroImage ? (
+            <Animated.Image
+              source={heroImage}
+              style={[styles.heroImage, { opacity: imageLoaded ? 1 : 0 }]}
+              resizeMode="cover"
+              onLoad={() => setImageLoaded(true)}
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <View style={styles.imageFallback}>
+              <Ionicons name="image-outline" size={36} color={ACCENT_GOLD} />
+            </View>
+          )}
 
-        {/* ══ BODY: landscape two-column layout ══ */}
-        <View style={styles.body}>
+          {/* Gradient overlay so text is always readable */}
+          <View style={styles.imageGradient} />
 
-          {/* ── LEFT: area image ── */}
-          <View style={[styles.imageCol, { width: imageColW }]}>
-            {!imageError && heroImage ? (
-              <Animated.Image
-                source={heroImage}
-                style={[styles.heroImg, { opacity: imageLoaded ? 1 : 0 }]}
-                resizeMode="cover"
-                onLoad={() => setImageLoaded(true)}
-                onError={() => setImageError(true)}
-              />
-            ) : (
-              /* ProfileCard-style error/placeholder — uses BG_AVATAR + ACCENT_GOLD */
-              <View style={styles.imgPlaceholder}>
-                <Ionicons name="image-outline" size={24} color={ACCENT_GOLD} />
-                <Text style={styles.imgPlaceholderText} numberOfLines={2}>
-                  {detail.name}
-                </Text>
-              </View>
-            )}
+          {/* Close button */}
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={onDismiss}
+            accessibilityLabel="Close"
+            accessibilityRole="button"
+          >
+            <Ionicons name="close" size={16} color="#fff" />
+          </TouchableOpacity>
 
-            {/* Elevation badge — mirrors viewpoint.tsx elevationBadge */}
+          {/* Elevation badge */}
+          {detail.elevation ? (
             <View style={[styles.elevBadge, { backgroundColor: accent }]}>
-              <Ionicons name="trending-up-outline" size={9} color="#FFF" />
+              <Ionicons name="trending-up-outline" size={10} color="#fff" />
               <Text style={styles.elevText}>{detail.elevation}</Text>
             </View>
-          </View>
+          ) : null}
 
-          {/* ── RIGHT: info pane ── */}
-          <View style={styles.infoCol}>
+          {/* Title block over image */}
+          <View style={styles.titleBlock}>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {detail.subtitle ?? 'Trail Stop'}
+            </Text>
+            <Text style={styles.title} numberOfLines={2}>{detail.name}</Text>
 
-            {/* Title block */}
-            <Text style={styles.subtitle} numberOfLines={1}>{detail.subtitle}</Text>
-            <Text style={styles.title}    numberOfLines={2}>{detail.name}</Text>
-
-            {/* Mini stats */}
-            <View style={styles.statsRow}>
-              <MiniStat icon="walk-outline"  label="Dist" value={detail.distanceFromStart} accent={accent} />
-              <View style={styles.statSep} />
-              <MiniStat icon="time-outline"  label="Hike" value={detail.estimatedHike}     accent={accent} />
-              <View style={styles.statSep} />
-              <MiniStat icon="sunny-outline" label="Best" value={detail.bestTime.split(' ')[0]} accent={accent} />
-            </View>
-
-            {/* Tags — horizontal scroll */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.tagsScroll}
-              contentContainerStyle={styles.tagsContent}
-            >
-              {detail.tags.slice(0, 4).map((tag: string) => (
-                <View key={tag} style={[styles.tag, { borderColor: accent + '55', backgroundColor: accent + '18' }]}>
-                  <Text style={[styles.tagText, { color: accent }]}>{tag}</Text>
-                </View>
-              ))}
-            </ScrollView>
-
-            {/* Description — 2 lines max */}
-            <Text style={styles.desc} numberOfLines={2}>{detail.description}</Text>
-
-            {/* Features — 2-column grid */}
-            <View style={styles.featuresGrid}>
-              {detail.features.slice(0, 4).map((f: any, i: number) => (
-                <FeatureRow key={i} icon={f.icon} text={f.text} safe={f.safe} />
-              ))}
+            {/* Welcoming tagline — best time or first tag */}
+            <View style={styles.taglineRow}>
+              <Ionicons name="sunny-outline" size={12} color={accent} />
+              <Text style={[styles.tagline, { color: accent }]}>
+                {detail.bestTime ?? (detail.tags?.[0] ?? 'A great spot to pause')}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* ══ FOOTER: action buttons ══ */}
+        {/* ── Action buttons ── */}
         <View style={styles.footer}>
-          {/* Close / Back to map */}
           <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={onDismiss}
-            activeOpacity={0.85}
+            activeOpacity={0.82}
             accessibilityLabel="Back to map"
             accessibilityRole="button"
           >
-            <Ionicons name="map-outline" size={13} color={TEXT_SECONDARY} />
+            <Ionicons name="map-outline" size={14} color={TEXT_SECONDARY} />
             <Text style={styles.secondaryBtnText}>Back to Map</Text>
           </TouchableOpacity>
 
-          {/* Full detail page */}
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: accent }]}
             onPress={() => {
               onDismiss();
               router.push({
                 pathname: '/viewpoint',
-                params: {
-                  viewpointId: snapshot.selectedViewpoint.id,
-                  mountainId,
-                },
+                params: { viewpointId: snapshot.selectedViewpoint.id, mountainId },
               });
             }}
             activeOpacity={0.85}
-            accessibilityLabel="View full details"
+            accessibilityLabel="Explore this viewpoint"
             accessibilityRole="button"
           >
-            <Ionicons name="expand-outline" size={13} color="#FFF" />
-            <Text style={styles.primaryBtnText}>View Details</Text>
+            <Ionicons name="compass-outline" size={14} color="#fff" />
+            <Text style={styles.primaryBtnText}>Explore</Text>
           </TouchableOpacity>
 
-          {/* Schedule hike */}
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: ACCENT_GOLD }]}
             onPress={() => {
@@ -514,179 +273,157 @@ export default function ViewpointModal({
             accessibilityLabel="Schedule a hike"
             accessibilityRole="button"
           >
-            <Ionicons name="calendar-outline" size={13} color="#000" />
+            <Ionicons name="calendar-outline" size={14} color="#000" />
             <Text style={[styles.primaryBtnText, { color: '#000' }]}>Schedule</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Close X button */}
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={onDismiss}
-          accessibilityLabel="Close viewpoint details"
-          accessibilityRole="button"
-        >
-          <Ionicons name="close" size={13} color={TEXT_FAINTEST} />
-        </TouchableOpacity>
       </Animated.View>
     </Modal>
   );
 }
 
 // ─── Styles ────────────────────────────────────────────────────────────────
-// All colours from designTokens.ts → ProfileCard.tsx origin noted per-rule.
 const styles = StyleSheet.create({
-  // Card — mirrors ProfileCard card: BG_CARD, RADIUS_CARD, BORDER_DEFAULT
-  cardWrap: {
-    position:       'absolute',
-    bottom:         29,
-    left:            8,
-    right:          45,
-    backgroundColor: BG_CARD,         // ProfileCard: '#0E1520'
-    borderRadius:   RADIUS_CARD,      // ProfileCard: 16
-    borderWidth:    1,
-    borderColor:    BORDER_DEFAULT,   // ProfileCard: 'rgba(255,255,255,0.07)'
-    overflow:       'hidden',
-    maxHeight:      340,
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
   },
 
-  // Body: two-column row
-  body: {
-    flexDirection: 'row',
-    flex:          1,
-    minHeight:     0,
+  // Card anchored to bottom
+  card: {
+    position:        'absolute',
+    bottom:          24,
+    left:            12,
+    right:           48,
+    borderRadius:    RADIUS_CARD,
+    overflow:        'hidden',
+    backgroundColor: BG_CARD,
+    borderWidth:     1,
+    borderColor:     BORDER_DEFAULT,
+    // Subtle glow around the card
+    shadowColor:     '#000',
+    shadowOffset:    { width: 0, height: 8 },
+    shadowOpacity:   0.55,
+    shadowRadius:    20,
+    elevation:       16,
   },
 
-  // Left image column
-  imageCol: {
-    position: 'relative',
-    backgroundColor: BG_AVATAR,  // ProfileCard: '#1E2D42'
+  // Hero image block — tall enough to feel immersive
+  imageWrap: {
+    height:          220,
+    backgroundColor: BG_AVATAR,
+    position:        'relative',
   },
-  heroImg: {
+  heroImage: {
     width:  '100%',
     height: '100%',
   },
-  imgPlaceholder: {
-    flex:            1,
+  imageFallback: {
+    flex:           1,
+    alignItems:     'center',
+    justifyContent: 'center',
+    backgroundColor: BG_AVATAR,
+  },
+
+  // Gradient scrim — bottom-heavy so title pops
+  imageGradient: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    // Simulated with a bottom-heavy semi-transparent block:
+    borderBottomLeftRadius:  0,
+    borderBottomRightRadius: 0,
+    // We achieve the gradient with two layered views below via the titleBlock shadow
+  },
+
+  // Close X
+  closeBtn: {
+    position:        'absolute',
+    top:             10,
+    right:           10,
+    width:           30,
+    height:          30,
+    borderRadius:    15,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems:      'center',
     justifyContent:  'center',
-    gap:              6,
-    backgroundColor: BG_AVATAR,  // ProfileCard error bg
-    padding:         12,
   },
-  imgPlaceholderText: {
-    fontSize:   10,
-    color:      ACCENT_GOLD,    // ProfileCard: avatarInitials '#C9A96E'
-    fontWeight: '600',
-    textAlign:  'center',
-  },
+
+  // Elevation badge top-left
   elevBadge: {
-    position:       'absolute',
-    top:             8,
-    right:           8,
-    flexDirection:  'row',
-    alignItems:     'center',
-    gap:             3,
-    paddingHorizontal: 6,
-    paddingVertical:   3,
-    borderRadius:   10,
+    position:          'absolute',
+    top:               10,
+    left:              10,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    paddingHorizontal: 8,
+    paddingVertical:   4,
+    borderRadius:      10,
   },
   elevText: {
-    color:      '#FFF',
-    fontSize:    9,
+    color:      '#fff',
+    fontSize:   10,
     fontWeight: '700',
   },
 
-  // Right info column
-  infoCol: {
-    flex:              1,
-    paddingHorizontal: SPACING.cardPadH,  // ProfileCard: 16
-    paddingVertical:   10,
-    backgroundColor:   BG_PANEL,          // ProfileCard: '#111927'
-    minWidth:          0,
+  // Title block overlaid at bottom of image
+  titleBlock: {
+    position:          'absolute',
+    bottom:            0,
+    left:              0,
+    right:             0,
+    paddingHorizontal: 14,
+    paddingBottom:     14,
+    paddingTop:        40,
+    backgroundColor:   'rgba(0,0,0,0.52)',
   },
   subtitle: {
     fontSize:      9,
-    color:         TEXT_FAINT,           // ProfileCard: 'rgba(255,255,255,0.38)'
-    fontWeight:   '600',
-    letterSpacing: 0.8,
+    color:         'rgba(255,255,255,0.55)',
+    fontWeight:    '600',
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
-    marginBottom:  2,
+    marginBottom:  3,
   },
   title: {
-    fontSize:    14,
+    fontSize:   22,
     fontWeight: '800',
-    color:       TEXT_PRIMARY,           // ProfileCard: '#FFFFFF'
-    lineHeight:  18,
+    color:      '#FFFFFF',
+    lineHeight: 27,
     marginBottom: 6,
   },
-
-  // Stats row
-  statsRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    marginBottom:    6,
-    backgroundColor: BG_SUBTLE,          // ProfileCard: settingsBtn bg
-    borderRadius:   RADIUS_BTN,          // ProfileCard: 8
-    paddingVertical: 5,
+  taglineRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           5,
   },
-  statSep: {
-    width:           1,
-    height:          16,
-    backgroundColor: BORDER_SUBTLE,      // ProfileCard: 'rgba(255,255,255,0.08)'
-  },
-
-  // Tags
-  tagsScroll:   { marginBottom: 6 },
-  tagsContent:  { gap: 5 },
-  tag: {
-    paddingHorizontal: 7,
-    paddingVertical:   3,
-    borderRadius:      10,
-    borderWidth:        1,
-  },
-  tagText: {
-    fontSize:   9,
+  tagline: {
+    fontSize:   11,
     fontWeight: '600',
   },
 
-  // Description
-  desc: {
-    fontSize:    10,
-    color:       TEXT_SECONDARY,        // ProfileCard: 'rgba(255,255,255,0.7)'
-    lineHeight:  15,
-    marginBottom: 6,
-  },
-
-  // Features 2-col grid
-  featuresGrid: {
-    flexDirection:  'row',
-    flexWrap:       'wrap',
-    gap:             4,
-  },
-
-  // Footer
+  // Footer buttons
   footer: {
-    flexDirection:   'row',
-    gap:              8,
-    paddingHorizontal: SPACING.cardPadH,
-    paddingVertical:   10,
-    borderTopWidth:   1,
-    borderTopColor:   BORDER_DEFAULT,   // ProfileCard: 'rgba(255,255,255,0.07)'
-    backgroundColor:  BG_CARD,
+    flexDirection:     'row',
+    gap:               8,
+    paddingHorizontal: 14,
+    paddingVertical:   12,
+    backgroundColor:   BG_CARD,
+    borderTopWidth:    1,
+    borderTopColor:    BORDER_DEFAULT,
   },
   primaryBtn: {
     flex:           1,
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'center',
-    gap:             5,
-    paddingVertical: 8,
-    borderRadius:   RADIUS_BTN,         // ProfileCard: 8
+    gap:            5,
+    paddingVertical: 10,
+    borderRadius:   RADIUS_BTN,
   },
   primaryBtnText: {
-    color:      '#FFF',
-    fontSize:    11,
+    color:      '#fff',
+    fontSize:   12,
     fontWeight: '700',
   },
   secondaryBtn: {
@@ -694,29 +431,16 @@ const styles = StyleSheet.create({
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'center',
-    gap:             5,
-    paddingVertical: 8,
+    gap:            5,
+    paddingVertical: 10,
     borderRadius:   RADIUS_BTN,
-    backgroundColor: BG_SUBTLE,         // ProfileCard: settingsBtn
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth:    1,
     borderColor:    BORDER_SUBTLE,
   },
   secondaryBtnText: {
-    color:      TEXT_SECONDARY,         // ProfileCard: 'rgba(255,255,255,0.7)'
-    fontSize:    11,
+    color:      TEXT_SECONDARY,
+    fontSize:   12,
     fontWeight: '600',
-  },
-
-  // Close X — mirrors ProfileCard closeBtn
-  closeBtn: {
-    position:       'absolute',
-    top:             6,
-    right:           8,
-    width:           22,
-    height:          22,
-    borderRadius:    11,                // ProfileCard: RADIUS_PILL = 11
-    backgroundColor: BG_SUBTLE,
-    justifyContent: 'center',
-    alignItems:     'center',
   },
 });

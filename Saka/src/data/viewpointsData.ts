@@ -15,6 +15,10 @@ export interface ViewpointData {
     text: string;
     safe: boolean;
   }>;
+  trailNotes?: string[];
+  difficulty?: 'Easy' | 'Moderate' | 'Hard' | 'Expert';
+  trailStatus?: string;
+  crowdLevel?: string;
 }
 
 export type ViewpointsDataType = Record<string, ViewpointData>;

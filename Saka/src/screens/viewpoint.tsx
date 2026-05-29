@@ -165,7 +165,7 @@ export default function ViewpointScreen() {
                 ]}
               >
                 {heroImage && (
-                  <Image source={heroImage} style={styles.imageModalImage} resizeMode="contain" />
+                  <Image source={heroImage} style={styles.imageModalImage} resizeMode="cover" />
                 )}
                 <TouchableOpacity
                   style={styles.imageModalClose}
@@ -187,13 +187,15 @@ export default function ViewpointScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Stats row — ProfileCard statsRow pattern */}
+        {/* Stats row — 4 chips */}
         <View style={styles.statsRow}>
-          <StatChip icon="walk-outline"  label="Distance" value={data.distanceFromStart} />
+          <StatChip icon="walk-outline"    label="Distance"  value={data.distanceFromStart} />
           <View style={styles.statSep} />
-          <StatChip icon="time-outline"  label="Est. hike" value={data.estimatedHike} />
+          <StatChip icon="time-outline"    label="Est. hike" value={data.estimatedHike} />
           <View style={styles.statSep} />
-          <StatChip icon="sunny-outline" label="Best time" value={data.bestTime.split(' ')[0]} />
+          <StatChip icon="trending-up-outline" label="Elevation" value={data.elevation ?? '—'} />
+          <View style={styles.statSep} />
+          <StatChip icon="sunny-outline"   label="Best time" value={data.bestTime.split(' ')[0]} />
         </View>
 
         {/* Tags */}
@@ -257,6 +259,44 @@ export default function ViewpointScreen() {
                 </Text>
               </View>
             ))}
+          </View>
+        </View>
+
+        {/* Trail Notes — practical hiker tips */}
+        {data.trailNotes && data.trailNotes.length > 0 && (
+          <View style={styles.panel}>
+            <View style={styles.panelHeader}>
+              <View style={styles.panelAccent} />
+              <Text style={styles.panelTitle}>Trail Notes</Text>
+            </View>
+            {data.trailNotes.map((note: string, i: number) => (
+              <View key={i} style={styles.noteRow}>
+                <Ionicons name="chevron-forward-outline" size={12} color={PC.gold} style={{ marginTop: 2 }} />
+                <Text style={styles.noteText}>{note}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+
+        {/* Difficulty & safety summary */}
+        <View style={[styles.panel, { flexDirection: 'row', gap: 10 }]}>
+          <View style={styles.difficultyChip}>
+            <Ionicons name="flag-outline" size={13} color={PC.gold} />
+            <Text style={styles.difficultyLabel}>Difficulty</Text>
+            <Text style={styles.difficultyValue}>{data.difficulty ?? 'Moderate'}</Text>
+          </View>
+          <View style={styles.statDividerV} />
+          <View style={styles.difficultyChip}>
+            <Ionicons name="shield-checkmark-outline" size={13} color={PC.green} />
+            <Text style={styles.difficultyLabel}>Trail Status</Text>
+            <Text style={[styles.difficultyValue, { color: PC.green }]}>{data.trailStatus ?? 'Open'}</Text>
+          </View>
+          <View style={styles.statDividerV} />
+          <View style={styles.difficultyChip}>
+            <Ionicons name="people-outline" size={13} color={PC.textMuted} />
+            <Text style={styles.difficultyLabel}>Crowd Level</Text>
+            <Text style={styles.difficultyValue}>{data.crowdLevel ?? 'Low'}</Text>
           </View>
         </View>
 
@@ -377,7 +417,7 @@ const styles = StyleSheet.create({
   // ProfileCard card dark overlay pattern
   imageModalBackdrop: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0,0,0,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 10,
@@ -656,5 +696,44 @@ const styles = StyleSheet.create({
     color: PC.textSecondary,
     fontSize: 13,
     fontWeight: '600',
+  },
+
+  // ── Trail Notes ────────────────────────────────────────────────────────
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginBottom: 6,
+  },
+  noteText: {
+    fontSize: 12,
+    color: PC.textSecondary,
+    flex: 1,
+    lineHeight: 18,
+  },
+
+  // ── Difficulty / Status / Crowd row ───────────────────────────────────
+  difficultyChip: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  difficultyLabel: {
+    fontSize: 9,
+    color: PC.textFaint,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  difficultyValue: {
+    fontSize: 11,
+    color: PC.textPrimary,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  statDividerV: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: PC.borderSubtle,
   },
 });
