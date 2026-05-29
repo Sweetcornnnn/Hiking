@@ -16,12 +16,14 @@ import {
   StyleSheet,
   StatusBar,
   TouchableOpacity,
+  Pressable,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { useViewpointFlow } from '../hooks/useViewpointFlow';
 import ViewpointModal from './ViewpointModal';
@@ -34,14 +36,21 @@ const PLACEHOLDER = require('../../assets/viewpoints/placeholder.png');
 const IMAGE_MAP: Record<string, any> = {
   trailhead:     require('../../assets/images/TrailHead.jpg'),
   bantang_river: require('../../assets/images/BantangRiverWide.jpg'),
-  camp1:         require('../../assets/images/Camp1.jpg'),
+  camp1:         require('../../assets/images/Camp1.png'),
   waterfall:     require('../../assets/images/WaterfallsWide.jpg'),
   mossy_forest:  require('../../assets/images/MossyForestWide.jpg'),
   camp2:         require('../../assets/images/Camp2$3.jpg'),
   camp3:         require('../../assets/images/Camp2$3.jpg'),
   crown_shyness: require('../../assets/images/CrownShines.jpg'),
   summit_ridge:  require('../../assets/images/MadjaasRidgeWide.jpg'),
-  summit:        require('../../assets/images/MadjaasSummit.jpg'),
+  summit:        require('../../assets/images/Summit.png'),
+};
+
+const VIDEO_MAP: Record<string, any> = {
+  waterfall: require('../../assets/WaterfallsFor89.mp4'),
+  crown_shyness: require('../../assets/Waterfalls.mp4'),
+  summit_ridge:  require('../../assets/SummitRidge.mp4'),
+  mossy_forest:  require('../../assets/CrownShyeness.mp4'),
 };
 
 // ─── ProfileCard design tokens ────────────────────────────────────────────
@@ -183,6 +192,38 @@ function CenterPin() {
   );
 }
 
+function TrailVideoPlayer({ source, isActive, onEnd }: { source: any; isActive: boolean; onEnd: () => void }) {
+  const player = useVideoPlayer(source, (p) => {
+    p.loop = false;
+    p.muted = true;
+    p.staysActiveInBackground = true;
+  });
+
+  useEffect(() => {
+    if (isActive) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isActive, player]);
+
+  useEffect(() => {
+    const sub = player.addListener('playToEnd', () => {
+      onEnd();
+    });
+    return () => sub.remove();
+  }, [player, onEnd]);
+
+  return (
+    <VideoView
+      style={styles.photoFill}
+      player={player}
+      nativeControls={false}
+      contentFit="cover"
+    />
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────
 export default function TrailMap({
   mountainId,
@@ -213,13 +254,15 @@ export default function TrailMap({
     [],
   );
 
-  const { state, onMarkerPress, onDismiss, showPhoto, activeViewpoint } =
+  const { state, onMarkerPress, onDismiss, requestModalOpen, showPhoto, activeViewpoint } =
     useViewpointFlow({
       mapRef: mapRef as React.RefObject<MapView>,
       overviewCoord: centerCoord,
       overviewZoom:  zoomLevel,
       mountainId,
       fetchDetail,
+      shouldAutoOpenModal: (detail) =>
+        detail ? !VIDEO_MAP[detail.imageKey] : true,
     });
 
   useEffect(() => {
@@ -238,6 +281,7 @@ export default function TrailMap({
   const activeDetail = activeViewpoint
     ? (VIEWPOINTS_DATA as any)[activeViewpoint.id] : null;
   const activeImage  = activeDetail ? IMAGE_MAP[activeDetail.imageKey] : null;
+  const activeVideo  = activeDetail ? VIDEO_MAP[activeDetail.imageKey] : null;
 
   const trailCoordinates = customTrailCoordinates || [
     centerCoord,
@@ -298,10 +342,14 @@ export default function TrailMap({
       </MapView>
 
       {/* Full-screen photo overlay */}
-      <Animated.View style={[styles.photoOverlay, { opacity: photoOpacity }]} pointerEvents="none">
-        {activeImage && (
+      <Animated.View style={[styles.photoOverlay, { opacity: photoOpacity }]} pointerEvents={activeVideo ? 'auto' : 'none'}>
+        {activeVideo ? (
+          <Pressable style={styles.photoFill} onPress={requestModalOpen}>
+            <TrailVideoPlayer source={activeVideo} isActive={showPhoto} onEnd={requestModalOpen} />
+          </Pressable>
+        ) : activeImage ? (
           <Image source={activeImage} style={styles.photoFill} resizeMode="cover" />
-        )}
+        ) : null}
       </Animated.View>
 
       {/* Back button — top: 16, no assumed status bar height */}
