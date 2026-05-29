@@ -42,13 +42,25 @@ export const useSpeciesDetails = () => {
     setIsLoading(true);
     setError(null);
 
+    console.log('[useSpeciesDetails] Loading details for species:', {
+      scientific_name: species.scientific_name,
+      gbif_id: species.gbif_id,
+      inaturalist_id: species.inaturalist_id,
+    });
+
     try {
       const [gbifDetails, inatDetails] = await Promise.all([
         species.gbif_id ? GBIFService.getSpeciesDetails(species.gbif_id) : null,
         species.inaturalist_id ? INaturalistService.getTaxonDetails(species.inaturalist_id) : null,
       ]);
 
+      console.log('[useSpeciesDetails] API results:', {
+        gbifDetails: gbifDetails ? 'loaded' : 'null',
+        inatDetails: inatDetails ? 'loaded' : 'null',
+      });
+
       const merged = mergeDetails(gbifDetails, inatDetails, species);
+      console.log('[useSpeciesDetails] Merged detail keys:', Object.keys(merged));
       setDetail(merged);
       return merged;
     } catch (loadError) {
