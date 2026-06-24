@@ -1,50 +1,45 @@
-# Welcome to your Expo app 👋
+# Saka
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Saka is a mobile app designed for hikers, explorers, and nature lovers. It combines outdoor adventure, wildlife discovery, and personal safety in one experience, helping users explore the outdoors with more confidence and awareness.
 
-## Get started
+## What the app does
 
-1. Install dependencies
+Saka helps people:
+- Discover trails, viewpoints, and mountain locations
+- Learn about local species and wildlife through search and identification features
+- Check weather and location-based information before and during a trip
+- Stay safer while hiking with GPS tracking, emergency support, and offline-friendly functionality
+- Keep a personal record of discoveries and outdoor experiences
 
-   ```bash
-   npm install
-   ```
+## Main features
 
-2. Start the app
+- Hiking and exploration support for outdoor trips
+- Viewpoint and mountain information for planning routes
+- Species search and discovery tools for nature observation
+- Weather and location insights for trip readiness
+- Safety tools including live location tracking and emergency assistance
+- User account features such as login, profile, and settings
 
-   ```bash
-   npx expo start
-   ```
+## Who it is for
 
-In the output, you'll find options to open the app in a
+Saka is built for:
+- Hikers and trekkers
+- Nature enthusiasts and wildlife observers
+- Travelers who want a simple companion for outdoor exploration
+- Anyone who wants a safer and more informative hiking experience
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Technology
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Saka is built with React Native and Expo, using TypeScript for a more maintainable mobile experience. It also connects to services for location, weather, and species data.
 
-## Get a fresh project
+## Getting started
 
-When you're ready, run:
+To run the app locally:
 
 ```bash
-npm run reset-project
+cd Saka
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+From there, you can launch it on a simulator, emulator, or physical device.
