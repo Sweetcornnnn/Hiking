@@ -24,15 +24,18 @@ export default function RootLayout() {
     <>
       <StatusBar hidden={true} />
       <Stack screenOptions={stackScreenOptions}>
-        <Stack.Screen name="intro" options={screenOptionsNoHeader} />
-        <Stack.Screen name="login" options={screenOptionsNoHeader} />
-        <Stack.Screen name="signup" options={screenOptionsNoHeader} />
-        <Stack.Screen name="forgot" options={screenOptionsNoHeader} />
-        <Stack.Screen name="drawer" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Intro" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Login" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Signup" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Forgot" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Home" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Calendar" options={screenOptionsNoHeader} />
+        <Stack.Screen name="admin/[...admin]" options={screenOptionsNoHeader} />
+        <Stack.Screen name="WildTrack" options={screenOptionsNoHeader} />
         <Stack.Screen name="MountainTop" options={screenOptionsNoHeader} />
-        <Stack.Screen name="viewpoint" options={screenOptionsNoHeader} />
-        <Stack.Screen name="weather" options={screenOptionsNoHeader} />
-        <Stack.Screen name="settings" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Weather" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Settings" options={screenOptionsNoHeader} />
       </Stack>
     </>
   );

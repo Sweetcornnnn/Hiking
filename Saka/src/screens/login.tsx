@@ -179,13 +179,13 @@ export default function LoginScreen() {
         showToast({ type: 'denied', title: 'Access denied', message: 'This account does not have admin privileges.' });
         return;
       }
-      router.replace('/loading');
+      router.replace('/Loading');
     } else {
       if (authState.user?.is_admin) {
         showToast({ type: 'denied', title: 'Access denied', message: 'Admin accounts must use the admin login.' });
         return;
       }
-      router.replace('/loading');
+      router.replace('/Loading');
     }
   };
 
@@ -252,7 +252,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity onPress={() => router.push('/forgot')} style={styles.forgotWrap}>
+            <TouchableOpacity onPress={() => router.push('/Forgot')} style={styles.forgotWrap}>
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
@@ -266,7 +266,7 @@ export default function LoginScreen() {
 
             <View style={styles.footerRow}>
               <Text style={styles.footerMuted}>No account yet?</Text>
-              <TouchableOpacity onPress={() => router.push('/signup')}>
+              <TouchableOpacity onPress={() => router.push('/Signup')}>
                 <Text style={styles.footerLink}>Create one</Text>
               </TouchableOpacity>
             </View>

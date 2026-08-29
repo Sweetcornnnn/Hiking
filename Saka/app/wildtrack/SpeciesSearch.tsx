@@ -1,4 +1,4 @@
-import SpeciesSearchScreen from '../src/screens/speciesSearch';
+import SpeciesSearchScreen from '../../src/screens/wildtrack/SpeciesSearch';
 
 export default function SpeciesSearchRoute() {
   return <SpeciesSearchScreen />;

@@ -14,8 +14,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { useWildTrackStore } from '../store/wildtrackStore';
-import { SpeciesCard } from '../components/wildtrack/SpeciesCard';
+import { useWildTrackStore } from '../../store/wildtrackStore';
+import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
 
 import {
   BG_CARD,
@@ -27,7 +27,7 @@ import {
   ACCENT_GOLD,
   RADIUS_CARD,
   RADIUS_BTN,
-} from '../theme/designTokens';
+} from '../../theme/designTokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } =
   Dimensions.get('window');
@@ -211,7 +211,7 @@ export default function DiscoveriesScreen() {
 
             <TouchableOpacity
               style={styles.exploreButton}
-              onPress={() => router.replace('/drawer/wildtrack')}
+              onPress={() => router.replace('/wildtrack/WildTrack')}
               activeOpacity={0.85}
             >
               <Ionicons
@@ -577,4 +577,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-

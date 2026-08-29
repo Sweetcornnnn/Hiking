@@ -53,7 +53,7 @@ export default function CalendarScreen() {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      router.replace('/drawer/home');
+      router.replace('/Home');
     }
   };
 

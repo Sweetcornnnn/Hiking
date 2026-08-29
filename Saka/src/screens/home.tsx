@@ -405,7 +405,7 @@ export default function HomeScreen() {
   const confirmLogout = useCallback(async () => {
     setShowLogoutConfirm(false);
     await signOut();
-    router.replace('/login');
+    router.replace('/Login');
   }, [signOut, router]);
 
   // ── BackHandler: close ProfileCard first; otherwise show logout confirm ─
@@ -518,7 +518,7 @@ export default function HomeScreen() {
           style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
           onPress={() => {
             console.log('Tara Saka pressed');
-            router.push('/loading?next=/MountainTop');
+            router.push('/Loading?next=/MountainTop');
           }}
           activeOpacity={0.75}
         >

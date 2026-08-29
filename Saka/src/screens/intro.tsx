@@ -32,7 +32,7 @@ export default function IntroScreen() {
       useNativeDriver: false,
     }).start();
 
-    const timer = setTimeout(() => router.push('/login'), 6000);
+    const timer = setTimeout(() => router.push('/Login'), 6000);
     return () => clearTimeout(timer);
   }, []);
 

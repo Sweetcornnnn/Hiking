@@ -182,7 +182,7 @@ export default function SignupScreen() {
 
             <View style={styles.footerRow}>
               <Text style={styles.footerMuted}>Already have an account?</Text>
-              <TouchableOpacity onPress={() => router.push('/login')}>
+              <TouchableOpacity onPress={() => router.push('/Login')}>
                 <Text style={styles.footerLink}>Sign in</Text>
               </TouchableOpacity>
             </View>
@@ -209,7 +209,7 @@ export default function SignupScreen() {
               style={styles.successModalButton}
               onPress={() => {
                 setShowSuccessModal(false);
-                router.replace('/login');
+                router.replace('/Login');
               }}
               activeOpacity={0.8}
             >

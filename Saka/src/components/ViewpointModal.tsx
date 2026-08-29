@@ -251,7 +251,7 @@ export default function ViewpointModal({
             onPress={() => {
               onDismiss();
               router.push({
-                pathname: '/viewpoint',
+                pathname: '/Viewpoint',
                 params: { viewpointId: snapshot.selectedViewpoint.id, mountainId },
               });
             }}
@@ -267,7 +267,7 @@ export default function ViewpointModal({
             style={[styles.primaryBtn, { backgroundColor: ACCENT_GOLD }]}
             onPress={() => {
               onDismiss();
-              router.push('/drawer/calendar');
+              router.push('/Calendar');
             }}
             activeOpacity={0.85}
             accessibilityLabel="Schedule a hike"

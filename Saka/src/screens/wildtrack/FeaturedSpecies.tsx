@@ -11,8 +11,8 @@ import {
   SafeAreaView,
   ScrollView,
 } from 'react-native';
-import { useWildTrackStore } from '../store/wildtrackStore';
-import { SpeciesCard } from '../components/wildtrack/SpeciesCard';
+import { useWildTrackStore } from '../../store/wildtrackStore';
+import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
@@ -27,7 +27,7 @@ import {
   ACCENT_GREEN,
   RADIUS_CARD,
   RADIUS_BTN,
-} from '../theme/designTokens';
+} from '../../theme/designTokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -55,17 +55,6 @@ export default function FeaturedSpeciesScreen() {
 
     fetchFeaturedSpecies(selectedMountainId);
   }, [selectedMountainId]);
-
-  /**
-   * LANDSCAPE GRID SYSTEM
-   * ----------------------
-   * Compact + balanced layout.
-   * Prevents:
-   * - oversized cards
-   * - overcrowding
-   * - clipping
-   * - vertical stretching
-   */
 
   const columns = useMemo(() => {
     if (SCREEN_WIDTH >= 1500) return 4;
@@ -289,22 +278,10 @@ export default function FeaturedSpeciesScreen() {
 }
 
 const styles = StyleSheet.create({
-  /**
-   * CONTAINER
-   * -----------
-   * Premium dark hiking aesthetic.
-   */
-
   container: {
     flex: 1,
     backgroundColor: BG_CARD,
   },
-
-  /**
-   * HEADER
-   * --------
-   * Compact landscape dashboard header.
-   */
 
   header: {
     paddingHorizontal: isLandscape ? 20 : 18,
@@ -373,12 +350,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  /**
-   * LIST
-   * ------
-   * Balanced landscape spacing.
-   */
-
   listContent: {
     paddingHorizontal: isLandscape ? 20 : 18,
     paddingTop: isLandscape ? 18 : 16,
@@ -393,10 +364,6 @@ const styles = StyleSheet.create({
   cardWrapper: {
     marginBottom: isLandscape ? 16 : 14,
   },
-
-  /**
-   * EMPTY STATE
-   */
 
   emptyState: {
     alignItems: 'center',
@@ -436,16 +403,6 @@ const styles = StyleSheet.create({
     maxWidth: 460,
   },
 
-  /**
-   * MODAL
-   * -------
-   * Proper landscape scaling.
-   * Prevents:
-   * - clipping
-   * - overflow
-   * - oversized layouts
-   */
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.85)',
@@ -478,12 +435,6 @@ const styles = StyleSheet.create({
   modalCardWrapper: {
     width: '100%',
   },
-
-  /**
-   * ACTIONS
-   * ---------
-   * Cleaner CTA hierarchy.
-   */
 
   modalActions: {
     marginTop: 18,

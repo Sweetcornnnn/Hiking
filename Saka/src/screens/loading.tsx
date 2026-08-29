@@ -86,9 +86,9 @@ export default function LoadingScreen({
       } else {
         // Navigate based on user role
         if (user?.is_admin) {
-          router.replace('/drawer/admin/[...admin]');
+          router.replace('/admin/[...admin]');
         } else {
-          router.replace('/drawer/home');
+          router.replace('/Home');
         }
       }
     }, loadingDuration + 300);

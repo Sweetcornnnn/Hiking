@@ -304,7 +304,7 @@ export default function ViewpointScreen() {
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => router.push('/drawer/calendar')}
+            onPress={() => router.push('/Calendar')}
             activeOpacity={0.85}
           >
             <Ionicons name="calendar-outline" size={15} color={PC.bgCard} />

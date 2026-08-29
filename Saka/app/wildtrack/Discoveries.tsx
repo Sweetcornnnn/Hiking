@@ -1,4 +1,4 @@
-import DiscoveriesScreen from '../src/screens/discoveries';
+import DiscoveriesScreen from '../../src/screens/wildtrack/Discoveries';
 
 export default function DiscoveriesRoute() {
   return <DiscoveriesScreen />;

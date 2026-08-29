@@ -34,7 +34,7 @@ export default function ForgotPasswordScreen() {
         Animated.timing(successY,       { toValue: 10, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
       ]).start(() => {
         setSuccessVisible(false);
-        router.replace('/login');
+        router.replace('/Login');
       });
     }, 2600);
   };
@@ -234,7 +234,7 @@ export default function ForgotPasswordScreen() {
               }
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => router.replace('/login')} style={styles.backRow}>
+            <TouchableOpacity onPress={() => router.replace('/Login')} style={styles.backRow}>
               <Ionicons name="arrow-back" size={12} color="rgba(255,255,255,0.25)" />
               <Text style={styles.backText}>Back to Login</Text>
             </TouchableOpacity>

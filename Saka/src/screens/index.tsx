@@ -11,7 +11,7 @@ export default function IntroScreen() {
     // Auto navigate to login after 3 seconds
     const timer = setTimeout(() => {
       console.log('Attempting to navigate to login...');
-      router.replace('/login');
+      router.replace('/Login');
     }, 3000);
 
     return () => {
@@ -22,7 +22,7 @@ export default function IntroScreen() {
 
   const handleSkipIntro = () => {
     console.log('Skip button pressed');
-    router.replace('/login');
+    router.replace('/Login');
   };
 
   return (

@@ -157,7 +157,7 @@ export default function AdminRoute() {
   // ---------- Initial data fetching ----------
   useEffect(() => {
     if (!user?.is_admin) {
-      router.replace('/drawer/home');
+      router.replace('/Home');
       return;
     }
     fetchAllHikes();
@@ -250,7 +250,7 @@ export default function AdminRoute() {
   const confirmLogout = async () => {
     setShowLogoutConfirm(false);
     await signOut();
-    router.replace('/login');
+    router.replace('/Login');
   };
 
   const confirmResetPassword = () => {

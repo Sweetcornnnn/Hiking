@@ -15,16 +15,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { SpeciesCard } from '../components/wildtrack/SpeciesCard';
-import { TaxonomyTree } from '../components/wildtrack/TaxonomyTree';
-import { DistributionMap } from '../components/wildtrack/DistributionMap';
-import { ObservationTimeline } from '../components/wildtrack/ObservationTimeline';
-import { SpeciesGallery } from '../components/wildtrack/SpeciesGallery';
+import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
+import { TaxonomyTree } from '../../components/wildtrack/TaxonomyTree';
+import { DistributionMap } from '../../components/wildtrack/DistributionMap';
+import { ObservationTimeline } from '../../components/wildtrack/ObservationTimeline';
+import { SpeciesGallery } from '../../components/wildtrack/SpeciesGallery';
 
-import { useSpeciesSearch } from '../hooks/useSpeciesSearch';
-import { useSpeciesDetails } from '../hooks/useSpeciesDetails';
-import { useOccurrenceData } from '../hooks/useOccurrenceData';
-import { useWildTrackStore } from '../store/wildtrackStore';
+import { useSpeciesSearch } from '../../hooks/useSpeciesSearch';
+import { useSpeciesDetails } from '../../hooks/useSpeciesDetails';
+import { useOccurrenceData } from '../../hooks/useOccurrenceData';
+import { useWildTrackStore } from '../../store/wildtrackStore';
 
 export default function SpeciesSearchScreen() {
   const router = useRouter();
@@ -67,13 +67,11 @@ export default function SpeciesSearchScreen() {
   const horizontalPadding = isLandscape ? 20 : 12;
   const cardWidth = (width - horizontalPadding - 24) / 2;
 
-  // fallback-safe data
   const displayData = useMemo(
     () => detail || selectedSpecies,
     [detail, selectedSpecies]
   );
 
-  // safer gallery images
   const galleryImages = useMemo(() => {
     const images =
       detail?.gallery_images ||
@@ -95,7 +93,6 @@ export default function SpeciesSearchScreen() {
   const handleSelectSpecies = async (item: any) => {
     setSelectedSpecies(item);
 
-    // open instantly using fallback data
     setModalOpen(true);
 
     try {
@@ -149,7 +146,6 @@ export default function SpeciesSearchScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-
       {/* HEADER */}
       <View style={styles.header}>
         <Pressable
@@ -336,123 +332,67 @@ export default function SpeciesSearchScreen() {
                     },
                   ]}
                 >
-
-                  {/* LEFT */}
                   <View style={styles.modalLeft}>
-
-                    {/* GALLERY */}
                     {galleryImages.length > 0 ? (
-                      <SpeciesGallery
-                        images={galleryImages}
-                      />
+                      <SpeciesGallery images={galleryImages} />
                     ) : (
                       <View style={styles.noImageCard}>
                         <Ionicons
-                          name="image-outline"
-                          size={48}
-                          color="#64748B"
+                          name="images-outline"
+                          size={28}
+                          color="#94A3B8"
                         />
-
                         <Text style={styles.noImageText}>
-                          No image available
+                          No image data available
                         </Text>
                       </View>
                     )}
 
-                    {/* QUICK FACTS */}
-                    <View style={styles.quickFactsCard}>
-                      <Text style={styles.cardTitle}>
-                        Quick Facts
-                      </Text>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>
-                          Scientific Name
-                        </Text>
-
-                        <Text style={styles.factText}>
-                          {displayData?.scientific_name ||
-                            '—'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>
-                          Common Name
-                        </Text>
-
-                        <Text style={styles.factText}>
-                          {displayData?.common_name ||
-                            '—'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>
-                          Taxon Rank
-                        </Text>
-
-                        <Text style={styles.factText}>
-                          {displayData?.taxon_rank ||
-                            'Species'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>
-                          Conservation
-                        </Text>
-
-                        <Text style={styles.factText}>
-                          {displayData?.conservation_status ||
-                            'Data Deficient'}
-                        </Text>
-                      </View>
+                    <View style={styles.infoSection}>
+                      <TaxonomyTree taxonomy={detail?.taxonomy} />
                     </View>
                   </View>
 
-                  {/* RIGHT */}
                   <View style={styles.modalRight}>
+                    <View style={styles.quickFactsCard}>
+                      <Text style={styles.cardTitle}>Quick facts</Text>
 
-                    {/* TAXONOMY */}
-                    {displayData?.taxonomy && (
-                      <View style={styles.infoSection}>
-                        <TaxonomyTree
-                          taxonomy={displayData.taxonomy}
-                        />
+                      <View style={styles.factRow}>
+                        <Text style={styles.factLabel}>Status</Text>
+                        <Text style={styles.factText}>
+                          {detail?.conservation_status || 'Not listed'}
+                        </Text>
                       </View>
-                    )}
 
-                    {/* MAP */}
-                    {records?.length > 0 && (
-                      <View style={styles.infoSection}>
-                        <DistributionMap
-                          occurrences={records}
-                        />
+                      <View style={styles.factRow}>
+                        <Text style={styles.factLabel}>Habitat</Text>
+                        <Text style={styles.factText}>
+                          {detail?.habitat || 'Mountain ecosystem'}
+                        </Text>
                       </View>
-                    )}
 
-                    {/* TIMELINE */}
+                      <View style={styles.factRow}>
+                        <Text style={styles.factLabel}>Native</Text>
+                        <Text style={styles.factText}>
+                          {detail?.is_native === false ? 'Introduced' : 'Native'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.factRow}>
+                        <Text style={styles.factLabel}>Occurrence</Text>
+                        <Text style={styles.factText}>
+                          {detail?.occurrence_count || records?.length || 0}{' '}
+                          records
+                        </Text>
+                      </View>
+                    </View>
+
                     <View style={styles.infoSection}>
-                      {occLoading ? (
-                        <View style={styles.timelineLoading}>
-                          <ActivityIndicator
-                            color="#D4A574"
-                          />
+                      <DistributionMap occurrences={records || []} />
+                    </View>
 
-                          <Text
-                            style={
-                              styles.timelineLoadingText
-                            }
-                          >
-                            Loading observations...
-                          </Text>
-                        </View>
-                      ) : (
-                        <ObservationTimeline
-                          observations={records}
-                        />
-                      )}
+                    <View style={styles.infoSection}>
+                      <ObservationTimeline observations={records || []} />
                     </View>
                   </View>
                 </View>
@@ -468,32 +408,15 @@ export default function SpeciesSearchScreen() {
                   ]}
                 >
                   <View style={styles.modalLeft}>
-                    <View style={styles.quickFactsCard}>
-                      <Text style={styles.cardTitle}>
-                        Quick Facts
+                    <View style={styles.noImageCard}>
+                      <Ionicons
+                        name="leaf-outline"
+                        size={28}
+                        color="#94A3B8"
+                      />
+                      <Text style={styles.noImageText}>
+                        Species summary unavailable
                       </Text>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>
-                          Scientific Name
-                        </Text>
-
-                        <Text style={styles.factText}>
-                          {displayData?.scientific_name ||
-                            '—'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>
-                          Common Name
-                        </Text>
-
-                        <Text style={styles.factText}>
-                          {displayData?.common_name ||
-                            '—'}
-                        </Text>
-                      </View>
                     </View>
                   </View>
                 </View>
@@ -543,13 +466,7 @@ export default function SpeciesSearchScreen() {
                       color="#FFFFFF"
                     />
 
-                    <Text
-                      style={
-                        styles.modalActionTextPrimary
-                      }
-                    >
-                      Mark Discovered
-                    </Text>
+                    /* Lines 546-552 omitted */
                   </>
                 )}
               </Pressable>

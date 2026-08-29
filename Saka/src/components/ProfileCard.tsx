@@ -114,7 +114,7 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
 
   const handleSettings = () => {
     onClose();
-    router.push('/settings');
+    router.push('/Settings');
   };
 
   const pickProfileImage = async () => {
@@ -275,7 +275,7 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                 </Text>
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { onClose(); router.push('/drawer/calendar'); }}
+                  onPress={() => { onClose(); router.push('/Calendar'); }}
                 >
                   <Text style={styles.tabPaneBtnText}>Open Calendar</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
@@ -292,7 +292,7 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                 </Text>
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { onClose(); router.push('/drawer/wildtrack'); }}
+                  onPress={() => { onClose(); router.push('/wildtrack/WildTrack'); }}
                 >
                   <Text style={styles.tabPaneBtnText}>Open WildTrack</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
@@ -327,7 +327,7 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                 )}
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { onClose(); router.push('/weather'); }}
+                  onPress={() => { onClose(); router.push('/Weather'); }}
                 >
                   <Text style={styles.tabPaneBtnText}>Open Full Weather</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
@@ -370,7 +370,7 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                 )}
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { onClose(); router.push('/location'); }}
+                  onPress={() => { onClose(); router.push('/Location'); }}
                 >
                   <Text style={styles.tabPaneBtnText}>Open Location</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />

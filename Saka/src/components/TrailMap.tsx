@@ -32,7 +32,6 @@ import { VIEWPOINTS_DATA } from '../data/viewpointsData';
 import type { ViewpointDetail } from '../types/viewpointTypes';
 
 // ── Images ────────────────────────────────────────────────────────────────
-const PLACEHOLDER = require('../../assets/viewpoints/placeholder.png');
 const IMAGE_MAP: Record<string, any> = {
   trailhead:     require('../../assets/images/TrailHead.jpg'),
   bantang_river: require('../../assets/images/BantangRiverWide.jpg'),
