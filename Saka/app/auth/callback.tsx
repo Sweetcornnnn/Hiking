@@ -11,16 +11,7 @@ export default function AuthCallback() {
         const initialUrl = await Linking.getInitialURL();
 
         if (initialUrl) {
-          try {
-            const { data, error } = await supabase.auth.getSessionFromUrl(initialUrl);
-            if (error) {
-              console.warn('[Auth] getSessionFromUrl failed:', error.message);
-            } else if (data?.session) {
-              console.log('[Auth] Session recovered from deep link');
-            }
-          } catch (deepLinkError) {
-            console.warn('[Auth] Deep link handling failed:', deepLinkError);
-          }
+          console.log('[Auth] Deep link received:', initialUrl);
         }
       } catch (error) {
         console.warn('[Auth] Initial URL read failed:', error);
