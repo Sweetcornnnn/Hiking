@@ -302,17 +302,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
 
+      if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
+        throw new Error('Supabase is not configured in this app. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your environment.');
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: 'saka://auth/callback',
       });
 
-      if (error) throw error;
+      if (error) {
+        const message = error.message || 'Password reset request failed.';
+
+        if (message.toLowerCase().includes('user not found')) {
+          throw new Error('No account exists for this email. Check the email address or sign up first.');
+        }
+
+        if (message.toLowerCase().includes('email') || message.toLowerCase().includes('provider')) {
+          throw new Error('Supabase email auth is not configured correctly. Enable Email sign-in and add the redirect URL saka://auth/callback in Supabase Auth settings.');
+        }
+
+        throw new Error(message);
+      }
 
       set({ isLoading: false });
       return { success: true };
     } catch (error: any) {
-      set({ error: error.message, isLoading: false });
-      return { success: false, error: error.message };
+      const message = error?.message || 'Password reset request failed.';
+      set({ error: message, isLoading: false });
+      return { success: false, error: message };
     }
   },
 

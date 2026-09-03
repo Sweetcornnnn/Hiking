@@ -3,19 +3,13 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, E
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
-import { resolveApiBaseUrl } from '../config/api';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { authToken } = useAuthStore();
+  const { resetPassword } = useAuthStore();
   const [email, setEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // ── Success toast ─────────────────────────────────────────────────────────
   const [successVisible, setSuccessVisible] = useState(false);
   const successOpacity = useRef(new Animated.Value(0)).current;
   const successY = useRef(new Animated.Value(10)).current;
@@ -26,12 +20,12 @@ export default function ForgotPasswordScreen() {
     successY.setValue(10);
     Animated.parallel([
       Animated.timing(successOpacity, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(successY,       { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(successY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
     setTimeout(() => {
       Animated.parallel([
         Animated.timing(successOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(successY,       { toValue: 10, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(successY, { toValue: 10, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
       ]).start(() => {
         setSuccessVisible(false);
         router.replace('/Login');
@@ -49,122 +43,55 @@ export default function ForgotPasswordScreen() {
     ]).start();
   }, []);
 
-  const getPasswordStrength = (pwd: string): { label: string; color: string; width: string } => {
-    if (pwd.length === 0) return { label: '', color: 'transparent', width: '0%' };
-    if (pwd.length < 8)   return { label: 'Weak', color: '#E07070', width: '33%' };
-    if (pwd.length < 12)  return { label: 'Fair', color: '#C9A96E', width: '66%' };
-    return { label: 'Strong', color: '#6FAF8A', width: '100%' };
-  };
-
-  const checkReqs = (pwd: string) => ({
-    hasNumber:    /\d/.test(pwd),
-    hasUpperCase: /[A-Z]/.test(pwd),
-    hasLowerCase: /[a-z]/.test(pwd),
-    hasSymbol:    /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
-    isLongEnough: pwd.length >= 6,
-  });
-
-  const strength = getPasswordStrength(newPassword);
-  const reqs = checkReqs(newPassword);
-  const allReqsMet = Object.values(reqs).every(Boolean);
-  const passwordsMatch = newPassword === confirmPassword && newPassword.length > 0;
-  const canSubmit = email.trim().length > 0 && allReqsMet && passwordsMatch && !isLoading;
-
   const handleReset = async () => {
-    if (!email.trim()) { Alert.alert('Error', 'Please enter your email address'); return; }
-    if (!newPassword) { Alert.alert('Error', 'Please enter your new password'); return; }
-    if (!confirmPassword) { Alert.alert('Error', 'Please confirm your password'); return; }
-    if (newPassword !== confirmPassword) { Alert.alert('Error', 'Passwords do not match'); return; }
-    if (!allReqsMet) { Alert.alert('Error', 'Password does not meet all requirements'); return; }
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
 
     setIsLoading(true);
     try {
-      const body = { email: email.trim().toLowerCase(), newPassword };
-      const headers: any = { 'Content-Type': 'application/json' };
-      if (authToken) headers.Authorization = `Bearer ${authToken}`;
-      const base = await resolveApiBaseUrl();
+      const result = await resetPassword(email.trim().toLowerCase());
+      if (!result.success) {
+        throw new Error(result.error || 'Unable to send reset link');
+      }
 
-      const response = await fetch(`${base}/api/password-change-request`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      });
-      const data = await response.json();
-      if (!response.ok) { setIsLoading(false); Alert.alert('Error', data.error || 'Failed to request password change'); return; }
       setIsLoading(false);
       showSuccessToast();
     } catch (error: any) {
       setIsLoading(false);
-      Alert.alert('Error', error.message || 'Network error');
+      Alert.alert(
+        'Reset link not sent',
+        `${error.message || 'Unable to send reset link'}\n\nCheck your email address, make sure your Supabase Email provider is enabled, and confirm the redirect URL includes saka://auth/callback.`
+      );
     }
   };
-
-  const REQ_ITEMS = [
-    { key: 'hasNumber',    label: 'One number' },
-    { key: 'hasUpperCase', label: 'One uppercase' },
-    { key: 'hasLowerCase', label: 'One lowercase' },
-    { key: 'hasSymbol',    label: 'One symbol' },
-    { key: 'isLongEnough', label: '6+ characters' },
-  ] as const;
 
   return (
     <View style={styles.root}>
       <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-
-        {/* ── Left panel ── */}
         <View style={styles.leftPanel}>
           <View style={styles.logoMark}>
             <Text style={styles.logoEmoji}>🔐</Text>
           </View>
-          <Text style={styles.brandName}>Change{'\n'}Password</Text>
-          <Text style={styles.brandTagline}>Admin approval{'\n'}required.</Text>
+          <Text style={styles.brandName}>Reset{"\n"}Password</Text>
+          <Text style={styles.brandTagline}>We’ll send a secure recovery link to your email.</Text>
 
           <View style={styles.dividerH} />
 
-          {/* Admin approval notice */}
           <View style={styles.noticeBox}>
-            <Ionicons name="shield-checkmark-outline" size={13} color="#C9A96E" />
-            <Text style={styles.noticeText}>Your request will be reviewed before taking effect.</Text>
+            <Ionicons name="mail-outline" size={13} color="#C9A96E" />
+            <Text style={styles.noticeText}>Use the link in your inbox to continue the password reset.</Text>
           </View>
-
-          <View style={styles.dividerH} />
-
-          <Text style={styles.sectionLabel}>PASSWORD RULES</Text>
-          {REQ_ITEMS.map((item) => {
-            const met = reqs[item.key];
-            return (
-              <View key={item.key} style={styles.reqRow}>
-                <Ionicons
-                  name={met ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={11}
-                  color={met ? '#6FAF8A' : 'rgba(255,255,255,0.18)'}
-                />
-                <Text style={[styles.reqText, met && styles.reqTextMet]}>{item.label}</Text>
-              </View>
-            );
-          })}
-
-          {newPassword.length > 0 && (
-            <View style={styles.strengthWrap}>
-              <View style={styles.strengthTrack}>
-                <View style={[styles.strengthFill, { width: strength.width as any, backgroundColor: strength.color }]} />
-              </View>
-              <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
-            </View>
-          )}
         </View>
 
-        {/* ── Vertical divider ── */}
         <View style={styles.dividerV} />
 
-        {/* ── Right panel ── */}
         <View style={styles.rightPanel}>
-          <Text style={styles.formTitle}>Set new password</Text>
-          <Text style={styles.formSubtitle}>Choose a strong password to secure your account</Text>
+          <Text style={styles.formTitle}>Forgot password</Text>
+          <Text style={styles.formSubtitle}>Enter the email tied to your account</Text>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
-
-            {/* Email */}
             <Text style={styles.fieldLabel}>EMAIL</Text>
             <View style={styles.inputRow}>
               <Ionicons name="mail-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
@@ -180,71 +107,28 @@ export default function ForgotPasswordScreen() {
               />
             </View>
 
-            {/* New Password */}
-            <Text style={styles.fieldLabel}>NEW PASSWORD</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter new password"
-                placeholderTextColor="rgba(255,255,255,0.18)"
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry={!showNewPassword}
-                editable={!isLoading}
-              />
-              <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)} style={styles.eyeBtn}>
-                <Ionicons name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} size={14} color="rgba(255,255,255,0.28)" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Confirm Password */}
-            <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
-            <View style={[styles.inputRow, confirmPassword.length > 0 && { borderColor: passwordsMatch ? 'rgba(111,175,138,0.35)' : 'rgba(224,112,112,0.35)' }]}>
-              <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm password"
-                placeholderTextColor="rgba(255,255,255,0.18)"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showConfirmPassword}
-                editable={!isLoading}
-              />
-              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeBtn}>
-                <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={14} color="rgba(255,255,255,0.28)" />
-              </TouchableOpacity>
-            </View>
-            {confirmPassword.length > 0 && (
-              <Text style={[styles.matchText, { color: passwordsMatch ? '#6FAF8A' : '#E07070' }]}>
-                {passwordsMatch ? '✓ Passwords match' : '✗ Passwords do not match'}
-              </Text>
-            )}
-
             <TouchableOpacity
-              style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
+              style={[styles.submitBtn, !email.trim() && styles.submitBtnDisabled]}
               onPress={handleReset}
-              disabled={!canSubmit}
+              disabled={!email.trim() || isLoading}
               activeOpacity={0.82}
             >
-              {isLoading
-                ? <Text style={styles.submitText}>Sending request…</Text>
-                : <><Text style={styles.submitText}>Request Password Change</Text>
-                    <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} /></>
-              }
+              {isLoading ? (
+                <Text style={styles.submitText}>Sending link…</Text>
+              ) : (
+                <><Text style={styles.submitText}>Send Reset Link</Text>
+                  <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} /></>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => router.replace('/Login')} style={styles.backRow}>
               <Ionicons name="arrow-back" size={12} color="rgba(255,255,255,0.25)" />
               <Text style={styles.backText}>Back to Login</Text>
             </TouchableOpacity>
-
           </ScrollView>
         </View>
-
       </Animated.View>
 
-      {/* ── Success toast ── */}
       {successVisible && (
         <Animated.View style={[styles.successToast, { opacity: successOpacity, transform: [{ translateY: successY }] }]}>
           <View style={styles.successToastBar} />
@@ -252,10 +136,8 @@ export default function ForgotPasswordScreen() {
             <Ionicons name="checkmark-circle" size={22} color="#6FAF8A" />
           </View>
           <View style={styles.successToastContent}>
-            <Text style={styles.successToastTitle}>Request Sent</Text>
-            <Text style={styles.successToastMsg}>
-              Your password change has been submitted for admin approval. Redirecting to login…
-            </Text>
+            <Text style={styles.successToastTitle}>Reset link sent</Text>
+            <Text style={styles.successToastMsg}>Check your email and follow the secure link to continue.</Text>
           </View>
         </Animated.View>
       )}
