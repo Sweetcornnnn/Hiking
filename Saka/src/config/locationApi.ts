@@ -1,7 +1,7 @@
 // locationApi.ts - Backend API utilities for location data
 // Handles Supabase integration, retries, and error handling
 
-import { supabase } from './supabase';
+import { supabase } from '../lib/supabase';
 
 /**
  * Location data interface

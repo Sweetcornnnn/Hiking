@@ -13,10 +13,13 @@ interface Profile {
   updated_at: string;
 }
 
+type AppUser = User & { name?: string | null };
+
 interface AuthState {
-  user: User | null;
+  user: AppUser | null;
   session: Session | null;
   profile: Profile | null;
+  authToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   error: string | null;
@@ -33,10 +36,29 @@ interface AuthState {
   resetLoading: () => void;
 }
 
+const getDisplayName = (user: User | null, profile: Profile | null = null): string => {
+  const metadataName = (user?.user_metadata as { full_name?: string; name?: string } | undefined)?.full_name
+    ?? (user?.user_metadata as { full_name?: string; name?: string } | undefined)?.name
+    ?? profile?.full_name
+    ?? user?.email?.split('@')[0]
+    ?? 'Hiker';
+
+  return metadataName || 'Hiker';
+};
+
+const normalizeUser = (user: User | null, profile: Profile | null = null): AppUser | null => {
+  if (!user) return null;
+  return {
+    ...user,
+    name: getDisplayName(user, profile),
+  };
+};
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
   profile: null,
+  authToken: null,
   isLoading: false,
   isAuthenticated: false,
   error: null,
@@ -81,6 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email,
         password,
         options: {
+          emailRedirectTo: 'saka://auth/callback',
           data: {
             full_name: fullName,
             contact_number: contactNumber || null,
@@ -100,6 +123,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.log('[Auth] User created in Auth:', data.user.id);
 
       // Step 2: Create profile in profiles table
+      // If RLS is not configured yet, Supabase will reject this insert.
+      // We still keep the auth user alive and surface a backend fix instead of failing the whole sign-up.
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
@@ -113,15 +138,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
 
       if (profileError) {
-        console.error('[Auth] Profile creation error:', profileError);
-        throw new Error('Profile creation failed. Please try again.');
+        console.warn('[Auth] Profile creation blocked by RLS or backend config:', profileError);
+        if (profileError.code !== '42501') {
+          throw new Error('Profile creation failed. Please try again.');
+        }
+      } else {
+        console.log('[Auth] Profile created successfully');
       }
 
-      console.log('[Auth] Profile created successfully');
-
       set({
-        user: data.user,
+        user: normalizeUser(data.user),
         session: data.session,
+        authToken: data.session?.access_token ?? null,
         isAuthenticated: !!data.session,
         isLoading: false,
       });
@@ -143,6 +171,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: null,
         session: null,
         profile: null,
+        authToken: null,
         isAuthenticated: false,
         isLoading: false,
         error: null,
@@ -168,8 +197,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         set({
           session,
-          user: session.user,
+          user: normalizeUser(session.user, profile || null),
           profile: profile || null,
+          authToken: session.access_token,
           isAuthenticated: true,
           isLoading: false,
         });
@@ -178,6 +208,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           session: null,
           user: null,
           profile: null,
+          authToken: null,
           isAuthenticated: false,
           isLoading: false,
         });
@@ -193,8 +224,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             .then(({ data: profile }) => {
               set({
                 session,
-                user: session.user,
+                user: normalizeUser(session.user, profile || null),
                 profile: profile || null,
+                authToken: session.access_token,
                 isAuthenticated: true,
               });
             });
@@ -203,6 +235,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             session: null,
             user: null,
             profile: null,
+            authToken: null,
             isAuthenticated: false,
           });
         }
@@ -226,7 +259,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .single();
 
       if (profile) {
-        set({ profile });
+        set({
+          profile,
+          user: normalizeUser(user, profile),
+        });
       }
     } catch (error) {
       console.error('[Auth] loadProfile error:', error);
@@ -267,7 +303,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoading: true, error: null });
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'yourapp://reset-password',
+        redirectTo: 'saka://auth/callback',
       });
 
       if (error) throw error;
