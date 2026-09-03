@@ -24,14 +24,16 @@ export default function RootLayout() {
     <>
       <StatusBar hidden={true} />
       <Stack screenOptions={stackScreenOptions}>
+        <Stack.Screen name="Index" options={screenOptionsNoHeader} />
+        <Stack.Screen name="Auth" options={screenOptionsNoHeader} />
         <Stack.Screen name="Intro" options={screenOptionsNoHeader} />
         <Stack.Screen name="Login" options={screenOptionsNoHeader} />
         <Stack.Screen name="Signup" options={screenOptionsNoHeader} />
         <Stack.Screen name="Forgot" options={screenOptionsNoHeader} />
         <Stack.Screen name="Home" options={screenOptionsNoHeader} />
         <Stack.Screen name="Calendar" options={screenOptionsNoHeader} />
-        <Stack.Screen name="admin/[...admin]" options={screenOptionsNoHeader} />
-        <Stack.Screen name="WildTrack" options={screenOptionsNoHeader} />
+        <Stack.Screen name="admin/Admin" options={screenOptionsNoHeader} />
+        <Stack.Screen name="wildtrack/WildTrack" options={screenOptionsNoHeader} />
         <Stack.Screen name="MountainTop" options={screenOptionsNoHeader} />
         <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
         <Stack.Screen name="Weather" options={screenOptionsNoHeader} />

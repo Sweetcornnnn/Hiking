@@ -1,154 +1,292 @@
+// src/store/authStore.ts
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
-import { resolveApiBaseUrl } from '../config/api';
+import { Session, User } from '@supabase/supabase-js';
 
-const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
-};
-
-interface User {
+interface Profile {
   id: string;
   email: string;
-  name: string;
+  full_name: string;
+  contact_number: string | null;
   is_admin: boolean;
-  contact_number?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface AuthState {
   user: User | null;
-  authToken: string | null;
+  session: Session | null;
+  profile: Profile | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  
+  error: string | null;
+
   // Actions
-  setUser: (user: User | null) => void;
-  setAuthToken: (token: string | null) => void;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, name: string, contactNumber: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signUp: (email: string, password: string, fullName: string, contactNumber?: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
-  checkAuth: () => Promise<void>;
-  // (demo mode removed)
+  loadSession: () => Promise<void>;
+  loadProfile: () => Promise<void>;
+  updateProfile: (data: Partial<Profile>) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  clearError: () => void;
+  resetLoading: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  authToken: null,
+  session: null,
+  profile: null,
   isLoading: false,
   isAuthenticated: false,
-  // demo mode removed
+  error: null,
 
-  setUser: (user) => set({ user, isAuthenticated: !!user }),
-  setAuthToken: (token) => set({ authToken: token }),
-
+  // ─── SIGN IN ──────────────────────────────────────────────────
   signIn: async (email, password) => {
-    set({ isLoading: true });
-    
     try {
-      const base = await resolveApiBaseUrl();
-      console.log(`Attempting login to ${base}/api/login`);
-      const response = await fetchWithTimeout(`${base}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      }, 10000);
+      set({ isLoading: true, error: null });
 
-      console.log('Response status:', response.status);
-      const data = await response.json();
-      console.log('Response data:', data);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      if (!response.ok) {
-        set({ isLoading: false });
-        return { error: data.error || 'Login failed' };
-      }
+      if (error) throw error;
 
       set({
-        user: {
-          id: String(data.user.id),
-          email: data.user.email,
-          name: data.user.name,
-          is_admin: Boolean(data.user.is_admin),
-          contact_number: data.user.contact_number || '',
-        },
-        authToken: data.token,
-        isAuthenticated: true,
+        user: data.user,
+        session: data.session,
+        isAuthenticated: !!data.session,
         isLoading: false,
       });
 
-      // Store token for future requests
-      await SecureStore.setItemAsync('authToken', data.token);
+      await get().loadProfile();
 
-      return { error: null };
+      return { success: true };
     } catch (error: any) {
-      const message = error.name === 'AbortError' ? 'Request timed out' : error.message || 'Network error';
-      console.log('Login error:', message, error);
-      set({ isLoading: false });
-      return { error: message };
+      set({ error: error.message, isLoading: false });
+      return { success: false, error: error.message };
     }
   },
 
-  signUp: async (email, password, name, contactNumber) => {
-    set({ isLoading: true });
-    
+  // ─── SIGN UP (FIXED FOR SUPABASE) ──────────────────────────
+  signUp: async (email, password, fullName, contactNumber) => {
     try {
-      const base = await resolveApiBaseUrl();
-      console.log(`Attempting signup to ${base}/api/register`);
-      const response = await fetchWithTimeout(`${base}/api/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name, contact_number: contactNumber }),
-      }, 10000);
+      set({ isLoading: true, error: null });
 
-      console.log('Response status:', response.status);
-      const data = await response.json();
-      console.log('Response data:', data);
+      console.log('[Auth] Creating user:', email);
 
-      if (!response.ok) {
-        set({ isLoading: false });
-        return { error: data.error || 'Signup failed' };
+      // Step 1: Create user in Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            contact_number: contactNumber || null,
+          },
+        },
+      });
+
+      if (error) {
+        console.error('[Auth] Signup error:', error);
+        throw error;
       }
 
-      set({ isLoading: false });
-      return { error: null };
+      if (!data.user) {
+        throw new Error('User creation failed');
+      }
+
+      console.log('[Auth] User created in Auth:', data.user.id);
+
+      // Step 2: Create profile in profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: data.user.id,
+          email: email,
+          full_name: fullName,
+          contact_number: contactNumber || null,
+          is_admin: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (profileError) {
+        console.error('[Auth] Profile creation error:', profileError);
+        throw new Error('Profile creation failed. Please try again.');
+      }
+
+      console.log('[Auth] Profile created successfully');
+
+      set({
+        user: data.user,
+        session: data.session,
+        isAuthenticated: !!data.session,
+        isLoading: false,
+      });
+
+      return { success: true };
     } catch (error: any) {
-      console.log('Signup error:', error.message);
-      set({ isLoading: false });
-      return { error: error.message || 'Network error' };
+      console.error('[Auth] Signup failed:', error.message);
+      set({ error: error.message, isLoading: false });
+      return { success: false, error: error.message };
     }
   },
 
+  // ─── SIGN OUT ──────────────────────────────────────────────────
   signOut: async () => {
-    await supabase.auth.signOut();
-    await SecureStore.deleteItemAsync('authToken');
-    set({ user: null, authToken: null, isAuthenticated: false });
+    try {
+      set({ isLoading: true });
+      await supabase.auth.signOut();
+      set({
+        user: null,
+        session: null,
+        profile: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null,
+      });
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+    }
   },
 
-  checkAuth: async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session?.user) {
+  // ─── LOAD SESSION ──────────────────────────────────────────────
+  loadSession: async () => {
+    try {
+      set({ isLoading: true });
+
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        set({
+          session,
+          user: session.user,
+          profile: profile || null,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } else {
+        set({
+          session: null,
+          user: null,
+          profile: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
+      }
+
+      supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single()
+            .then(({ data: profile }) => {
+              set({
+                session,
+                user: session.user,
+                profile: profile || null,
+                isAuthenticated: true,
+              });
+            });
+        } else {
+          set({
+            session: null,
+            user: null,
+            profile: null,
+            isAuthenticated: false,
+          });
+        }
+      });
+    } catch (error) {
+      console.error('[Auth] loadSession error:', error);
+      set({ isLoading: false });
+    }
+  },
+
+  // ─── LOAD PROFILE ──────────────────────────────────────────────
+  loadProfile: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', session.user.id)
+        .eq('id', user.id)
         .single();
 
-      set({
-        user: profile ? {
-          id: profile.id,
-          email: profile.email,
-          name: profile.name,
-          is_admin: profile.is_admin,
-        } : null,
-        isAuthenticated: true,
-      });
+      if (profile) {
+        set({ profile });
+      }
+    } catch (error) {
+      console.error('[Auth] loadProfile error:', error);
     }
   },
-  // demoLogin removed
+
+  // ─── UPDATE PROFILE ──────────────────────────────────────────────
+  updateProfile: async (data) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          ...data,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      await get().loadProfile();
+
+      set({ isLoading: false });
+      return { success: true };
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      return { success: false, error: error.message };
+    }
+  },
+
+  // ─── RESET PASSWORD ──────────────────────────────────────────────
+  resetPassword: async (email) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'yourapp://reset-password',
+      });
+
+      if (error) throw error;
+
+      set({ isLoading: false });
+      return { success: true };
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      return { success: false, error: error.message };
+    }
+  },
+
+  // ─── CLEAR ERROR ──────────────────────────────────────────────────
+  clearError: () => {
+    set({ error: null });
+  },
+
+  // ─── RESET LOADING ──────────────────────────────────────────────
+  resetLoading: () => {
+    set({ isLoading: false, error: null });
+  },
 }));

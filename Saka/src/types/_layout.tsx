@@ -7,15 +7,15 @@ export default function RootLayout() {
       <StatusBar hidden={true} />
       <Stack screenOptions={{ contentStyle: { backgroundColor: '#F5E6D3' } }}>
         <Stack.Screen 
-          name="intro" 
+          name="Intro" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="login" 
+          name="Login" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="signup" 
+          name="Signup" 
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
@@ -23,7 +23,7 @@ export default function RootLayout() {
           options={{ headerShown: false }} 
         />
         <Stack.Screen 
-          name="location" 
+          name="Location" 
           options={{ headerShown: false }} 
         />
       </Stack>

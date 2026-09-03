@@ -33,7 +33,7 @@ export default function LoadingScreen({
 }: LoadingScreenProps) {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const nextRoute = params.next as string | undefined;
   
   // Animation values
@@ -84,9 +84,9 @@ export default function LoadingScreen({
       } else if (nextRoute) {
         router.replace(nextRoute);
       } else {
-        // Navigate based on user role
-        if (user?.is_admin) {
-          router.replace('/admin/[...admin]');
+        // Navigate based on the stored profile role, not the raw Supabase auth user.
+        if (profile?.is_admin) {
+          router.replace('/admin/Admin');
         } else {
           router.replace('/Home');
         }

@@ -41,10 +41,15 @@ export const supabase = createClient(
 export type Tables = {
   profiles: {
     id: string;
-    email: string;
-    name: string;
-    is_admin: boolean;
+    email?: string | null;
+    name?: string | null;
+    full_name?: string | null;
+    is_admin?: boolean | null;
+    avatar_url?: string | null;
+    bio?: string | null;
+    experience_level?: 'beginner' | 'intermediate' | 'advanced' | 'expert' | null;
     created_at: string;
+    updated_at?: string | null;
   };
   hikes: {
     id: string;

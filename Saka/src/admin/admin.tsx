@@ -22,7 +22,7 @@ interface AdminUser {
 
 export default function AdminRoute() {
   const router = useRouter();
-  const { user, authToken, signOut } = useAuthStore();
+  const { user, profile, authToken, signOut } = useAuthStore();
   const { allHikes, adminStats, fetchAllHikes, fetchAdminStats, isLoading: hikesLoading } = useHikesStore();
   const {
     passwordChangeRequests,
@@ -156,7 +156,7 @@ export default function AdminRoute() {
 
   // ---------- Initial data fetching ----------
   useEffect(() => {
-    if (!user?.is_admin) {
+    if (!profile?.is_admin) {
       router.replace('/Home');
       return;
     }
@@ -167,7 +167,7 @@ export default function AdminRoute() {
       fetchPasswordChangeRequests(authToken);
       fetchUsers();
     }
-  }, [user?.is_admin, authToken]);
+  }, [profile?.is_admin, authToken]);
 
   // Password request handlers
   const filteredRequests = passwordChangeRequests.filter(req =>
