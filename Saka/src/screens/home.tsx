@@ -502,7 +502,7 @@ export default function HomeScreen() {
         {/* Chat button on the right side of the header */}
         <View style={styles.headerRightButtons}>
           <TouchableOpacity
-            onPress={() => router.push('/chat' as any)}
+            onPress={() => router.push('/Chat' as any)}
             style={styles.chatButton}
             activeOpacity={0.8}
           >
