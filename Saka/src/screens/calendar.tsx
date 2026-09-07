@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import { useRouter } from 'expo-router';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useHikesStore } from '../store/hikesStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
@@ -42,7 +41,6 @@ const INITIAL_FORM: HikeFormData = {
 
 export default function CalendarScreen() {
   const router = useRouter();
-  const navigation = useNavigation<any>();
   const { hikes, fetchHikes, createHike, updateHike, deleteHike, isLoading } = useHikesStore();
   const { user } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
@@ -50,8 +48,8 @@ export default function CalendarScreen() {
   const selectedMountain = getMountainById(selectedMountainId) || getMountainById('1');
 
   const handleBackPress = () => {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
+    if (router.canGoBack()) {
+      router.back();
     } else {
       router.replace('/Home');
     }

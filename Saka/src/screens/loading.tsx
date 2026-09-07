@@ -2,13 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Image,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
   Dimensions,
   Easing,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import {

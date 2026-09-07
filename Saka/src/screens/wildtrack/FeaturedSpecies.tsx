@@ -8,9 +8,9 @@ import {
   StyleSheet,
   ActivityIndicator,
   Dimensions,
-  SafeAreaView,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWildTrackStore } from '../../store/wildtrackStore';
 import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
 import { Ionicons } from '@expo/vector-icons';
