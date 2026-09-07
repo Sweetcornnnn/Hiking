@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
 import { useRouter } from 'expo-router';
 import { useWildTrackStore } from '../store/wildtrackStore';
-import { getMountainById } from '../data/mountains';
+import { mountainService, Mountain } from '../services/mountainService';
 import weatherService, { WeatherCondition } from '../services/weatherService';
 import { useLocationTracking } from '../hooks/useLocationTracking';
 
@@ -29,35 +29,26 @@ interface ProfileCardProps {
   onProfileImageSelect?: (uri: string) => void;
 }
 
-const MOUNTAINS_DATA = [
-  { id: '1', name: 'Mt. Madja-as', unlocked: true },
-  { id: '2', name: 'Mt. Guiting-Guiting', unlocked: false },
-  { id: '3', name: 'Mt. Pulag', unlocked: false },
-  { id: '4', name: 'Mt. Apo', unlocked: false },
-  { id: '5', name: 'Mt. Mayon', unlocked: false },
-  { id: '6', name: 'Mt. Batulao', unlocked: false },
-  { id: '7', name: 'Mt. Maculot', unlocked: false },
-  { id: '8', name: 'Mt. Ulap', unlocked: false },
-  { id: '9', name: 'Mt. Pinatubo', unlocked: false },
-  { id: '10', name: 'Mt. Kanlaon', unlocked: false },
-];
-
 const screenDimensions = Dimensions.get('screen');
-
-interface LocationPayload {
-  latitude: number;
-  longitude: number;
-}
 
 type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
 
-export default function ProfileCard({ visible, onClose, onRequestLogout, profileImage, onAvatarPress, onProfileImageSelect }: ProfileCardProps) {
+export default function ProfileCard({
+  visible,
+  onClose,
+  onRequestLogout,
+  profileImage,
+  onAvatarPress,
+  onProfileImageSelect
+}: ProfileCardProps) {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { selectedMountainId } = useWildTrackStore();
-  const selectedMountain = getMountainById(selectedMountainId) || getMountainById('1');
+  // We won't use selectedMountainId from wildtrackStore anymore
+  // const { selectedMountainId } = useWildTrackStore();
+
+  const [selectedMountain, setSelectedMountain] = useState<Mountain | null>(null);
+  const [mountains, setMountains] = useState<Mountain[]>([]);
   const [location, setLocation] = useState<string>('Loading...');
-  const [unlockedCount, setUnlockedCount] = useState(0);
   const [activeTab, setActiveTab] = useState<TabId>('stats');
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
@@ -73,34 +64,34 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
     requestPermissions,
   } = useLocationTracking();
 
-  const handleLogoutPress = () => {
-    onClose();
-    onRequestLogout();
-  };
-
+  // Load mountains when visible – use the first one for weather
   useEffect(() => {
     if (visible) {
-      const count = MOUNTAINS_DATA.filter(m => m.unlocked).length;
-      setUnlockedCount(count);
-      setLocation(selectedMountain?.name ?? 'Mountain Trail');
-      loadWeather();
+      const loadData = async () => {
+        try {
+          const data = await mountainService.fetchMountains();
+          setMountains(data);
+          if (data.length > 0) {
+            const first = data[0];
+            setSelectedMountain(first);
+            setLocation(first.name);
+            loadWeather(first);
+          }
+        } catch (error) {
+          console.error('Failed to load mountains for ProfileCard', error);
+        }
+      };
+      loadData();
     }
-  }, [visible, selectedMountain]);
+  }, [visible]);
 
-  const loadWeather = async () => {
+  const loadWeather = async (mountain: Mountain) => {
     try {
       setWeatherLoading(true);
       setWeatherError(null);
-
-      if (!selectedMountain) {
-        setWeather(null);
-        setWeatherError('No mountain selected for weather lookup.');
-        return;
-      }
-
       const currentWeather = await weatherService.getCurrentWeather(
-        selectedMountain.latitude,
-        selectedMountain.longitude
+        mountain.latitude,
+        mountain.longitude
       );
       setWeather(currentWeather);
     } catch (error: any) {
@@ -112,6 +103,11 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
     }
   };
 
+  const handleLogoutPress = () => {
+    onClose();
+    onRequestLogout();
+  };
+
   const handleSettings = () => {
     onClose();
     router.push('/Settings');
@@ -120,20 +116,15 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
   const pickProfileImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.status !== 'granted') {
-      Alert.alert(
-        'Permission required',
-        'Allow photo access to choose a profile image.'
-      );
+      Alert.alert('Permission required', 'Allow photo access to choose a profile image.');
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
     });
-
     if (!result.canceled && result.assets?.[0]?.uri) {
       onProfileImageSelect?.(result.assets[0].uri);
     }
@@ -149,8 +140,6 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
       .slice(0, 2)
       .toUpperCase() || 'H';
 
-  const progressPercent = (unlockedCount / MOUNTAINS_DATA.length) * 100;
-
   return (
     <Modal
       transparent
@@ -163,9 +152,8 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
       <View style={styles.centerContainer}>
         <View style={styles.card}>
 
-          {/* ── Left panel ── */}
+          {/* Left panel */}
           <View style={styles.leftPanel}>
-            {/* Avatar */}
             <TouchableOpacity style={styles.avatar} onPress={handleAvatarPress} activeOpacity={0.8}>
               {profileImage ? (
                 <Image source={{ uri: profileImage }} style={styles.avatarImage} resizeMode="cover" />
@@ -174,60 +162,54 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
               )}
             </TouchableOpacity>
 
-            {/* Name / email */}
             <Text style={styles.name} numberOfLines={1}>{user?.name || 'Hiker'}</Text>
             <Text style={styles.email} numberOfLines={1}>{user?.email || 'email@example.com'}</Text>
 
-            {/* Location */}
             <View style={styles.locationRow}>
               <Ionicons name="location-outline" size={11} color="#8A9BB0" />
               <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
             </View>
 
-            {/* Divider */}
             <View style={styles.dividerH} />
 
-            {/* Stats */}
+            {/* Stats – show total mountains */}
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={styles.statNum}>{unlockedCount}</Text>
-                <Text style={styles.statLbl}>done</Text>
+                <Text style={styles.statNum}>{mountains.length}</Text>
+                <Text style={styles.statLbl}>peaks</Text>
               </View>
               <View style={styles.statSep} />
               <View style={styles.statItem}>
-                <Text style={styles.statNum}>{MOUNTAINS_DATA.length - unlockedCount}</Text>
-                <Text style={styles.statLbl}>left</Text>
+                <Text style={styles.statNum}>0</Text>
+                <Text style={styles.statLbl}>done</Text>
               </View>
             </View>
 
-            {/* Progress bar */}
             <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progressPercent}%` as any }]} />
+              <View style={[styles.progressFill, { width: '0%' }]} />
             </View>
-            <Text style={styles.progressLabel}>{unlockedCount} of {MOUNTAINS_DATA.length} peaks</Text>
+            <Text style={styles.progressLabel}>All mountains available</Text>
 
-            {/* Spacer pushes buttons to bottom */}
             <View style={{ flex: 1 }} />
 
-            {/* Action buttons */}
             <TouchableOpacity style={styles.settingsBtn} onPress={handleSettings}>
               <Ionicons name="settings-outline" size={13} color="rgba(255,255,255,0.7)" />
               <Text style={styles.settingsBtnText}>Settings</Text>
             </TouchableOpacity>
 
-<TouchableOpacity style={styles.logoutBtn} onPress={handleLogoutPress}>
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogoutPress}>
               <Ionicons name="log-out-outline" size={13} color="#E07070" />
               <Text style={styles.logoutBtnText}>Logout</Text>
             </TouchableOpacity>
           </View>
 
-          {/* ── Vertical divider ── */}
+          {/* Vertical divider */}
           <View style={styles.dividerV} />
 
-          {/* ── Right panel with tabs ── */}
+          {/* Right panel */}
           <View style={styles.rightPanel}>
 
-            {/* Header row: title + close */}
+            {/* Header row */}
             <View style={styles.listHeader}>
               <Text style={styles.listTitle}>
                 {activeTab === 'stats'
@@ -245,22 +227,19 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
               </TouchableOpacity>
             </View>
 
-            {/* ── Tab content ── */}
+            {/* Stats tab – list all mountains with green dot */}
             {activeTab === 'stats' && (
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
-                {MOUNTAINS_DATA.map((mountain, index) => (
+                {mountains.map((mountain, index) => (
                   <View
                     key={mountain.id}
-                    style={[styles.mountainRow, index === MOUNTAINS_DATA.length - 1 && styles.mountainRowLast]}
+                    style={[styles.mountainRow, index === mountains.length - 1 && styles.mountainRowLast]}
                   >
-                    <View style={[styles.dot, mountain.unlocked && styles.dotUnlocked]} />
-                    <Text
-                      style={[styles.mountainName, !mountain.unlocked && styles.mountainNameLocked]}
-                      numberOfLines={1}
-                    >
+                    <View style={[styles.dot, styles.dotUnlocked]} />
+                    <Text style={styles.mountainName} numberOfLines={1}>
                       {mountain.name}
                     </Text>
-                    {mountain.unlocked && <Text style={styles.summitedTag}>summit</Text>}
+                    <Text style={styles.summitedTag}>open</Text>
                   </View>
                 ))}
               </ScrollView>
@@ -322,7 +301,7 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                   </>
                 ) : (
                   <Text style={styles.weatherDetails} numberOfLines={3}>
-                    {weatherError || 'Weather data not available. Add an API key and ensure location has been saved.'}
+                    {weatherError || 'Weather data not available.'}
                   </Text>
                 )}
                 <TouchableOpacity
@@ -364,7 +343,7 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
                 ) : (
                   <Text style={styles.tabPaneBody}>
                     {locationPerms.foreground
-                      ? 'Start tracking to see your GPS coordinate  s.'
+                      ? 'Start tracking to see your GPS coordinates.'
                       : 'Location permission required. Tap below to grant access.'}
                   </Text>
                 )}
@@ -378,15 +357,15 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
               </View>
             )}
 
-            {/* ── Protruding tab strip on the right edge ── */}
+            {/* Tab strip */}
             <View style={styles.tabStrip}>
               <View style={styles.tabStripInner}>
                 {([
-                  { id: 'stats',     icon: 'stats-chart' },
-                  { id: 'calendar',  icon: 'calendar-outline' },
+                  { id: 'stats', icon: 'stats-chart' },
+                  { id: 'calendar', icon: 'calendar-outline' },
                   { id: 'wildtrack', icon: 'book-outline' },
-                  { id: 'weather',   icon: 'cloud-outline' },
-                  { id: 'location',  icon: 'location-outline' },
+                  { id: 'weather', icon: 'cloud-outline' },
+                  { id: 'location', icon: 'location-outline' },
                 ] as { id: TabId; icon: string }[]).map((tab, i, arr) => (
                   <TouchableOpacity
                     key={tab.id}
@@ -407,9 +386,9 @@ export default function ProfileCard({ visible, onClose, onRequestLogout, profile
               </View>
             </View>
 
-          </View>{/* end rightPanel */}
-        </View>{/* end card */}
-      </View>{/* end centerContainer */}
+          </View>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -421,8 +400,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
-
-  // ── Card ────────────────────────────────────
   card: {
     flexDirection: 'row',
     width: '78%',
@@ -435,8 +412,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.07)',
     position: 'relative',
   },
-
-  // ── Left panel ──────────────────────────────
   leftPanel: {
     width: 160,
     paddingHorizontal: 16,
@@ -449,7 +424,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-
   avatar: {
     position: 'absolute',
     top: 11,
@@ -474,7 +448,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-
   name: {
     color: '#FFFFFF',
     fontSize: 13,
@@ -487,7 +460,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginBottom: 6,
   },
-
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -498,14 +470,12 @@ const styles = StyleSheet.create({
     color: '#8A9BB0',
     fontSize: 10,
   },
-
   dividerH: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.07)',
     alignSelf: 'stretch',
     marginBottom: 10,
   },
-
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -533,7 +503,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-
   progressTrack: {
     height: 3,
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -552,7 +521,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     marginBottom: 0,
   },
-
   settingsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -590,14 +558,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-
-  // ── Vertical divider ─────────────────────────
   dividerV: {
     width: 1,
     backgroundColor: 'rgba(255,255,255,0.07)',
   },
-
-  // ── Right panel ──────────────────────────────
   rightPanel: {
     flex: 1,
     paddingTop: 14,
@@ -607,7 +571,6 @@ const styles = StyleSheet.create({
     overflow: 'visible',
     backgroundColor: '#0E1520',
   },
-
   listHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -630,11 +593,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   listContent: {
     paddingHorizontal: 14,
   },
-
   mountainRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -661,9 +622,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  mountainNameLocked: {
-    color: 'rgba(255,255,255,0.35)',
-  },
   summitedTag: {
     color: '#6FAF8A',
     fontSize: 9,
@@ -671,8 +629,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-
-  // ── Tab strip — protrudes from the right edge of the card ────────────
   tabStrip: {
     position: 'absolute',
     right: -24,
@@ -700,8 +656,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-
-  // ── Tab pane (calendar + wildtrack) ──────────────────────────────────
   tabPane: {
     flex: 1,
     paddingHorizontal: 14,
@@ -782,74 +736,5 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     marginTop: 6,
     flexShrink: 1,
-  },
-
-  logoutToast: {
-    position: 'absolute',
-    bottom: 14,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    backgroundColor: '#141E2D',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.2)',
-    overflow: 'hidden',
-    zIndex: 20,
-  },
-  logoutToastBar: {
-    width: 3,
-    backgroundColor: '#BF6A6A',
-    alignSelf: 'stretch',
-  },
-  logoutToastInner: {
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-  },
-  logoutToastTitle: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  logoutToastMsg: {
-    color: 'rgba(255,255,255,0.42)',
-    fontSize: 10,
-    lineHeight: 13,
-    marginBottom: 8,
-  },
-  logoutToastActions: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  logoutToastCancel: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  logoutToastCancelText: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  logoutToastConfirm: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 5,
-    borderRadius: 6,
-    backgroundColor: '#BF6A6A',
-  },
-  logoutToastConfirmText: {
-    color: '#0E1520',
-    fontSize: 10,
-    fontWeight: '700',
   },
 });
