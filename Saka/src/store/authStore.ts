@@ -122,24 +122,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       console.log('[Auth] User created in Auth:', data.user.id);
 
-      // Step 2: Create profile in profiles table
-      // If RLS is not configured yet, Supabase will reject this insert.
-      // We still keep the auth user alive and surface a backend fix instead of failing the whole sign-up.
+      // Step 2: Create or update profile in profiles table (idempotent)
+      // Use upsert so this call is safe if a DB trigger already created the profile.
       const { error: profileError } = await supabase
         .from('profiles')
-        .insert({
-          id: data.user.id,
-          email: email,
-          full_name: fullName,
-          contact_number: contactNumber || null,
-          is_admin: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+        .upsert(
+          {
+            id: data.user.id,
+            email: email,
+            full_name: fullName,
+            contact_number: contactNumber || null,
+            is_admin: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
 
       if (profileError) {
         console.warn('[Auth] Profile creation blocked by RLS or backend config:', profileError);
-        if (profileError.code !== '42501') {
+        // RLS / permission error: allow sign-up but inform backend needs fixing
+        if (profileError.code === '42501') {
+          // permission denied under RLS - don't fail the signup flow here
+        } else if (profileError.code === '23505') {
+          // duplicate key - profile already exists (created previously)
+          console.warn('[Auth] Profile already exists; loading existing profile');
+          try {
+            await get().loadProfile();
+          } catch (e) {
+            console.warn('[Auth] loadProfile failed after duplicate key:', e);
+          }
+        } else {
           throw new Error('Profile creation failed. Please try again.');
         }
       } else {
