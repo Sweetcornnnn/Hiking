@@ -9,7 +9,7 @@ import {
   Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { mountainService } from '../services/mountainService';
 import {
@@ -50,7 +50,9 @@ export default function LoadingScreen({
         return;
       }
 
-      const targetRoute = nextRoute || (profile?.is_admin ? '/admin/Admin' : '/Home');
+      const targetRoute: Href = nextRoute
+        ? (nextRoute as Href)
+        : (profile?.is_admin ? '/admin/Admin' : '/Home');
       router.replace(targetRoute);
     };
 
