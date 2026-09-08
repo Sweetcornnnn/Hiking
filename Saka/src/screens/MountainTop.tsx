@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { mountainService, Mountain } from '../services/mountainService';
 import { buildTrailCoordinates, Viewpoint } from '../utils/geoUtils';
-
-// Helper to format elevation
-const formatElevation = (meters: number): string => `${meters.toLocaleString()} m`;
 
 export default function MountainTopScreen() {
   const { mountainId } = useLocalSearchParams<{ mountainId: string }>();
@@ -47,32 +44,45 @@ export default function MountainTopScreen() {
     }
   }, [mountainId]);
 
-  // Auto-fit map to viewpoints or center on mountain
-  useEffect(() => {
-    if (mountain && mapRef.current) {
-      const viewpoints = mountain.viewpoints || [];
-      if (viewpoints.length >= 2) {
-        // Fit to all viewpoints
-        const coordinates = viewpoints.map((vp) => ({
-          latitude: vp.latitude,
-          longitude: vp.longitude,
-        }));
-        mapRef.current.fitToCoordinates(coordinates, {
-          edgePadding: { top: 80, right: 80, bottom: 80, left: 80 },
-          animated: true,
-        });
-      } else {
-        // Single marker fallback: center on mountain
-        mapRef.current.animateToRegion(
-          {
-            latitude: mountain.latitude,
-            longitude: mountain.longitude,
-            latitudeDelta: 0.02,
-            longitudeDelta: 0.02,
-          },
-          1000
-        );
-      }
+  // ─── Calculate initial camera values from viewpoints ────────────────
+  const initialCamera = useMemo(() => {
+    if (!mountain) return null;
+
+    const viewpoints = mountain.viewpoints || [];
+
+    if (viewpoints.length >= 2) {
+      const lats = viewpoints.map(v => v.latitude);
+      const lngs = viewpoints.map(v => v.longitude);
+      const avgLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+      const avgLng = lngs.reduce((a, b) => a + b, 0) / lngs.length;
+
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+
+      let deltaLat = (maxLat - minLat) * 1.4;
+      let deltaLng = (maxLng - minLng) * 1.4;
+
+      if (deltaLat < 0.01) deltaLat = 0.01;
+      if (deltaLng < 0.01) deltaLng = 0.01;
+
+      // Return as a region (for initialCamera)
+      return {
+        center: { latitude: avgLat, longitude: avgLng },
+        heading: 0,
+        pitch: 45,
+        altitude: 0,
+        zoom: 13.8, // Use a fixed zoom – or calculate from delta if you prefer
+      };
+    } else {
+      return {
+        center: { latitude: mountain.latitude, longitude: mountain.longitude },
+        heading: 0,
+        pitch: 45,
+        altitude: 0,
+        zoom: 13.8,
+      };
     }
   }, [mountain]);
 
@@ -95,8 +105,6 @@ export default function MountainTopScreen() {
   const viewpoints = mountain.viewpoints || [];
   const hasTrail = viewpoints.length >= 2;
   const trailCoords = hasTrail ? buildTrailCoordinates(viewpoints, 100) : [];
-
-  // For fallback: show a single marker at mountain center
   const centerCoord = {
     latitude: mountain.latitude,
     longitude: mountain.longitude,
@@ -106,10 +114,11 @@ export default function MountainTopScreen() {
     <View style={styles.container}>
       {/* Floating Header */}
       <SafeAreaView style={styles.headerSafeArea}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={18} color="#C9A96E" />
-        </TouchableOpacity>
         <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+
           <Ionicons name="location-outline" size={18} color="#C9A96E" />
           <Text style={styles.headerTitle} numberOfLines={1}>
             {mountain.name}
@@ -120,30 +129,29 @@ export default function MountainTopScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Map */}
+      {/* Map — uses initialCamera, no useEffect centering needed */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={styles.map}
-        mapType="satellite" // Hill-shading for 3D effect
+        mapType="satellite"
         pitchEnabled={true}
         rotateEnabled={true}
         showsCompass={true}
         showsUserLocation={true}
-        initialRegion={{
-          latitude: centerCoord.latitude,
-          longitude: centerCoord.longitude,
-          latitudeDelta: 0.02,
-          longitudeDelta: 0.02,
+        initialCamera={initialCamera || {
+          center: { latitude: 11.4050, longitude: 122.1350 },
+          heading: 0,
+          pitch: 45,
+          altitude: 0,
+          zoom: 13.8,
         }}
-        // Apply the 55° pitch once the map is ready
         onMapReady={() => {
-          // This ensures the pitch is applied after initial render
           if (mapRef.current) {
             setTimeout(() => {
               mapRef.current?.animateCamera?.(
                 {
-                  pitch: 55, // 3D tilt angle
+                  pitch: 55,
                 },
                 { duration: 800 }
               );
@@ -151,7 +159,6 @@ export default function MountainTopScreen() {
           }
         }}
       >
-        {/* If we have viewpoints, draw them */}
         {viewpoints.map((vp: Viewpoint) => (
           <Marker
             key={vp.id}
@@ -168,7 +175,6 @@ export default function MountainTopScreen() {
           </Marker>
         ))}
 
-        {/* Fallback marker if no viewpoints */}
         {!hasTrail && (
           <Marker
             coordinate={centerCoord}
@@ -177,18 +183,16 @@ export default function MountainTopScreen() {
           />
         )}
 
-        {/* Trail line (only if ≥2 viewpoints) */}
         {hasTrail && trailCoords.length > 0 && (
           <Polyline
             coordinates={trailCoords}
             strokeColor="#C9A96E"
             strokeWidth={3}
-            lineDashPattern={[0, 0]} // solid line
+            lineDashPattern={[0, 0]}
           />
         )}
       </MapView>
 
-      {/* Fallback message (no trail data) */}
       {!hasTrail && (
         <View style={styles.fallbackMessage}>
           <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.4)" />
@@ -199,6 +203,7 @@ export default function MountainTopScreen() {
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -207,7 +212,8 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  // Floating Header
+
+  // ─── Header (Option A) ────────────────────────────────────────────────
   headerSafeArea: {
     position: 'absolute',
     top: 0,
@@ -218,31 +224,44 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     marginHorizontal: 16,
     marginTop: 12,
-    borderRadius: 16,
-    backgroundColor: 'rgba(10,16,26,0.85)',
+    borderRadius: 14,
+    backgroundColor: 'rgba(18, 26, 38, 0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.2)',
-    backdropFilter: 'blur(10px)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
   },
   headerTitle: {
     flex: 1,
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '700',
-    marginLeft: 10,
+    fontWeight: '600',
+    marginLeft: 6,
     letterSpacing: 0.3,
   },
   headerBadge: {
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 12,
-    backgroundColor: 'rgba(201,169,110,0.15)',
+    backgroundColor: 'rgba(201, 169, 110, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.3)',
+    borderColor: 'rgba(201, 169, 110, 0.3)',
   },
   headerBadgeText: {
     color: '#C9A96E',
@@ -250,26 +269,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
   },
-  backBtn: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(10,16,26,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 30,
-  },
-  // Marker style
+
+  // ─── Markers ──────────────────────────────────────────────────────────
   markerDot: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(201,169,110,0.3)',
+    backgroundColor: 'rgba(201, 169, 110, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -281,7 +287,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#C9A96E',
   },
-  // Fallback
+
   fallbackMessage: {
     position: 'absolute',
     bottom: 40,
