@@ -671,32 +671,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   paginationFixed: {
-    position: 'absolute',
-    right: 16,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-  },
-  paginationStack: {
-    alignItems: 'center',
-    gap: 5,
-  },
-  paginationDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-  },
-  paginationDotActive: {
-    backgroundColor: '#FFF',
-    width: 5,
-    height: 14,
-    borderRadius: 3,
-  },
-  paginationDotInactive: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
+  position: 'absolute',
+  bottom: 8,               // <-- "At the edge, but not touching" (adjust between 8–16)
+  left: 0,
+  right: 0,
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 100,
+},
+paginationStack: {
+  flexDirection: 'row',     // Horizontal layout
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,                  // Spacing between dots
+},
+paginationDot: {
+  width: 6,
+  height: 6,
+  borderRadius: 3,
+},
+paginationDotActive: {
+  backgroundColor: '#C9A96E',
+  width: 26,               // Wider active indicator for horizontal scroll
+  height: 6,
+  borderRadius: 3,
+},
+paginationDotInactive: {
+  backgroundColor: 'rgba(255,255,255,0.3)',
+},
   logoutToast: {
     position: 'absolute',
     bottom: 32,
