@@ -312,6 +312,16 @@ export default function HomeScreen() {
             <Ionicons name="chevron-down" size={11} color="#C9A96E" />
           </View>
         </TouchableOpacity>
+        {/* Chat button on the right side of the header */}
+        <View style={styles.headerRightButtons}>
+          <TouchableOpacity
+            onPress={() => router.push('/Chat' as any)}
+            style={styles.chatButton}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="chatbubble-ellipses" size={20} color="#C9A96E" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ProfileCard
@@ -769,5 +779,17 @@ const styles = StyleSheet.create({
     color: '#0E1520',
     fontSize: 12,
     fontWeight: '700',
+  },
+  headerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chatButton: {
+    padding: 8,
+    marginLeft: 8,
+    backgroundColor: 'rgba(10,16,26,0.6)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.18)',
   },
 });
