@@ -4,10 +4,11 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { mountainService, Mountain } from '../services/mountainService';
 import { buildTrailCoordinates, Viewpoint } from '../utils/geoUtils';
@@ -21,6 +22,7 @@ export default function MountainTopScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mapRef = useRef<MapView>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (mountainId) {
@@ -104,6 +106,9 @@ export default function MountainTopScreen() {
     <View style={styles.container}>
       {/* Floating Header */}
       <SafeAreaView style={styles.headerSafeArea}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={18} color="#C9A96E" />
+        </TouchableOpacity>
         <View style={styles.header}>
           <Ionicons name="location-outline" size={18} color="#C9A96E" />
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -244,6 +249,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     textTransform: 'uppercase',
+  },
+  backBtn: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(10,16,26,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
   },
   // Marker style
   markerDot: {
