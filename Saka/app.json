@@ -9,6 +9,9 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to track hiking progress and ensure your safety on trails.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need continuous location access to provide real-time safety monitoring and emergency assistance.",
@@ -24,6 +27,11 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
+        }
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.Saka"

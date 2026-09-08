@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { Viewpoint } from '../utils/geoUtils';
 
 export interface Mountain {
   id: string;
@@ -12,7 +13,8 @@ export interface Mountain {
   image_url: string | null;
   video_url: string | null;
   funny_warning: string | null;
-  elevationDisplay: string;   // formatted string, e.g. "2,117 m"
+  elevationDisplay: string;
+  viewpoints: Viewpoint[] | null;  // <-- add this
 }
 
 const formatElevation = (meters: number): string => `${meters.toLocaleString()} m`;
@@ -42,6 +44,7 @@ export const mountainService = {
       video_url: item.video_url,
       funny_warning: item.funny_warning || null,
       elevationDisplay: formatElevation(item.elevation),
+      viewpoints: item.viewpoints || null,  // <-- add this
     }));
   },
 
@@ -72,6 +75,7 @@ export const mountainService = {
       video_url: data.video_url,
       funny_warning: data.funny_warning || null,
       elevationDisplay: formatElevation(data.elevation),
+      viewpoints: data.viewpoints || null,  // <-- add this
     };
   }
 };

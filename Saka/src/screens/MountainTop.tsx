@@ -1,151 +1,287 @@
-import React, { useMemo } from 'react';
-import { StyleSheet } from 'react-native';
-import { View } from 'react-native';
-import TrailMap from '../components/TrailMap';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { mountainService, Mountain } from '../services/mountainService';
+import { buildTrailCoordinates, Viewpoint } from '../utils/geoUtils';
 
-/**
- * Mt. Madja-as — Flores Trail (Primary Route)
- *
- * Fullscreen fix: the parent screen must have no padding/margin/header
- * so TrailMap's edges={[]} SafeAreaView can bleed to all edges.
- * If this screen is inside a drawer/stack navigator, set:
- *   headerShown: false
- *   contentStyle: { padding: 0 }
- */
+// Helper to format elevation
+const formatElevation = (meters: number): string => `${meters.toLocaleString()} m`;
 
-const MT_MADJAAS_VIEWPOINTS = [
-  {
-    id: 'v1',
-    name: 'Barangay Flores Trailhead',
-    latitude: 11.4210,
-    longitude: 122.1080,
-    elevation: '~50m',
-    notes: 'Jump-off point. Register permits & hire guides here.',
-  },
-  {
-    id: 'v2',
-    name: 'Bantang River Crossing',
-    latitude: 11.4120,
-    longitude: 122.1150,
-    elevation: '~1,000m',
-    notes: 'First major landmark. Cold, clean water — refill here.',
-  },
-  {
-    id: 'v3',
-    name: 'Camp 1 — Bantang River Camp',
-    latitude: 11.4050,
-    longitude: 122.1230,
-    elevation: '~1,000m',
-    notes: 'Day 1 campsite, ~7–8 hrs from trailhead.',
-  },
-  {
-    id: 'v4',
-    name: 'Waterfall Section (Libog Falls)',
-    latitude: 11.3980,
-    longitude: 122.1310,
-    elevation: '~1,418m',
-    notes: 'One of 14 waterfalls. Steep ascent begins here.',
-  },
-  {
-    id: 'v5',
-    name: 'Mossy Forest Entry',
-    latitude: 11.3950,
-    longitude: 122.1390,
-    elevation: '~1,200m',
-    notes: 'Enter the cloud forest. Pitcher plants & orchids visible.',
-  },
-  {
-    id: 'v6',
-    name: 'Camp 2 — Mossy Camp',
-    latitude: 11.3930,
-    longitude: 122.1460,
-    elevation: '~1,743m',
-    notes: 'Day 2 campsite deep in mossy forest. Cold nights — layer up.',
-  },
-  {
-    id: 'v7',
-    name: 'Camp 3 — Upper Camp',
-    latitude: 11.3915,
-    longitude: 122.1540,
-    elevation: '~1,800m',
-    notes: 'Final campsite before summit push. Sea of clouds at sunrise.',
-  },
-  {
-    id: 'v8',
-    name: 'Crown Shyness Forest',
-    latitude: 11.3905,
-    longitude: 122.1580,
-    elevation: '~1,950m',
-    notes: 'Rare natural phenomenon — look up for canopy gap patterns.',
-  },
-  {
-    id: 'v9',
-    name: 'Summit Ridge',
-    latitude: 11.3898,
-    longitude: 122.1605,
-    elevation: '~2,050m',
-    notes: 'Exposed rocky ridge — stay cautious, strong winds.',
-  },
-  {
-    id: 'v10',
-    name: 'Mt. Madja-as Summit',
-    latitude: 11.3893,
-    longitude: 122.1620,
-    elevation: '2,102m',
-    notes: 'Highest peak on Panay. 360° views — Panay, seas & Negros.',
-  },
-];
+export default function MountainTopScreen() {
+  const { mountainId } = useLocalSearchParams<{ mountainId: string }>();
+  const [mountain, setMountain] = useState<Mountain | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const mapRef = useRef<MapView>(null);
 
-interface Point { latitude: number; longitude: number; }
-
-function linearInterpolate(p1: Point, p2: Point, t: number): Point {
-  return {
-    latitude:  p1.latitude  + (p2.latitude  - p1.latitude)  * t,
-    longitude: p1.longitude + (p2.longitude - p1.longitude) * t,
-  };
-}
-
-function buildTrailCoordinates(waypoints: Point[], steps = 20): Point[] {
-  const pts    = waypoints.map(({ latitude, longitude }) => ({ latitude, longitude }));
-  const result: Point[] = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    for (let s = 0; s < steps; s++) {
-      result.push(linearInterpolate(pts[i], pts[i + 1], s / steps));
+  useEffect(() => {
+    if (mountainId) {
+      const load = async () => {
+        try {
+          const data = await mountainService.fetchMountainById(mountainId);
+          if (data) {
+            setMountain(data);
+          } else {
+            setError('Mountain not found');
+          }
+        } catch (err: any) {
+          setError(err.message || 'Failed to load mountain');
+        } finally {
+          setLoading(false);
+        }
+      };
+      load();
+    } else {
+      setError('No mountain ID provided');
+      setLoading(false);
     }
+  }, [mountainId]);
+
+  // Auto-fit map to viewpoints or center on mountain
+  useEffect(() => {
+    if (mountain && mapRef.current) {
+      const viewpoints = mountain.viewpoints || [];
+      if (viewpoints.length >= 2) {
+        // Fit to all viewpoints
+        const coordinates = viewpoints.map((vp) => ({
+          latitude: vp.latitude,
+          longitude: vp.longitude,
+        }));
+        mapRef.current.fitToCoordinates(coordinates, {
+          edgePadding: { top: 80, right: 80, bottom: 80, left: 80 },
+          animated: true,
+        });
+      } else {
+        // Single marker fallback: center on mountain
+        mapRef.current.animateToRegion(
+          {
+            latitude: mountain.latitude,
+            longitude: mountain.longitude,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          },
+          1000
+        );
+      }
+    }
+  }, [mountain]);
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#C9A96E" />
+      </View>
+    );
   }
-  result.push(pts[pts.length - 1]);
-  return result;
-}
 
-export default function MtMadjaasScreen(): React.ReactElement {
-  const trailCoordinates = useMemo(
-    () => buildTrailCoordinates(MT_MADJAAS_VIEWPOINTS, 100),
-    [],
-  );
+  if (error || !mountain) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>{error || 'Mountain not found'}</Text>
+      </View>
+    );
+  }
 
-  // Wrap in a plain View with flex:1 and NO padding so TrailMap
-  // (which uses edges={[]} internally) fills edge-to-edge.
+  const viewpoints = mountain.viewpoints || [];
+  const hasTrail = viewpoints.length >= 2;
+  const trailCoords = hasTrail ? buildTrailCoordinates(viewpoints, 100) : [];
+
+  // For fallback: show a single marker at mountain center
+  const centerCoord = {
+    latitude: mountain.latitude,
+    longitude: mountain.longitude,
+  };
+
   return (
-    <View style={styles.root}>
-      <TrailMap
-        mountainId="1"
-        mountainName="Mt. Madja-as"
-        centerCoord={{ latitude: 11.4050, longitude: 122.1350 }}
-        viewpoints={MT_MADJAAS_VIEWPOINTS}
-        trailCoordinates={trailCoordinates}
-        zoomLevel={13.8}
-        trailColor="#C9A96E"
-        trailWidth={2.5}
-        showTrailLine
-      />
+    <View style={styles.container}>
+      {/* Floating Header */}
+      <SafeAreaView style={styles.headerSafeArea}>
+        <View style={styles.header}>
+          <Ionicons name="location-outline" size={18} color="#C9A96E" />
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {mountain.name}
+          </Text>
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{mountain.difficulty}</Text>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {/* Map */}
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        mapType="satellite" // Hill-shading for 3D effect
+        pitchEnabled={true}
+        rotateEnabled={true}
+        showsCompass={true}
+        showsUserLocation={true}
+        initialRegion={{
+          latitude: centerCoord.latitude,
+          longitude: centerCoord.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        }}
+        // Apply the 55° pitch once the map is ready
+        onMapReady={() => {
+          // This ensures the pitch is applied after initial render
+          if (mapRef.current) {
+            setTimeout(() => {
+              mapRef.current?.animateCamera?.(
+                {
+                  pitch: 55, // 3D tilt angle
+                },
+                { duration: 800 }
+              );
+            }, 300);
+          }
+        }}
+      >
+        {/* If we have viewpoints, draw them */}
+        {viewpoints.map((vp: Viewpoint) => (
+          <Marker
+            key={vp.id}
+            coordinate={{
+              latitude: vp.latitude,
+              longitude: vp.longitude,
+            }}
+            title={vp.name}
+            description={vp.notes || `Elevation: ${vp.elevation || 'N/A'}`}
+          >
+            <View style={styles.markerDot}>
+              <View style={styles.markerInner} />
+            </View>
+          </Marker>
+        ))}
+
+        {/* Fallback marker if no viewpoints */}
+        {!hasTrail && (
+          <Marker
+            coordinate={centerCoord}
+            title={mountain.name}
+            description={mountain.description}
+          />
+        )}
+
+        {/* Trail line (only if ≥2 viewpoints) */}
+        {hasTrail && trailCoords.length > 0 && (
+          <Polyline
+            coordinates={trailCoords}
+            strokeColor="#C9A96E"
+            strokeWidth={3}
+            lineDashPattern={[0, 0]} // solid line
+          />
+        )}
+      </MapView>
+
+      {/* Fallback message (no trail data) */}
+      {!hasTrail && (
+        <View style={styles.fallbackMessage}>
+          <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.4)" />
+          <Text style={styles.fallbackText}>No trail data yet</Text>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // NO padding, NO margin, NO safe area — let TrailMap handle it all
-  root: {
+  container: {
     flex: 1,
     backgroundColor: '#0E1520',
+  },
+  map: {
+    flex: 1,
+  },
+  // Floating Header
+  headerSafeArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(10,16,26,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.2)',
+    backdropFilter: 'blur(10px)',
+  },
+  headerTitle: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 10,
+    letterSpacing: 0.3,
+  },
+  headerBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: 'rgba(201,169,110,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.3)',
+  },
+  headerBadgeText: {
+    color: '#C9A96E',
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  // Marker style
+  markerDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(201,169,110,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#C9A96E',
+  },
+  markerInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#C9A96E',
+  },
+  // Fallback
+  fallbackMessage: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  fallbackText: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 0.5,
+  },
+  errorText: {
+    color: '#FFFFFF',
+    textAlign: 'center',
+    margin: 20,
   },
 });
