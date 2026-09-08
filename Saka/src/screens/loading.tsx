@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
+import { mountainService } from '../services/mountainService';
 import {
   BG_PANEL,
   BG_CARD,
@@ -35,13 +36,32 @@ export default function LoadingScreen({
   const params = useLocalSearchParams();
   const { user, profile } = useAuthStore();
   const nextRoute = params.next as string | undefined;
-  
+  const [statusText, setStatusText] = useState('Preparing your hike feed...');
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    const navigate = () => {
+      if (onComplete) {
+        onComplete();
+        return;
+      }
+
+      const targetRoute = nextRoute || (profile?.is_admin ? '/admin/Admin' : '/Home');
+      router.replace(targetRoute);
+    };
+
+    let didNavigate = false;
+
+    const goNext = () => {
+      if (didNavigate) return;
+      didNavigate = true;
+      navigate();
+    };
+
     // Fade in animation
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -77,31 +97,33 @@ export default function LoadingScreen({
     );
     pulseAnimation.start();
 
-    // Navigate after loading completes
-    const navigationTimer = setTimeout(() => {
-      if (onComplete) {
-        onComplete();
-      } else if (nextRoute) {
-        router.replace(nextRoute);
-      } else {
-        // Navigate based on the stored profile role, not the raw Supabase auth user.
-        if (profile?.is_admin) {
-          router.replace('/admin/Admin');
-        } else {
-          router.replace('/Home');
-        }
+    const preloadData = async () => {
+      try {
+        setStatusText('Loading mountain data...');
+        const mountains = await mountainService.fetchMountains();
+        mountainService.setCachedMountains(mountains);
+        setStatusText('Opening your adventure...');
+      } catch (error) {
+        console.warn('[Loading] mountain preloading failed:', error);
+        setStatusText('Opening your adventure...');
+      } finally {
+        goNext();
       }
-    }, loadingDuration + 300);
+    };
 
-    // Cleanup
+    preloadData();
+
+    const navigationTimer = setTimeout(goNext, loadingDuration + 300);
+
     return () => {
+      didNavigate = true;
       clearTimeout(navigationTimer);
       pulseAnimation.stop();
       fadeAnim.setValue(0);
       progressAnim.setValue(0);
       pulseAnim.setValue(1);
     };
-  }, [fadeAnim, progressAnim, pulseAnim, loadingDuration, onComplete, router, user]);
+  }, [fadeAnim, progressAnim, pulseAnim, loadingDuration, onComplete, router, profile, nextRoute, user]);
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 1],
@@ -118,7 +140,6 @@ export default function LoadingScreen({
           },
         ]}
       >
-        {/* GIF Container */}
         <Animated.View
           style={[
             styles.gifContainer,
@@ -134,7 +155,6 @@ export default function LoadingScreen({
           />
         </Animated.View>
 
-        {/* Progress Bar */}
         <View style={styles.progressContainer}>
           <View style={styles.progressTrack}>
             <Animated.View
@@ -148,8 +168,7 @@ export default function LoadingScreen({
           </View>
         </View>
 
-        {/* Loading Text */}
-        <Text style={styles.loadingText}>Loading your adventure...</Text>
+        <Text style={styles.loadingText}>{statusText}</Text>
       </Animated.View>
     </SafeAreaView>
   );

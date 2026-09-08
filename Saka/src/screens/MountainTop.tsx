@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,13 +14,18 @@ import { buildTrailCoordinates, Viewpoint } from '../utils/geoUtils';
 
 export default function MountainTopScreen() {
   const { mountainId } = useLocalSearchParams<{ mountainId: string }>();
-  const [mountain, setMountain] = useState<Mountain | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cachedMountain = mountainId ? mountainService.getCachedMountainById(mountainId) : null;
+  const [mountain, setMountain] = useState<Mountain | null>(cachedMountain);
+  const [loading, setLoading] = useState(!cachedMountain);
   const [error, setError] = useState<string | null>(null);
   const mapRef = useRef<MapView>(null);
   const router = useRouter();
 
   useEffect(() => {
+    if (cachedMountain) {
+      return;
+    }
+
     if (mountainId) {
       const load = async () => {
         try {
@@ -42,7 +46,7 @@ export default function MountainTopScreen() {
       setError('No mountain ID provided');
       setLoading(false);
     }
-  }, [mountainId]);
+  }, [cachedMountain, mountainId]);
 
   // ─── Calculate initial camera values from viewpoints ────────────────
   const initialCamera = useMemo(() => {
@@ -86,13 +90,7 @@ export default function MountainTopScreen() {
     }
   }, [mountain]);
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#C9A96E" />
-      </View>
-    );
-  }
+  if (loading) return null;
 
   if (error || !mountain) {
     return (

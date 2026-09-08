@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { Viewpoint } from '../utils/geoUtils';
 
+let cachedMountains: Mountain[] = [];
+
 export interface Mountain {
   id: string;
   name: string;
@@ -20,6 +22,18 @@ export interface Mountain {
 const formatElevation = (meters: number): string => `${meters.toLocaleString()} m`;
 
 export const mountainService = {
+  setCachedMountains(mountains: Mountain[]) {
+    cachedMountains = mountains;
+  },
+
+  getCachedMountains(): Mountain[] {
+    return cachedMountains;
+  },
+
+  getCachedMountainById(id: string): Mountain | null {
+    return cachedMountains.find((mountain) => mountain.id === id) ?? null;
+  },
+
   async fetchMountains(): Promise<Mountain[]> {
     const { data, error } = await supabase
       .from('mountains')
@@ -31,7 +45,7 @@ export const mountainService = {
       throw new Error('Failed to load mountains');
     }
 
-    return (data || []).map((item: any) => ({
+    const mountains = (data || []).map((item: any) => ({
       id: item.id,
       name: item.name,
       location: item.location || '',
@@ -46,6 +60,9 @@ export const mountainService = {
       elevationDisplay: formatElevation(item.elevation),
       viewpoints: item.viewpoints || null,  // <-- add this
     }));
+
+    cachedMountains = mountains;
+    return mountains;
   },
 
   async fetchMountainById(id: string): Promise<Mountain | null> {

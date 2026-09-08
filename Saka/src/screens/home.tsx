@@ -9,7 +9,6 @@ import {
   Image,
   TouchableOpacity,
   BackHandler,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -127,30 +126,21 @@ export default function HomeScreen() {
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [mountains, setMountains] = useState<Mountain[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
   const [error, setError] = useState<string | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
 
-  // Load mountains from Supabase
   useEffect(() => {
-    const loadMountains = async () => {
-      try {
-        setLoading(true);
-        const data = await mountainService.fetchMountains();
-        setMountains(data);
-        setError(null);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load mountains');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadMountains();
-  }, []);
+    if (mountains.length === 0) {
+      setError('Mountain feed was not loaded yet.');
+      return;
+    }
+
+    setError(null);
+  }, [mountains]);
 
   // Force landscape orientation
   useEffect(() => {
@@ -220,13 +210,6 @@ export default function HomeScreen() {
   }, [profileCardVisible, showLogoutConfirm, openLogoutConfirm, dismissLogoutConfirm]);
 
   // Loading / error states
-  if (loading) {
-    return (
-      <View style={styles.immersiveContainer}>
-        <ActivityIndicator size="large" color="#C9A96E" />
-      </View>
-    );
-  }
   if (error) {
     return (
       <View style={styles.immersiveContainer}>
@@ -237,7 +220,7 @@ export default function HomeScreen() {
   if (mountains.length === 0) {
     return (
       <View style={styles.immersiveContainer}>
-        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>No mountains available</Text>
+        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>Preparing your mountain feed...</Text>
       </View>
     );
   }
