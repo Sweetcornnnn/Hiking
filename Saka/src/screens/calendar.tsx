@@ -64,8 +64,12 @@ export default function CalendarScreen() {
   const [forecastLoading, setForecastLoading] = useState(false);
 
   useEffect(() => {
+    if (!user) {
+      return;
+    }
+
     fetchHikes();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     const loadForecast = async () => {

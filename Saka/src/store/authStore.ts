@@ -1,5 +1,6 @@
 // src/store/authStore.ts
 import { create } from 'zustand';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
 
@@ -75,9 +76,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (error) throw error;
 
+      if (data.session?.access_token) {
+        await SecureStore.setItemAsync('authToken', data.session.access_token);
+      }
+
       set({
         user: data.user,
         session: data.session,
+        authToken: data.session?.access_token ?? null,
         isAuthenticated: !!data.session,
         isLoading: false,
       });
@@ -158,6 +164,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         console.log('[Auth] Profile created successfully');
       }
 
+      if (data.session?.access_token) {
+        await SecureStore.setItemAsync('authToken', data.session.access_token);
+      }
+
       set({
         user: normalizeUser(data.user),
         session: data.session,
@@ -179,6 +189,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true });
       await supabase.auth.signOut();
+      await SecureStore.deleteItemAsync('authToken');
       set({
         user: null,
         session: null,
@@ -207,6 +218,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           .eq('id', session.user.id)
           .single();
 
+        await SecureStore.setItemAsync('authToken', session.access_token);
+
         set({
           session,
           user: normalizeUser(session.user, profile || null),
@@ -216,6 +229,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false,
         });
       } else {
+        await SecureStore.deleteItemAsync('authToken');
         set({
           session: null,
           user: null,

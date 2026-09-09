@@ -1,93 +1,89 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from './authStore';
 import { Hike } from '../types';
-import { API_BASE_URL, resolveApiBaseUrl } from '../config/api';
-
-const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-  }
-};
-
-const getAuthToken = async (): Promise<string | null> => {
-  const authState = useAuthStore.getState();
-  if (authState.authToken) return authState.authToken;
-  return await SecureStore.getItemAsync('authToken');
-};
-
-const getBaseUrl = async (): Promise<string> => {
-  return await resolveApiBaseUrl();
-};
-
-const getAuthHeaders = async (): Promise<Record<string, string>> => {
-  const token = await getAuthToken();
-  if (!token) throw new Error('Not authenticated');
-  return {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-};
-
-const parseJsonSafe = async (response: Response) => {
-  const text = await response.clone().text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    throw new Error(`Failed to parse JSON response: ${text}`);
-  }
-};
+import { supabase } from '../lib/supabase';
 
 interface HikesState {
   hikes: Hike[];
-  allHikes: Hike[]; // For admin view
-  adminStats: { total_hikes: number; total_users: number } | null; // Admin statistics
+  allHikes: Hike[];
+  adminStats: { total_hikes: number; total_users: number } | null;
   isLoading: boolean;
-  
-  
-  // Actions
+
   fetchHikes: () => Promise<void>;
-  fetchAllHikes: () => Promise<void>; // Admin only
-  fetchAdminStats: () => Promise<void>; // Admin only
-  createHike: (hike: Omit<Hike, 'id' | 'user_id' | 'created_at'>) => Promise<{ error: string | null }>;
-  updateHike: (id: string, hike: Partial<Hike>) => Promise<{ error: string | null }>;
+  fetchAllHikes: () => Promise<void>;
+  fetchAdminStats: () => Promise<void>;
+  createHike: (
+    hike: Omit<Hike, 'id' | 'user_id' | 'created_at'>
+  ) => Promise<{ error: string | null }>;
+  updateHike: (
+    id: string,
+    hike: Partial<Hike>
+  ) => Promise<{ error: string | null }>;
   deleteHike: (id: string) => Promise<{ error: string | null }>;
-  
 }
+
+const getCurrentUserId = async (): Promise<string | null> => {
+  const { user, session } = useAuthStore.getState();
+
+  if (user?.id) return user.id;
+  if (session?.user?.id) return session.user.id;
+
+  const {
+    data: { user: freshUser },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    console.warn('[HikesStore] Could not resolve current user:', error.message);
+    return null;
+  }
+
+  return freshUser?.id ?? null;
+};
+
+const mapUserShape = (userRow?: { email?: string | null; full_name?: string | null } | null) => {
+  if (!userRow) return undefined;
+
+  return {
+    email: userRow.email || '',
+    name: userRow.full_name || userRow.email || 'Unknown',
+  };
+};
 
 export const useHikesStore = create<HikesState>((set, get) => ({
   hikes: [],
   allHikes: [],
   adminStats: null,
   isLoading: false,
-  
 
   fetchHikes: async () => {
     set({ isLoading: true });
 
     try {
-      const headers = await getAuthHeaders();
-      const base = await getBaseUrl();
-      const response = await fetchWithTimeout(`${base}/api/hikes`, {
-        method: 'GET',
-        headers,
-      });
-      const data = await parseJsonSafe(response);
-
-      if (!response.ok) {
-        console.error('Failed to fetch hikes:', data.error || data);
-        set({ isLoading: false });
+      const userId = await getCurrentUserId();
+      if (!userId) {
+        set({ hikes: [], isLoading: false });
         return;
       }
 
-      set({ hikes: data.hikes || [] });
-    } catch (error) {
-      console.error('Network error fetching hikes:', error);
+      const { data, error } = await supabase
+        .from('hikes')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: true });
+
+      if (error) {
+        console.error('[HikesStore] fetchHikes error:', error);
+        set({ hikes: [], isLoading: false });
+        return;
+      }
+
+      set({
+        hikes: (data || []) as Hike[],
+      });
+    } catch (error: any) {
+      console.error('[HikesStore] Network error fetching hikes:', error);
+      set({ hikes: [] });
     }
 
     set({ isLoading: false });
@@ -95,71 +91,79 @@ export const useHikesStore = create<HikesState>((set, get) => ({
 
   fetchAllHikes: async () => {
     set({ isLoading: true });
-    
+
     try {
-      const authState = useAuthStore.getState();
-      let token = authState.authToken;
-      if (!token) {
-        token = await SecureStore.getItemAsync('authToken');
-      }
-      if (!token) {
-        set({ isLoading: false });
+      const { data: hikesData, error: hikesError } = await supabase
+        .from('hikes')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (hikesError) {
+        console.error('[HikesStore] fetchAllHikes error:', hikesError);
+        set({ allHikes: [], isLoading: false });
         return;
       }
 
-      const response = await fetch(`${await getBaseUrl()}/api/admin/hikes`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+      const userIds = [...new Set((hikesData || []).map((hike) => hike.user_id))];
+
+      let profilesData: Array<{ id: string; email?: string | null; full_name?: string | null }> = [];
+
+      if (userIds.length > 0) {
+        const { data: profileRows, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, email, full_name')
+          .in('id', userIds);
+
+        if (profileError) {
+          console.warn('[HikesStore] Profiles lookup failed:', profileError.message);
+        } else {
+          profilesData = profileRows || [];
+        }
+      }
+
+      const profileMap = new Map(
+        profilesData.map((profile) => [
+          profile.id,
+          {
+            email: profile.email || '',
+            name: profile.full_name || profile.email || 'Unknown',
+          },
+        ])
+      );
+
+      const allHikes = (hikesData || []).map((hike) => ({
+        ...hike,
+        user: profileMap.get(hike.user_id) || {
+          email: '',
+          name: 'Unknown',
         },
-      });
+      })) as Hike[];
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error('Failed to fetch hikes:', data.error);
-        set({ isLoading: false });
-        return;
-      }
-
-      set({ allHikes: data.hikes });
-    } catch (error) {
-      console.error('Network error fetching hikes:', error);
+      set({ allHikes });
+    } catch (error: any) {
+      console.error('[HikesStore] Network error fetching all hikes:', error);
+      set({ allHikes: [] });
     }
-    
+
     set({ isLoading: false });
   },
 
   fetchAdminStats: async () => {
     try {
-      const authState = useAuthStore.getState();
-      let token = authState.authToken;
-      if (!token) {
-        token = await SecureStore.getItemAsync('authToken');
-      }
-      if (!token) {
-        return;
-      }
+      const [{ count: totalHikes }, { count: totalUsers }] = await Promise.all([
+        supabase.from('hikes').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      ]);
 
-      const response = await fetch(`${await getBaseUrl()}/api/admin/stats`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+      set({
+        adminStats: {
+          total_hikes: totalHikes ?? 0,
+          total_users: totalUsers ?? 0,
         },
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error('Failed to fetch admin stats:', data.error);
-        return;
-      }
-
-      set({ adminStats: data });
     } catch (error) {
-      console.error('Network error fetching admin stats:', error);
+      console.error('[HikesStore] Network error fetching admin stats:', error);
+      set({ adminStats: { total_hikes: 0, total_users: 0 } });
     }
   },
 
@@ -167,25 +171,30 @@ export const useHikesStore = create<HikesState>((set, get) => ({
     set({ isLoading: true });
 
     try {
-      const headers = await getAuthHeaders();
-      const base = await getBaseUrl();
-      const response = await fetchWithTimeout(`${base}/api/hikes`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(hikeData),
-      });
-      const data = await parseJsonSafe(response);
-
-      if (!response.ok) {
+      const userId = await getCurrentUserId();
+      if (!userId) {
         set({ isLoading: false });
-        return { error: data.error || 'Failed to create hike' };
+        return { error: 'Please sign in to manage hikes' };
+      }
+
+      const { error } = await supabase.from('hikes').insert([
+        {
+          ...hikeData,
+          user_id: userId,
+        },
+      ]);
+
+      if (error) {
+        console.error('[HikesStore] createHike error:', error);
+        set({ isLoading: false });
+        return { error: error.message || 'Failed to create hike' };
       }
 
       await get().fetchHikes();
       set({ isLoading: false });
       return { error: null };
     } catch (error: any) {
-      console.error('Network error creating hike:', error);
+      console.error('[HikesStore] createHike failed:', error);
       set({ isLoading: false });
       return { error: error.message || 'Network error' };
     }
@@ -195,25 +204,29 @@ export const useHikesStore = create<HikesState>((set, get) => ({
     set({ isLoading: true });
 
     try {
-      const headers = await getAuthHeaders();
-      const base = await getBaseUrl();
-      const response = await fetchWithTimeout(`${base}/api/hikes/${id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(hikeData),
-      });
-      const data = await parseJsonSafe(response);
-
-      if (!response.ok) {
+      const userId = await getCurrentUserId();
+      if (!userId) {
         set({ isLoading: false });
-        return { error: data.error || 'Failed to update hike' };
+        return { error: 'Please sign in to manage hikes' };
+      }
+
+      const { error } = await supabase
+        .from('hikes')
+        .update(hikeData)
+        .eq('id', id)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('[HikesStore] updateHike error:', error);
+        set({ isLoading: false });
+        return { error: error.message || 'Failed to update hike' };
       }
 
       await get().fetchHikes();
       set({ isLoading: false });
       return { error: null };
     } catch (error: any) {
-      console.error('Network error updating hike:', error);
+      console.error('[HikesStore] updateHike failed:', error);
       set({ isLoading: false });
       return { error: error.message || 'Network error' };
     }
@@ -223,28 +236,31 @@ export const useHikesStore = create<HikesState>((set, get) => ({
     set({ isLoading: true });
 
     try {
-      const headers = await getAuthHeaders();
-      const base = await getBaseUrl();
-      const response = await fetchWithTimeout(`${base}/api/hikes/${id}`, {
-        method: 'DELETE',
-        headers,
-      });
-      const data = await parseJsonSafe(response);
-
-      if (!response.ok) {
+      const userId = await getCurrentUserId();
+      if (!userId) {
         set({ isLoading: false });
-        return { error: data.error || 'Failed to delete hike' };
+        return { error: 'Please sign in to manage hikes' };
+      }
+
+      const { error } = await supabase
+        .from('hikes')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('[HikesStore] deleteHike error:', error);
+        set({ isLoading: false });
+        return { error: error.message || 'Failed to delete hike' };
       }
 
       await get().fetchHikes();
       set({ isLoading: false });
       return { error: null };
     } catch (error: any) {
-      console.error('Network error deleting hike:', error);
+      console.error('[HikesStore] deleteHike failed:', error);
       set({ isLoading: false });
       return { error: error.message || 'Network error' };
     }
   },
-
-  // demo mode removed
 }));
