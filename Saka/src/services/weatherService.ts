@@ -11,7 +11,7 @@ export type WeatherCondition = {
 };
 
 const OPENWEATHER_BASE_URL = 'https://api.openweathermap.org/data/2.5/weather';
-const OPENWEATHER_ONECALL_URL = 'https://api.openweathermap.org/data/2.5/onecall';
+const OPENWEATHER_FORECAST_URL = 'https://api.openweathermap.org/data/2.5/forecast';
 
 const getWeatherApiKey = (): string | undefined => {
   const manifest = Constants.manifest || (Constants.expoConfig as any);
@@ -82,24 +82,64 @@ export const getWeatherForecast = async (
     );
   }
 
-  const url = `${OPENWEATHER_ONECALL_URL}?lat=${latitude}&lon=${longitude}&exclude=current,minutely,hourly,alerts&units=metric&appid=${apiKey}`;
+  const url = `${OPENWEATHER_FORECAST_URL}?lat=${latitude}&lon=${longitude}&units=metric&cnt=40&appid=${apiKey}`;
   const response = await fetch(url);
 
   if (!response.ok) {
     const payload = await response.text();
-    throw new Error(`OpenWeatherMap forecast request failed: ${response.status} ${payload}`);
+    throw new Error(
+      `OpenWeatherMap forecast request failed: ${response.status} ${payload}`
+    );
   }
 
   const data = await response.json();
-  const timezoneOffset = Number(data.timezone_offset ?? 0);
+  const timezoneOffset = Number(data.city?.timezone ?? 0);
 
-  return (data.daily ?? []).map((day: any) => ({
-    date: new Date((day.dt + timezoneOffset) * 1000).toISOString().split('T')[0],
-    description: day.weather?.[0]?.description || 'Unknown',
-    tempMin: Number(day.temp?.min ?? 0),
-    tempMax: Number(day.temp?.max ?? 0),
-    icon: day.weather?.[0]?.icon || '01d',
-  }));
+  const dailyMap = new Map<
+    string,
+    {
+      date: string;
+      description: string;
+      tempMin: number;
+      tempMax: number;
+      icon: string;
+    }
+  >();
+
+  for (const item of data.list ?? []) {
+    const date = new Date((item.dt + timezoneOffset) * 1000)
+      .toISOString()
+      .split('T')[0];
+
+    const dayEntry = dailyMap.get(date) ?? {
+      date,
+      description: item.weather?.[0]?.description || 'Unknown',
+      tempMin: Number(item.main?.temp_min ?? item.main?.temp ?? 0),
+      tempMax: Number(item.main?.temp_max ?? item.main?.temp ?? 0),
+      icon: item.weather?.[0]?.icon || '01d',
+    };
+
+    dayEntry.tempMin = Math.min(
+      dayEntry.tempMin,
+      Number(item.main?.temp_min ?? item.main?.temp ?? 0)
+    );
+    dayEntry.tempMax = Math.max(
+      dayEntry.tempMax,
+      Number(item.main?.temp_max ?? item.main?.temp ?? 0)
+    );
+
+    if (!dayEntry.description || dayEntry.description === 'Unknown') {
+      dayEntry.description = item.weather?.[0]?.description || 'Unknown';
+    }
+
+    if (!dayEntry.icon || dayEntry.icon === '01d') {
+      dayEntry.icon = item.weather?.[0]?.icon || '01d';
+    }
+
+    dailyMap.set(date, dayEntry);
+  }
+
+  return Array.from(dailyMap.values()).slice(0, 7);
 };
 
 export const getWeatherSafetyAdvice = (weather: WeatherCondition): string => {
