@@ -8,8 +8,9 @@ interface HikesState {
   allHikes: Hike[];
   adminStats: { total_hikes: number; total_users: number } | null;
   isLoading: boolean;
+  latestFetchToken: number;
 
-  fetchHikes: () => Promise<void>;
+  fetchHikes: (mountainId?: string) => Promise<void>;
   fetchAllHikes: () => Promise<void>;
   fetchAdminStats: () => Promise<void>;
   createHike: (
@@ -55,9 +56,11 @@ export const useHikesStore = create<HikesState>((set, get) => ({
   allHikes: [],
   adminStats: null,
   isLoading: false,
+  latestFetchToken: 0,
 
-  fetchHikes: async () => {
-    set({ isLoading: true });
+  fetchHikes: async (mountainId?: string) => {
+    const fetchToken = Date.now() + Math.random();
+    set({ isLoading: true, latestFetchToken: fetchToken, hikes: [] });
 
     try {
       const userId = await getCurrentUserId();
@@ -66,11 +69,21 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return;
       }
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('hikes')
         .select('*')
         .eq('user_id', userId)
         .order('date', { ascending: true });
+
+      if (mountainId) {
+        query = query.eq('mountain_id', mountainId);
+      }
+
+      const { data, error } = await query;
+
+      if (get().latestFetchToken !== fetchToken) {
+        return;
+      }
 
       if (error) {
         console.error('[HikesStore] fetchHikes error:', error);
@@ -82,11 +95,17 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         hikes: (data || []) as Hike[],
       });
     } catch (error: any) {
+      if (get().latestFetchToken !== fetchToken) {
+        return;
+      }
+
       console.error('[HikesStore] Network error fetching hikes:', error);
       set({ hikes: [] });
     }
 
-    set({ isLoading: false });
+    if (get().latestFetchToken === fetchToken) {
+      set({ isLoading: false });
+    }
   },
 
   fetchAllHikes: async () => {
@@ -190,7 +209,8 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: error.message || 'Failed to create hike' };
       }
 
-      await get().fetchHikes();
+      const mountainId = hikeData.mountain_id;
+      await get().fetchHikes(mountainId);
       set({ isLoading: false });
       return { error: null };
     } catch (error: any) {
@@ -222,7 +242,8 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: error.message || 'Failed to update hike' };
       }
 
-      await get().fetchHikes();
+      const mountainId = hikeData.mountain_id ?? get().hikes.find((hike) => hike.id === id)?.mountain_id;
+      await get().fetchHikes(mountainId);
       set({ isLoading: false });
       return { error: null };
     } catch (error: any) {
@@ -254,7 +275,8 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: error.message || 'Failed to delete hike' };
       }
 
-      await get().fetchHikes();
+      const mountainId = get().hikes.find((hike) => hike.id === id)?.mountain_id;
+      await get().fetchHikes(mountainId);
       set({ isLoading: false });
       return { error: null };
     } catch (error: any) {

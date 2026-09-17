@@ -78,6 +78,7 @@ export default function ViewpointScreen() {
   const router      = useRouter();
   const params      = useLocalSearchParams();
   const viewpointId = params.viewpointId as string | undefined;
+  const mountainId  = params.mountainId as string | undefined;
 
   const data = VIEWPOINTS_DATA[(viewpointId as keyof ViewpointsDataType) || 'v1'];
 
@@ -304,7 +305,15 @@ export default function ViewpointScreen() {
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => router.push('/Calendar')}
+            onPress={() => {
+              if (!mountainId) {
+                return;
+              }
+              router.push({
+                pathname: '/Calendar',
+                params: { mountainId },
+              });
+            }}
             activeOpacity={0.85}
           >
             <Ionicons name="calendar-outline" size={15} color={PC.bgCard} />

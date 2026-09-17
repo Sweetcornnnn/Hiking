@@ -12,7 +12,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useHikesStore } from '../store/hikesStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
@@ -41,11 +41,13 @@ const INITIAL_FORM: HikeFormData = {
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const { mountainId } = useLocalSearchParams<{ mountainId?: string }>();
   const { hikes, fetchHikes, createHike, updateHike, deleteHike, isLoading } = useHikesStore();
   const { user } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
-  const selectedMountain = getMountainById(selectedMountainId) || getMountainById('1');
+  const activeMountainId = mountainId ?? selectedMountainId ?? null;
+  const selectedMountain = activeMountainId ? getMountainById(activeMountainId) : null;
 
   const handleBackPress = () => {
     if (router.canGoBack()) {
@@ -64,12 +66,12 @@ export default function CalendarScreen() {
   const [forecastLoading, setForecastLoading] = useState(false);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !activeMountainId) {
       return;
     }
 
-    fetchHikes();
-  }, [user]);
+    fetchHikes(activeMountainId);
+  }, [user, activeMountainId]);
 
   useEffect(() => {
     const loadForecast = async () => {
@@ -102,10 +104,14 @@ export default function CalendarScreen() {
   }, [selectedMountain?.latitude, selectedMountain?.longitude]);
 
   const onRefresh = useCallback(async () => {
+    if (!activeMountainId) {
+      return;
+    }
+
     setRefreshing(true);
-    await fetchHikes();
+    await fetchHikes(activeMountainId);
     setRefreshing(false);
-  }, [fetchHikes]);
+  }, [fetchHikes, activeMountainId]);
 
   const markedDates = hikes.reduce((acc, hike) => {
     const isSelected = hike.date === selectedDate;
@@ -157,7 +163,7 @@ export default function CalendarScreen() {
       tagalongs: parseInt(formData.tagalongs) || 1,
       contact_number: formData.contact_number,
       emergency_contact: formData.emergency_contact,
-      mountain_id: editingHike?.mountain_id || selectedMountainId,
+      mountain_id: editingHike?.mountain_id || activeMountainId,
     };
 
     if (editingHike) {

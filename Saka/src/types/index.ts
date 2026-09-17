@@ -45,7 +45,7 @@ export interface RootStackParamList {
   Signup: undefined;
   Home: undefined;
   Viewpoint: { viewpointId: string; mountainId: string };
-  Calendar: undefined;
+  Calendar: { mountainId?: string } | undefined;
   AddHike: { hike?: Hike };
   Admin: undefined;
 }
