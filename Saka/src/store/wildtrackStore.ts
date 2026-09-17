@@ -130,7 +130,10 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
   isDemoMode: false,
 
   setSelectedMountainId: (id) => {
-    console.log(`[WildTrack] Mountain changed to: ${id}`);
+    if (get().selectedMountainId === id) {
+      return;
+    }
+
     set({ selectedMountainId: id });
   },
 
