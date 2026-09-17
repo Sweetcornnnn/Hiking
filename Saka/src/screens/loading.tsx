@@ -37,6 +37,7 @@ export default function LoadingScreen({
   const { user, profile } = useAuthStore();
   const nextRoute = params.next as string | undefined;
   const [statusText, setStatusText] = useState('Preparing your hike feed...');
+  const mountedRef = useRef(true);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -44,6 +45,8 @@ export default function LoadingScreen({
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    mountedRef.current = true;
+
     const navigate = () => {
       if (onComplete) {
         onComplete();
@@ -59,9 +62,15 @@ export default function LoadingScreen({
     let didNavigate = false;
 
     const goNext = () => {
-      if (didNavigate) return;
+      if (didNavigate || !mountedRef.current) return;
       didNavigate = true;
       navigate();
+    };
+
+    const safeSetStatusText = (text: string) => {
+      if (mountedRef.current) {
+        setStatusText(text);
+      }
     };
 
     // Fade in animation
@@ -101,23 +110,30 @@ export default function LoadingScreen({
 
     const preloadData = async () => {
       try {
-        setStatusText('Loading mountain data...');
+        safeSetStatusText('Loading mountain data...');
         const mountains = await mountainService.fetchMountains();
         mountainService.setCachedMountains(mountains);
-        setStatusText('Opening your adventure...');
+        safeSetStatusText('Opening your adventure...');
       } catch (error) {
         console.warn('[Loading] mountain preloading failed:', error);
-        setStatusText('Opening your adventure...');
+        safeSetStatusText('Opening your adventure...');
       } finally {
-        goNext();
+        if (mountedRef.current) {
+          goNext();
+        }
       }
     };
 
     preloadData();
 
-    const navigationTimer = setTimeout(goNext, loadingDuration + 300);
+    const navigationTimer = setTimeout(() => {
+      if (mountedRef.current) {
+        goNext();
+      }
+    }, loadingDuration + 300);
 
     return () => {
+      mountedRef.current = false;
       didNavigate = true;
       clearTimeout(navigationTimer);
       pulseAnimation.stop();
