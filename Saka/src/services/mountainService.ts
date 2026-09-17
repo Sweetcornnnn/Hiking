@@ -1,7 +1,9 @@
 import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Viewpoint } from '../utils/geoUtils';
 
 let cachedMountains: Mountain[] = [];
+const MOUNTAINS_CACHE_KEY = 'SAKA_MOUNTAINS_CACHE';
 
 export interface Mountain {
   id: string;
@@ -24,6 +26,9 @@ const formatElevation = (meters: number): string => `${meters.toLocaleString()} 
 export const mountainService = {
   setCachedMountains(mountains: Mountain[]) {
     cachedMountains = mountains;
+    void AsyncStorage.setItem(MOUNTAINS_CACHE_KEY, JSON.stringify(mountains)).catch((error) => {
+      console.warn('[MountainService] Failed to persist mountain cache:', error);
+    });
   },
 
   getCachedMountains(): Mountain[] {
@@ -35,6 +40,23 @@ export const mountainService = {
   },
 
   async fetchMountains(): Promise<Mountain[]> {
+    if (cachedMountains.length > 0) {
+      return cachedMountains;
+    }
+
+    try {
+      const cachedJson = await AsyncStorage.getItem(MOUNTAINS_CACHE_KEY);
+      if (cachedJson) {
+        const persistedMountains = JSON.parse(cachedJson) as Mountain[];
+        if (Array.isArray(persistedMountains) && persistedMountains.length > 0) {
+          cachedMountains = persistedMountains;
+          return cachedMountains;
+        }
+      }
+    } catch (error) {
+      console.warn('[MountainService] Failed to load persisted mountain cache:', error);
+    }
+
     const { data, error } = await supabase
       .from('mountains')
       .select('*')
@@ -61,7 +83,7 @@ export const mountainService = {
       viewpoints: item.viewpoints || null,  // <-- add this
     }));
 
-    cachedMountains = mountains;
+    this.setCachedMountains(mountains);
     return mountains;
   },
 

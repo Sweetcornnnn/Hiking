@@ -32,7 +32,6 @@ function VideoViewPlayer({ source, isActive }: { source: { uri: string }; isActi
   const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
-    p.staysActiveInBackground = true;
   });
 
   useEffect(() => {
@@ -81,7 +80,7 @@ const MountainSlide = memo(function MountainSlide({
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
-        {mountain.video_url ? (
+        {mountain.video_url && isActive ? (
           <VideoViewPlayer source={{ uri: mountain.video_url }} isActive={isActive} />
         ) : mountain.image_url ? (
           <Image source={{ uri: mountain.image_url }} style={styles.fullScreenImage} resizeMode="cover" />
