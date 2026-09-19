@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   Modal,
   StyleSheet,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
   ScrollView,
+  Image,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useWildTrackStore } from '../../store/wildtrackStore';
@@ -25,16 +27,16 @@ import {
   TEXT_MUTED,
   ACCENT_GOLD,
   ACCENT_GREEN,
-  RADIUS_CARD,
   RADIUS_BTN,
 } from '../../theme/designTokens';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const isLandscape = SCREEN_WIDTH >= SCREEN_HEIGHT;
+const COLUMNS = 3;
+const GRID_GAP = 8;
+const H_PADDING = 10;
 
 export default function FeaturedSpeciesScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
 
   const {
     featuredSpecies,
@@ -48,61 +50,17 @@ export default function FeaturedSpeciesScreen() {
   const [marking, setMarking] = useState(false);
 
   useEffect(() => {
-    console.log('[WildTrack] Featured species screen mounted');
-    console.log(
-      `[WildTrack] Loading featured species for mountain: ${selectedMountainId}`
-    );
-
     fetchFeaturedSpecies(selectedMountainId);
   }, [selectedMountainId]);
 
-  const columns = useMemo(() => {
-    if (SCREEN_WIDTH >= 1500) return 4;
-    if (SCREEN_WIDTH >= 1100) return 3;
-    if (SCREEN_WIDTH >= 760) return 2;
-
-    return 1;
-  }, []);
-
-  const cardSpacing = 14;
-
-  const cardWidth = useMemo(() => {
-    const horizontalPadding = 48;
-    const totalSpacing = (columns - 1) * cardSpacing;
-
-    return (
-      (SCREEN_WIDTH - horizontalPadding - totalSpacing) /
-      columns
-    );
-  }, [columns]);
+  const cardWidth = (width - H_PADDING * 2 - GRID_GAP * (COLUMNS - 1)) / COLUMNS;
 
   const handleMarkDiscovered = async () => {
     if (!selectedSpecies) return;
 
-    console.log(
-      `[WildTrack] Marking featured species as discovered: ${selectedSpecies.common_name}`
-    );
-
     setMarking(true);
-
-    const { error } = await createDiscovery(
-      selectedSpecies.id,
-      selectedMountainId
-    );
-
-    if (!error) {
-      await cacheSpecies(selectedSpecies);
-
-      console.log(
-        '[WildTrack] Featured species marked as discovered successfully'
-      );
-    } else {
-      console.error(
-        '[WildTrack] Error marking featured discovery:',
-        error
-      );
-    }
-
+    const { error } = await createDiscovery(selectedSpecies.id, selectedMountainId);
+    if (!error) await cacheSpecies(selectedSpecies);
     setMarking(false);
     setSelectedSpecies(null);
   };
@@ -111,64 +69,32 @@ export default function FeaturedSpeciesScreen() {
     <SafeAreaView style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
-            <Ionicons
-              name="arrow-back"
-              size={20}
-              color={TEXT_PRIMARY}
-            />
-          </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={20} color={TEXT_PRIMARY} />
+        </TouchableOpacity>
 
-          <View>
-            <Text style={styles.title}>
-              Featured Species
-            </Text>
-
-            <Text style={styles.subtitle}>
-              Landscape-optimized endemic species explorer
-            </Text>
-          </View>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Featured Species</Text>
+          <Text style={styles.subtitle}>Curated for this mountain</Text>
         </View>
 
         <View style={styles.headerBadge}>
-          <Ionicons
-            name="leaf-outline"
-            size={14}
-            color={ACCENT_GOLD}
-          />
-
-          <Text style={styles.headerBadgeText}>
-            {featuredSpecies.length} Species
-          </Text>
+          <Ionicons name="leaf-outline" size={13} color={ACCENT_GOLD} />
+          <Text style={styles.headerBadgeText}>{featuredSpecies.length}</Text>
         </View>
       </View>
 
-      {/* SPECIES GRID */}
+      {/* GRID */}
       <FlatList
+        key={`featured-species-grid-${COLUMNS}`}
         data={featuredSpecies}
-        key={columns}
-        numColumns={columns}
+        numColumns={COLUMNS}
         keyExtractor={(item) => item.id.toString()}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        columnWrapperStyle={
-          columns > 1
-            ? styles.columnWrapper
-            : undefined
-        }
+        columnWrapperStyle={styles.columnWrapper}
         renderItem={({ item }) => (
-          <View
-            style={[
-              styles.cardWrapper,
-              {
-                width: cardWidth,
-              },
-            ]}
-          >
+          <View style={{ width: cardWidth }}>
             <SpeciesCard
               species={item}
               onPress={() => setSelectedSpecies(item)}
@@ -179,304 +105,201 @@ export default function FeaturedSpeciesScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <View style={styles.emptyIconWrapper}>
-              <Ionicons
-                name="star-outline"
-                size={54}
-                color={ACCENT_GOLD}
-              />
+              <Ionicons name="star-outline" size={40} color={ACCENT_GOLD} />
             </View>
-
-            <Text style={styles.emptyTitle}>
-              No Featured Species
-            </Text>
-
+            <Text style={styles.emptyTitle}>No Featured Species</Text>
             <Text style={styles.emptyText}>
-              Featured species will appear here once curated
-              for this mountain.
+              Featured species will appear here once curated for this mountain.
             </Text>
           </View>
         }
       />
 
-      {/* MODAL */}
-      <Modal
-        visible={!!selectedSpecies}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setSelectedSpecies(null)}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            style={styles.modalShell}
-            onPress={() => {}}
-          >
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.modalScroll}
-            >
-              {selectedSpecies && (
-                <View style={styles.modalCardWrapper}>
-                  <SpeciesCard
-                    species={selectedSpecies}
-                    onPress={() => {}}
-                    isDiscovered={
-                      !!selectedSpecies.discovered
-                    }
-                    showDiscoveryStatus={false}
-                  />
+      {/* MODAL — landscape species profile */}
+      <Modal visible={!!selectedSpecies} transparent animationType="fade" statusBarTranslucent>
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedSpecies(null)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            {selectedSpecies && (
+              <>
+                <View style={styles.modalImageWrap}>
+                  {selectedSpecies.image_url ? (
+                    <Image
+                      source={{ uri: selectedSpecies.image_url }}
+                      style={styles.modalImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.modalImageFallback}>
+                      <Ionicons name="leaf-outline" size={34} color={TEXT_MUTED} />
+                    </View>
+                  )}
                 </View>
-              )}
 
-              {/* ACTIONS */}
-              <View style={styles.modalActions}>
-                {!selectedSpecies?.discovered && (
-                  <TouchableOpacity
-                    onPress={handleMarkDiscovered}
-                    style={styles.modalButton}
-                    disabled={marking}
-                  >
-                    {marking ? (
-                      <ActivityIndicator color="#FFF" />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="eye-outline"
-                          size={18}
-                          color="#FFF"
-                        />
-
-                        <Text style={styles.modalButtonText}>
-                          Mark as Discovered
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  onPress={() => setSelectedSpecies(null)}
-                  style={styles.modalCancelButton}
-                >
-                  <Text
-                    style={styles.modalCancelButtonText}
-                  >
-                    Close
+                <View style={styles.modalTextBlock}>
+                  <Text style={styles.modalName} numberOfLines={1}>
+                    {selectedSpecies.common_name || 'Species'}
                   </Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
+                  <Text style={styles.modalScientific} numberOfLines={1}>
+                    {selectedSpecies.scientific_name}
+                  </Text>
+                  <Text style={styles.modalDescription} numberOfLines={4}>
+                    {selectedSpecies.description ||
+                      'This featured species is part of the mountain checklist. Mark it discovered when you spot it on trail.'}
+                  </Text>
+
+                  {selectedSpecies.discovered ? (
+                    <View style={styles.discoveredBadge}>
+                      <Ionicons name="checkmark-circle" size={15} color={ACCENT_GREEN} />
+                      <Text style={styles.discoveredText}>Discovered</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={handleMarkDiscovered}
+                      style={styles.modalButton}
+                      disabled={marking}
+                    >
+                      {marking ? (
+                        <ActivityIndicator color="#FFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="eye-outline" size={18} color="#FFF" />
+                          <Text style={styles.modalButtonText}>Mark as Discovered</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BG_CARD,
-  },
+  container: { flex: 1, backgroundColor: BG_CARD },
 
   header: {
-    paddingHorizontal: isLandscape ? 20 : 18,
-    paddingTop: isLandscape ? 16 : 14,
-    paddingBottom: isLandscape ? 12 : 10,
-
+    paddingHorizontal: H_PADDING,
+    paddingTop: 12,
+    paddingBottom: 12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-
     borderBottomWidth: 1,
     borderBottomColor: BORDER_DEFAULT,
   },
-
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-
   backButton: {
-    width: isLandscape ? 40 : 42,
-    height: isLandscape ? 40 : 42,
-    borderRadius: isLandscape ? 12 : 14,
-
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
-
     backgroundColor: BG_PANEL,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
-
-    marginRight: isLandscape ? 16 : 14,
+    marginRight: 12,
   },
-
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: TEXT_PRIMARY,
-  },
-
-  subtitle: {
-    fontSize: 11,
-    color: TEXT_MUTED,
-    marginTop: 3,
-  },
-
+  headerText: { flex: 1 },
+  title: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY },
+  subtitle: { fontSize: 11, color: TEXT_MUTED, marginTop: 2 },
   headerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-
+    gap: 5,
     backgroundColor: BG_SUBTLE,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
-
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 999,
   },
+  headerBadgeText: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
 
-  headerBadgeText: {
-    color: ACCENT_GOLD,
-    fontSize: 11,
-    fontWeight: '700',
-    marginLeft: 6,
-  },
-
-  listContent: {
-    paddingHorizontal: isLandscape ? 20 : 18,
-    paddingTop: isLandscape ? 18 : 16,
-    paddingBottom: isLandscape ? 26 : 24,
-  },
-
+  listContent: { padding: H_PADDING, paddingBottom: 28 },
   columnWrapper: {
-    justifyContent: 'space-between',
-    marginBottom: isLandscape ? 16 : 14,
+    justifyContent: 'flex-start',
+    gap: GRID_GAP,
+    marginBottom: GRID_GAP,
   },
 
-  cardWrapper: {
-    marginBottom: isLandscape ? 16 : 14,
-  },
-
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-
-    paddingVertical: 70,
-    paddingHorizontal: 30,
-  },
-
+  emptyState: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 24 },
   emptyIconWrapper: {
-    width: 92,
-    height: 92,
+    width: 78,
+    height: 78,
     borderRadius: 999,
-
     justifyContent: 'center',
     alignItems: 'center',
-
     backgroundColor: BG_PANEL,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
+    marginBottom: 16,
   },
-
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-
-    marginTop: 18,
-    marginBottom: 10,
-  },
-
-  emptyText: {
-    fontSize: 13,
-    color: TEXT_MUTED,
-    textAlign: 'center',
-    lineHeight: 20,
-    maxWidth: 460,
-  },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: TEXT_PRIMARY, marginBottom: 8 },
+  emptyText: { fontSize: 12, color: TEXT_MUTED, textAlign: 'center', lineHeight: 18 },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-
-    paddingHorizontal: isLandscape ? 32 : 22,
-    paddingVertical: isLandscape ? 24 : 18,
+    paddingHorizontal: 20,
   },
-
-  modalShell: {
-    width: '100%',
-    maxWidth: isLandscape ? 1000 : 520,
-    maxHeight: SCREEN_HEIGHT * (isLandscape ? 0.88 : 0.92),
-
+  modalCard: {
+    flexDirection: 'row',
+    width: '92%',
+    maxWidth: 460,
+    height: 240,
     backgroundColor: BG_PANEL,
-
-    borderRadius: 32,
+    borderRadius: 26,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
-
+    padding: 16,
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  modalImageWrap: {
+    flex: 1.3,
+    height: '100%',
+    borderRadius: 18,
     overflow: 'hidden',
-  },
-
-  modalScroll: {
-    padding: isLandscape ? 24 : 18,
-  },
-
-  modalCardWrapper: {
-    width: '100%',
-  },
-
-  modalActions: {
-    marginTop: 18,
-    gap: 10,
-  },
-
-  modalButton: {
-    height: 52,
-
-    borderRadius: RADIUS_BTN,
-
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-
-    backgroundColor: ACCENT_GREEN,
-
-    gap: 8,
-  },
-
-  modalButtonText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-
-  modalCancelButton: {
-    height: 48,
-
-    borderRadius: RADIUS_BTN,
-
-    alignItems: 'center',
-    justifyContent: 'center',
-
     backgroundColor: BG_SUBTLE,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
   },
-
-  modalCancelButtonText: {
-    color: TEXT_MUTED,
-    fontSize: 13,
-    fontWeight: '700',
+  modalImage: { width: '100%', height: '100%' },
+  modalImageFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  modalTextBlock: { flex: 1, justifyContent: 'center', gap: 4 },
+  modalName: { color: TEXT_PRIMARY, fontSize: 17, fontWeight: '700' },
+  modalScientific: { color: ACCENT_GOLD, fontSize: 12, fontStyle: 'italic' },
+  modalDescription: { color: TEXT_MUTED, fontSize: 12, lineHeight: 17, marginTop: 6 },
+  discoveredBadge: {
+    marginTop: 14,
+    backgroundColor: BG_SUBTLE,
+    borderRadius: 13,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
   },
+  discoveredText: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '700' },
+  modalButton: {
+    marginTop: 14,
+    backgroundColor: ACCENT_GREEN,
+    borderRadius: 13,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  modalButtonText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
 });

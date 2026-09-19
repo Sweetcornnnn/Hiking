@@ -5,59 +5,44 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Modal,
   ActivityIndicator,
   Image,
-  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
- 
+
 import { useWildTrackStore, Species } from '../../store/wildtrackStore';
-import { useAuthStore } from '../../store/authStore';
 import { SpeciesCarousel } from '../../components/wildtrack/SpeciesCarousel';
 import { ProgressCard } from '../../components/wildtrack/ProgressCard';
-import { getMountainBiodiversity } from '../../data/curatedSpecies';
- 
-const MOUNTAINS = [
-  { id: '1', name: 'Mt. Madjaas' },
-  { id: '2', name: 'Mt. Guiting-Guiting' },
-  { id: '3', name: 'Mt. Pulag' },
-  { id: '4', name: 'Mt. Apo' },
-  { id: '5', name: 'Mt. Mayon' },
-  { id: '6', name: 'Mt. Kanlaon' },
-];
- 
+import { mountainService, Mountain } from '../../services/mountainService';
+
 const C = {
-  bg:              '#09111F',
-  surface:         '#0F1A2B',
-  surfaceAlt:      '#141F30',
-  border:          '#1A2840',
-  accent:          '#C8975A',
-  accentDim:       'rgba(200,151,90,0.12)',
+  bg: '#09111F',
+  surface: '#0F1A2B',
+  surfaceAlt: '#141F30',
+  border: '#1A2840',
+  accent: '#C8975A',
+  accentDim: 'rgba(200,151,90,0.12)',
   accentDimBorder: 'rgba(200,151,90,0.28)',
-  textPrimary:     '#EFF3F8',
-  textSecondary:   '#8A9BB5',
-  textMuted:       '#4E6280',
-  green:           '#22C55E',
-  greenDim:        'rgba(34,197,94,0.10)',
-  greenBorder:     'rgba(34,197,94,0.22)',
+  textPrimary: '#EFF3F8',
+  textSecondary: '#8A9BB5',
+  textMuted: '#4E6280',
+  green: '#22C55E',
+  greenDim: 'rgba(34,197,94,0.10)',
+  greenBorder: 'rgba(34,197,94,0.22)',
 };
- 
+
 export default function WildTrackScreen() {
   const router = useRouter();
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
- 
-  const S = {
-    px:      isLandscape ? 16 : 13,
-    gap:     isLandscape ? 10 : 8,
-    cardPad: isLandscape ? 13 : 11,
-    radius:  15,
-    radiusLg: 20,
-  };
- 
+  const insets = useSafeAreaInsets();
+  // Cap the top inset instead of letting SafeAreaView pass through the full
+  // value — on devices with a front-camera cutout / Dynamic Island this can
+  // be quite large and pushes the header down further than it needs to.
+  const headerTopPadding = Math.min(insets.top, 14);
+
   const {
     selectedMountainId,
     setSelectedMountainId,
@@ -71,18 +56,44 @@ export default function WildTrackScreen() {
     mountainBiodiversity,
     createDiscovery,
   } = useWildTrackStore();
- 
-  const [selectedSpecies, setSelectedSpecies]   = useState<Species | null>(null);
-  const [showLockedModal, setShowLockedModal]   = useState(false);
+
+  const [selectedSpecies, setSelectedSpecies] = useState<Species | null>(null);
+  const [showLockedModal, setShowLockedModal] = useState(false);
   const [showMountainInfo, setShowMountainInfo] = useState(true);
- 
+  const [imageError, setImageError] = useState(false);
+  const [mountains, setMountains] = useState<Mountain[]>(() =>
+    mountainService.getCachedMountains()
+  );
+
   const currentMountain =
-    MOUNTAINS.find((m) => m.id === selectedMountainId) || MOUNTAINS[0];
- 
-  const localMountainInfo = getMountainBiodiversity(selectedMountainId);
- 
-  useEffect(() => { loadWildTrackData(); }, [selectedMountainId]);
- 
+    mountains.find((m) => m.id === selectedMountainId) || mountains[0];
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadMountains = async () => {
+      try {
+        const data = await mountainService.fetchMountains();
+        if (!mounted) return;
+        setMountains(data);
+        if (!selectedMountainId && data[0]) {
+          setSelectedMountainId(data[0].id);
+        }
+      } catch (error) {
+        console.error('[WildTrack] Failed to load mountains:', error);
+      }
+    };
+
+    loadMountains();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedMountainId, setSelectedMountainId]);
+
+  useEffect(() => {
+    if (selectedMountainId) loadWildTrackData();
+  }, [selectedMountainId]);
+
   const loadWildTrackData = async () => {
     await Promise.all([
       fetchFeaturedSpecies(selectedMountainId),
@@ -91,355 +102,422 @@ export default function WildTrackScreen() {
       fetchMountainBiodiversity(selectedMountainId),
     ]);
   };
- 
-  const handleSpeciesPress    = (species: Species) => { setSelectedSpecies(species); setShowLockedModal(true); };
+
+  const handleSpeciesPress = (species: Species) => {
+    setImageError(false);
+    setSelectedSpecies(species);
+    setShowLockedModal(true);
+  };
+
   const handleDiscoverSpecies = async () => {
     if (!selectedSpecies) return;
     const { error } = await createDiscovery(selectedSpecies.id, selectedMountainId);
-    if (!error) { setShowLockedModal(false); setSelectedSpecies(null); await loadWildTrackData(); }
+    if (!error) {
+      setShowLockedModal(false);
+      setSelectedSpecies(null);
+      await loadWildTrackData();
+    }
   };
- 
-  const mountainInfo = mountainBiodiversity || localMountainInfo;
+
   const displayMountainInfo = useMemo(() => {
-    if (!mountainInfo) return null;
+    if (!mountainBiodiversity) return null;
+    const info: any = mountainBiodiversity;
     return {
-      ...mountainInfo,
-      curated_species_count:
-        (mountainInfo as any).curated_species_count  || (mountainInfo as any).curatedSpeciesCount  || 0,
-      endemic_species_count:
-        (mountainInfo as any).endemic_species_count  || (mountainInfo as any).endemicSpeciesCount  || 0,
-      conservation_status:
-        (mountainInfo as any).conservation_status    || (mountainInfo as any).conservationStatus   || '',
+      ...info,
+      curated_species_count: info.curated_species_count || info.curatedSpeciesCount || 0,
+      endemic_species_count: info.endemic_species_count || info.endemicSpeciesCount || 0,
+      conservation_status: info.conservation_status || info.conservationStatus || '',
     };
-  }, [mountainInfo]);
- 
-  const styles = StyleSheet.create({
-    container:     { flex: 1, backgroundColor: C.bg },
-    scrollView:    { flex: 1 },
-    scrollContent: {
-      paddingHorizontal: S.px,
-      paddingTop: 10,
-      paddingBottom: 26,
-      gap: S.gap,
-    },
-    hero: {
-      backgroundColor: C.surface,
-      borderRadius: S.radiusLg,
-      borderWidth: 1,
-      borderColor: C.border,
-      paddingHorizontal: S.cardPad,
-      paddingVertical: S.cardPad,
-    },
-    heroRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-    },
-    navIconBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: 10,
-      backgroundColor: C.surfaceAlt,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1,
-      borderColor: C.border,
-      flexShrink: 0,
-    },
-    heroTitleBlock: { flex: 1, gap: 3 },
-    badge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      alignSelf: 'flex-start',
-      backgroundColor: C.accentDim,
-      borderRadius: 999,
-      paddingHorizontal: 7,
-      paddingVertical: 3,
-      gap: 4,
-    },
-    badgeText: { color: C.accent, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
-    heroTitle: { color: C.textPrimary, fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
-    locationPill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      alignSelf: 'flex-start',
-      backgroundColor: C.accentDim,
-      borderRadius: 999,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      gap: 4,
-    },
-    locationText: { color: C.accent, fontSize: 9, fontWeight: '600' },
-    heroCounters: { flexDirection: 'row', gap: 5, flexShrink: 0 },
-    counterCard: {
-      width: 60,
-      backgroundColor: C.surfaceAlt,
-      borderRadius: 11,
-      paddingVertical: 7,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: C.border,
-    },
-    counterValue: { color: C.textPrimary, fontSize: 16, fontWeight: '800' },
-    counterLabel: {
-      color: C.textMuted,
-      fontSize: 8,
-      fontWeight: '700',
-      marginTop: 2,
-      textTransform: 'uppercase',
-      letterSpacing: 0.4,
-    },
-    searchPill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: C.surfaceAlt,
-      borderRadius: 999,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      gap: 5,
-      borderWidth: 1,
-      borderColor: C.border,
-      flexShrink: 0,
-    },
-    searchPillText: { color: C.textSecondary, fontSize: 10, fontWeight: '500' },
-    selectorContent: { gap: 6, paddingRight: 4 },
-    chip:            { backgroundColor: C.surface, borderRadius: 999, borderWidth: 1, borderColor: C.border, paddingHorizontal: 12, paddingVertical: 7 },
-    chipActive:      { borderColor: C.accent, backgroundColor: C.accentDim },
-    chipText:        { color: C.textSecondary, fontSize: 11, fontWeight: '600' },
-    chipTextActive:  { color: C.textPrimary },
-    grid: {
-      flexDirection: isLandscape ? 'row' : 'column',
-      alignItems:    'flex-start',
-      gap: S.gap,
-    },
-    leftCol: {
-      width: isLandscape ? 310 : '100%',
-      gap: S.gap,
-      flexShrink: 0,
-    },
-    rightCol: {
-      flex: 1,
-      minWidth: 0,
-      width: isLandscape ? undefined : '100%',
-    },
-    infoCard: {
-      backgroundColor: C.surface,
-      borderRadius: S.radius,
-      borderWidth: 1,
-      borderColor: C.border,
-      padding: S.cardPad,
-    },
-    infoHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    infoHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-    infoIconWrap:   { width: 28, height: 28, borderRadius: 8, backgroundColor: C.accentDim, alignItems: 'center', justifyContent: 'center' },
-    infoTitle:      { color: C.textPrimary, fontSize: 12, fontWeight: '700' },
-    infoCaption:    { color: C.textMuted, fontSize: 9, marginTop: 1 },
-    infoBody:       { marginTop: 9, gap: 7 },
-    infoDesc:       { color: C.textSecondary, fontSize: 10, lineHeight: 15 },
-    infoMiniRow:    { flexDirection: 'row', gap: 5 },
-    infoMiniCard:   { flex: 1, backgroundColor: C.surfaceAlt, borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
-    infoMiniVal:    { color: C.textPrimary, fontSize: 14, fontWeight: '700' },
-    infoMiniLabel:  { color: C.textMuted, fontSize: 9, marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.4 },
-    tagsRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
-    tag:            { backgroundColor: C.surfaceAlt, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
-    tagAccent:      { borderWidth: 1, borderColor: C.accentDimBorder },
-    tagText:        { color: C.textSecondary, fontSize: 10, fontWeight: '500' },
-    tagAccentText:  { color: C.accent, fontSize: 10, fontWeight: '600' },
-    quickRow: { flexDirection: 'row', gap: 6 },
-    quickBtn: {
-      flex: 1,
-      backgroundColor: C.surface,
-      borderRadius: S.radius,
-      borderWidth: 1,
-      borderColor: C.border,
-      paddingVertical: 10,
-      alignItems: 'center',
-      gap: 4,
-    },
-    quickBtnText: { color: C.textPrimary, fontSize: 10, fontWeight: '600' },
-    featuredCard: {
-      backgroundColor: C.surface,
-      borderRadius: S.radiusLg,
-      borderWidth: 1,
-      borderColor: C.border,
-      padding: S.cardPad,
-      overflow: 'hidden',
-      width: '100%',
-    },
-    sectionHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 },
-    sectionTitle:    { color: C.textPrimary, fontSize: 12, fontWeight: '700' },
-    sectionSubtitle: { color: C.textSecondary, fontSize: 10, marginTop: 2 },
-    sectionLink:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    sectionLinkText: { color: C.accent, fontSize: 10, fontWeight: '600' },
-    carouselWrap: {
-      borderRadius: 12,
-      overflow: 'hidden',
-      width: '100%',
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(5,10,20,0.92)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: isLandscape ? 28 : 16,
-      paddingVertical:   isLandscape ? 20 : 18,
-    },
-    modalContainer: {
-      width: '100%',
-      maxWidth:  isLandscape ? 860 : 460,
-      maxHeight: isLandscape ? '92%' : '88%',
-      backgroundColor: C.surface,
-      borderRadius: 24,
-      borderWidth: 1,
-      borderColor: C.border,
-      overflow: 'hidden',
-    },
-    modalScroll: { padding: isLandscape ? 18 : 14 },
-    modalBody: {
-      flexDirection: isLandscape ? 'row' : 'column',
-      gap: isLandscape ? 16 : 12,
-    },
-    modalImgWrap: {
-      width:  isLandscape ? '42%' : '100%',
-      height: isLandscape ? 300 : 200,
-      borderRadius: 14,
-      overflow: 'hidden',
-      backgroundColor: C.bg,
-      borderWidth: 1,
-      borderColor: C.border,
-      flexShrink: 0,
-    },
-    modalImg: { width: '100%', height: '100%' },
-    modalInfo:       { flex: 1, gap: 8, minWidth: 0 },
-    modalName:       { color: C.textPrimary, fontSize: 14, fontWeight: '700' },
-    modalScientific: { color: C.accent, fontSize: 10, fontStyle: 'italic', marginTop: 1 },
-    modalDesc:       { color: C.textSecondary, fontSize: 10, lineHeight: 15 },
-    modalMetaList:   { gap: 5 },
-    modalMetaRow:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    modalMetaText:   { flex: 1, color: C.textSecondary, fontSize: 10 },
-    discoverBtn: {
-      marginTop: 12,
-      backgroundColor: C.accent,
-      borderRadius: 13,
-      paddingVertical: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 7,
-    },
-    discoverBtnText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
-    discoveredBadge: {
-      marginTop: 12,
-      backgroundColor: C.greenDim,
-      borderRadius: 13,
-      paddingVertical: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 7,
-      borderWidth: 1,
-      borderColor: C.greenBorder,
-    },
-    discoveredText: { color: C.green, fontSize: 11, fontWeight: '700' },
-    closeBtn:     { alignSelf: 'center', marginTop: 8, paddingHorizontal: 16, paddingVertical: 6 },
-    closeBtnText: { color: C.textMuted, fontSize: 11, fontWeight: '600' },
-  });
- 
+  }, [mountainBiodiversity]);
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: headerTopPadding + 8 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
-          <View style={styles.heroRow}>
-            <TouchableOpacity
-              onPress={() => router.replace('/Home')}
-              style={styles.navIconBtn}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="arrow-back" size={16} color={C.textPrimary} />
-            </TouchableOpacity>
+        {/* TOP NAV */}
+        <View style={styles.navRow}>
+          <TouchableOpacity
+            onPress={() => router.replace('/Home')}
+            style={styles.navIconBtn}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="home-outline" size={18} color={C.textPrimary} />
+          </TouchableOpacity>
 
-            <View style={styles.heroTitleBlock}>
-              <View style={styles.badge}>
-                <Ionicons name="leaf-outline" size={10} color={C.accent} />
-              </View>
-              <Text style={styles.heroTitle}>WildTrack</Text>
-              <View style={styles.locationPill}>
-                <Ionicons name="navigate-outline" size={11} color={C.accent} />
-              </View>
+          <View style={styles.navTitleBlock}>
+            <View style={styles.badge}>
+              <Ionicons name="leaf" size={12} color={C.accent} />
+              <Text style={styles.badgeText}>WILDTRACK</Text>
             </View>
-
-            <View style={styles.heroCounters}>
-              <View style={styles.counterCard}>
-              </View>
-              <View style={styles.counterCard}>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => router.push('/wildtrack/SpeciesSearch')}
-              style={styles.searchPill}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="search" size={13} color={C.textSecondary} />
-              <Text style={styles.searchPillText}>Search</Text>
-            </TouchableOpacity>
-
+            <Text style={styles.navTitle}>Biodiversity Tracker</Text>
           </View>
+
+          <TouchableOpacity
+            onPress={() => router.push('/wildtrack/SpeciesSearch')}
+            style={styles.navIconBtnFancy}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="search" size={17} color="#FFF" />
+          </TouchableOpacity>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.selectorContent}
-        >
-          {MOUNTAINS.map((m) => {
-            const active = selectedMountainId === m.id;
-            return (
-              <TouchableOpacity key={m.id} />
-            );
-          })}
-        </ScrollView>
+        {/* HERO: mountain tabs + info (left) + discoveries (right) */}
+        <View style={styles.hero}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.selectorContent}
+          >
+            {mountains.map((m) => {
+              const active = selectedMountainId === m.id;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  onPress={() => setSelectedMountainId(m.id)}
+                  style={[styles.chip, active && styles.chipActive]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                    {m.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-        <View style={styles.grid}>
-          <View style={styles.leftCol}>
+          <View style={styles.heroRow}>
+            {/* LEFT: mountain info */}
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={() => setShowMountainInfo(!showMountainInfo)}
               style={styles.infoCard}
             >
+              <View style={styles.infoHeader}>
+                <View style={styles.infoTitleBlock}>
+                  <Text style={styles.infoEyebrow}>CURRENT MOUNTAIN</Text>
+                  <Text style={styles.infoTitle} numberOfLines={2}>
+                    {currentMountain?.name || 'Loading...'}
+                  </Text>
+                </View>
+                <Ionicons
+                  name={showMountainInfo ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={C.textSecondary}
+                />
+              </View>
+
+              {showMountainInfo && (
+                <>
+                  <Text style={styles.infoDescription} numberOfLines={6}>
+                    {displayMountainInfo?.description ||
+                      currentMountain?.description ||
+                      'Biodiversity information is not available yet.'}
+                  </Text>
+                  <View style={styles.infoMetaRow}>
+                    <Text style={styles.infoMetaText} numberOfLines={2}>
+                      {displayMountainInfo?.ecosystem ||
+                        currentMountain?.difficulty ||
+                        'Habitat pending'}
+                    </Text>
+                    <Text style={styles.infoMetaText} numberOfLines={2}>
+                      {displayMountainInfo?.conservation_status ||
+                        'Conservation status pending'}
+                    </Text>
+                  </View>
+                </>
+              )}
             </TouchableOpacity>
 
-            <ProgressCard
-              stats={stats}
-              mountainName={currentMountain.name}
-              onExplorePress={() => router.push('/wildtrack/SpeciesSearch')}
+            {/* RIGHT: your discoveries */}
+            <View style={styles.progressWrap}>
+              <ProgressCard
+                stats={stats}
+                mountainName={currentMountain?.name || 'Mountain'}
+                onExplorePress={() => router.push('/wildtrack/SpeciesSearch')}
+                onDiscoveriesPress={() => router.push('/wildtrack/Discoveries')}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* FEATURED SPECIES */}
+        <View style={styles.featuredCard}>
+          <View style={styles.featuredHeader}>
+            <View>
+              <Text style={styles.featuredTitle}>Featured Species</Text>
+              <Text style={styles.featuredSubtitle}>Curated for this mountain</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/wildtrack/FeaturedSpecies')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {isLoading && featuredSpecies.length === 0 ? (
+            <ActivityIndicator color={C.accent} style={styles.loader} />
+          ) : featuredSpecies.length > 0 ? (
+            <SpeciesCarousel
+              species={featuredSpecies}
+              onSpeciesPress={handleSpeciesPress}
+              discoveredSpecies={
+                new Set(featuredSpecies.filter((s) => s.discovered).map((s) => s.id))
+              }
             />
-
-            <View style={styles.quickRow}>
-            </View>
-          </View>
-
-          <View style={styles.rightCol}>
-            <View style={styles.featuredCard}>
-            </View>
-          </View>
+          ) : (
+            <Text style={styles.emptyFeaturedText}>
+              No curated species have been added for this mountain yet.
+            </Text>
+          )}
         </View>
 
       </ScrollView>
 
-      <Modal visible={showLockedModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+      {/* SPECIES DETAIL — floating centered modal, tap the backdrop to close */}
+      <Modal
+        visible={showLockedModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLockedModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowLockedModal(false)}
+        >
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             {selectedSpecies && (
-              <View />
+              <>
+                <View style={styles.modalImgWrap}>
+                  {selectedSpecies.image_url && !imageError ? (
+                    <Image
+                      source={{ uri: selectedSpecies.image_url }}
+                      style={styles.modalImg}
+                      resizeMode="cover"
+                      onError={() => setImageError(true)}
+                    />
+                  ) : (
+                    <View style={styles.modalImgFallback}>
+                      <Ionicons name="leaf-outline" size={34} color={C.textMuted} />
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.modalTextBlock}>
+                  <Text style={styles.modalName} numberOfLines={1}>
+                    {selectedSpecies.common_name}
+                  </Text>
+                  <Text style={styles.modalScientific} numberOfLines={1}>
+                    {selectedSpecies.scientific_name}
+                  </Text>
+                  <Text style={styles.modalDescription} numberOfLines={3}>
+                    {selectedSpecies.description ||
+                      'Record this species as discovered on this mountain?'}
+                  </Text>
+
+                  {selectedSpecies.discovered ? (
+                    <View style={styles.discoveredBadge}>
+                      <Ionicons name="checkmark-circle" size={15} color={C.green} />
+                      <Text style={styles.discoveredText}>Discovered</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity onPress={handleDiscoverSpecies} style={styles.discoverBtn}>
+                      <Ionicons name="leaf" size={15} color="#FFF" />
+                      <Text style={styles.discoverBtnText}>Mark discovered</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
             )}
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.bg },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 28, gap: 12 },
+
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  navIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: C.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  navIconBtnFancy: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.accent,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  navTitleBlock: { flex: 1, alignItems: 'center', gap: 5 },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.accentDim,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    gap: 5,
+    borderWidth: 1,
+    borderColor: C.accentDimBorder,
+  },
+  badgeText: { color: C.accent, fontSize: 13, fontWeight: '800', letterSpacing: 0.8 },
+  navTitle: {
+    color: C.textSecondary,
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+
+  hero: {
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+    gap: 12,
+  },
+  // Left info : right discoveries = 4 : 6 (discoveries is the bigger one)
+  heroRow: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
+  progressWrap: { flex: 6 },
+
+  selectorContent: { gap: 8, paddingVertical: 2 },
+  chip: {
+    backgroundColor: C.surfaceAlt,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  chipActive: { borderColor: C.accent, backgroundColor: C.accentDim },
+  chipText: { color: C.textSecondary, fontSize: 12, fontWeight: '600' },
+  chipTextActive: { color: C.textPrimary },
+
+  infoCard: {
+    flex: 4,
+    backgroundColor: C.surfaceAlt,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+  },
+  infoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 },
+  infoTitleBlock: { flex: 1 },
+  infoEyebrow: {
+    color: C.textMuted,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    marginBottom: 3,
+  },
+  infoTitle: { color: C.textPrimary, fontSize: 13, fontWeight: '700' },
+  infoDescription: { color: C.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 8 },
+  infoMetaRow: { flexDirection: 'column', gap: 4, marginTop: 8 },
+  infoMetaText: { color: C.textMuted, fontSize: 10 },
+
+  featuredCard: {
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+  },
+  featuredHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  featuredTitle: { color: C.textPrimary, fontSize: 14, fontWeight: '700' },
+  featuredSubtitle: { color: C.textSecondary, fontSize: 11, marginTop: 2 },
+  seeAllText: { color: C.accent, fontSize: 11, fontWeight: '700' },
+  loader: { marginVertical: 28 },
+  emptyFeaturedText: {
+    color: C.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    paddingVertical: 24,
+    textAlign: 'center',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    flexDirection: 'row',
+    width: '92%',
+    maxWidth: 460,
+    height: 240,
+    backgroundColor: C.surface,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  modalImgWrap: {
+    flex: 1.3,
+    height: '100%',
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  modalImg: { width: '100%', height: '100%' },
+  modalImgFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  modalTextBlock: { flex: 1, justifyContent: 'center', gap: 4 },
+  modalName: { color: C.textPrimary, fontSize: 17, fontWeight: '700' },
+  modalScientific: { color: C.accent, fontSize: 12, fontStyle: 'italic' },
+  modalDescription: { color: C.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 6 },
+  discoverBtn: {
+    marginTop: 14,
+    backgroundColor: C.accent,
+    borderRadius: 13,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  discoverBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  discoveredBadge: {
+    marginTop: 14,
+    backgroundColor: C.greenDim,
+    borderRadius: 13,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
+  },
+  discoveredText: { color: C.green, fontSize: 13, fontWeight: '700' },
+});
