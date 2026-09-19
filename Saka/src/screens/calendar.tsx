@@ -1,13 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   Modal,
-  TextInput,
-  ScrollView,
-  Alert,
-  RefreshControl,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -16,54 +12,39 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useHikesStore } from '../store/hikesStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
-import { getMountainById } from '../data/mountains';
+import { mountainService } from '../services/mountainService'; // ⚠️ adjust path if different in your project
 import { getWeatherForecast } from '../services/weatherService';
-import { Hike } from '../types';
 import { useAuthStore } from '../store/authStore';
+import HikeFormModal from '../components/HikeFormModal';
+import Toast, { ToastHandle } from '../components/Toast';
 
-interface HikeFormData {
-  date: string;
-  start_time: string;
-  end_time: string;
-  tagalongs: string;
-  contact_number: string;
-  emergency_contact: string;
+// ⚠️ Replace with your actual Mountain type import (e.g. from '../types')
+// if one already exists — this is a minimal shape to satisfy the fields
+// this screen actually uses.
+interface Mountain {
+  id: string;
+  latitude: number;
+  longitude: number;
+  [key: string]: any;
 }
-
-const INITIAL_FORM: HikeFormData = {
-  date: new Date().toISOString().split('T')[0],
-  start_time: '08:00',
-  end_time: '16:00',
-  tagalongs: '1',
-  contact_number: '',
-  emergency_contact: '',
-};
 
 export default function CalendarScreen() {
   const router = useRouter();
   const { mountainId } = useLocalSearchParams<{ mountainId?: string }>();
-  const { hikes, fetchHikes, createHike, updateHike, deleteHike, isLoading } = useHikesStore();
+  const { hikes, fetchHikes } = useHikesStore();
   const { user } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
   const activeMountainId = mountainId ?? selectedMountainId ?? null;
-  const selectedMountain = activeMountainId ? getMountainById(activeMountainId) : null;
 
-  const handleBackPress = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/Home');
-    }
-  };
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingHike, setEditingHike] = useState<Hike | null>(null);
-  const [formData, setFormData] = useState<HikeFormData>(INITIAL_FORM);
-  const [refreshing, setRefreshing] = useState(false);
+  const [infoVisible, setInfoVisible] = useState(false);
+  const toastRef = useRef<ToastHandle>(null);
   const [forecastByDate, setForecastByDate] = useState<Record<string, { icon: string; description: string; tempMin: number; tempMax: number }>>({});
   const [forecastLoading, setForecastLoading] = useState(false);
+  const [resolvedMountain, setResolvedMountain] = useState<Mountain | null>(null);
 
   useEffect(() => {
     if (!user || !activeMountainId) {
@@ -73,15 +54,56 @@ export default function CalendarScreen() {
     fetchHikes(activeMountainId);
   }, [user, activeMountainId]);
 
+  // Resolve the active mountain by its Supabase UUID — cache first (same
+  // cache MountainTop reads from), then a network fetch as a fallback.
+  // No fake '1' fallback: if nothing resolves, resolvedMountain stays null
+  // and the weather effect below clears the forecast instead of guessing.
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveMountain = async () => {
+      if (!activeMountainId) {
+        setResolvedMountain(null);
+        return;
+      }
+
+      const cached = mountainService.getCachedMountainById(activeMountainId);
+      if (cached) {
+        setResolvedMountain(cached);
+        return;
+      }
+
+      try {
+        const fetched = await mountainService.fetchMountainById(activeMountainId);
+        if (!cancelled) {
+          setResolvedMountain(fetched ?? null);
+        }
+      } catch (error) {
+        console.warn('[Calendar] Failed to resolve mountain', error);
+        if (!cancelled) {
+          setResolvedMountain(null);
+        }
+      }
+    };
+
+    resolveMountain();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMountainId]);
+
   useEffect(() => {
     const loadForecast = async () => {
-      if (!selectedMountain) {
+      if (!resolvedMountain) {
+        // Nothing resolved — clear instead of silently showing stale/default weather
+        setForecastByDate({});
         return;
       }
 
       setForecastLoading(true);
       try {
-        const forecast = await getWeatherForecast(selectedMountain.latitude, selectedMountain.longitude);
+        const forecast = await getWeatherForecast(resolvedMountain.latitude, resolvedMountain.longitude);
         const mappedForecast = forecast.reduce((acc, day) => {
           acc[day.date] = {
             icon: day.icon,
@@ -101,17 +123,8 @@ export default function CalendarScreen() {
     };
 
     loadForecast();
-  }, [selectedMountain?.latitude, selectedMountain?.longitude]);
+  }, [resolvedMountain?.id, resolvedMountain?.latitude, resolvedMountain?.longitude]);
 
-  const onRefresh = useCallback(async () => {
-    if (!activeMountainId) {
-      return;
-    }
-
-    setRefreshing(true);
-    await fetchHikes(activeMountainId);
-    setRefreshing(false);
-  }, [fetchHikes, activeMountainId]);
 
   const markedDates = hikes.reduce((acc, hike) => {
     const isSelected = hike.date === selectedDate;
@@ -130,89 +143,27 @@ export default function CalendarScreen() {
   }
 
   // Pressing a date opens the add modal directly
+  const lastLongPressAtRef = useRef<number>(0);
+
   const handleDayPress = (day: DateData) => {
-    setSelectedDate(day.dateString);
-    setEditingHike(null);
-    setFormData({ ...INITIAL_FORM, date: day.dateString });
-    setModalVisible(true);
-  };
-
-  const openEditModal = (hike: Hike) => {
-    setEditingHike(hike);
-    setFormData({
-      date: hike.date,
-      start_time: hike.start_time,
-      end_time: hike.end_time,
-      tagalongs: hike.tagalongs.toString(),
-      contact_number: hike.contact_number,
-      emergency_contact: hike.emergency_contact,
-    });
-    setModalVisible(true);
-  };
-
-  const handleSave = async () => {
-    if (!formData.contact_number || !formData.emergency_contact) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    // React Native's Touchable fires onPress right after onLongPress on
+    // release — without this guard, long-pressing a date would toggle the
+    // hikes panel AND immediately pop the add-hike modal over it.
+    if (Date.now() - lastLongPressAtRef.current < 500) {
       return;
     }
-
-    const hikeData = {
-      date: formData.date,
-      start_time: formData.start_time,
-      end_time: formData.end_time,
-      tagalongs: parseInt(formData.tagalongs) || 1,
-      contact_number: formData.contact_number,
-      emergency_contact: formData.emergency_contact,
-      mountain_id: editingHike?.mountain_id || activeMountainId,
-    };
-
-    if (editingHike) {
-      const { error } = await updateHike(editingHike.id, hikeData);
-      if (error) {
-        Alert.alert('Error', error);
-      } else {
-        Alert.alert('Success', 'Hike updated successfully');
-        setModalVisible(false);
-      }
-    } else {
-      const { error } = await createHike(hikeData);
-      if (error) {
-        Alert.alert('Error', error);
-      } else {
-        Alert.alert('Success', 'Hike scheduled successfully');
-        setModalVisible(false);
-      }
-    }
+    setSelectedDate(day.dateString);
+    setModalVisible(true);
   };
 
-  const handleDelete = (hike: Hike) => {
-    Alert.alert(
-      'Delete Hike',
-      'Are you sure you want to delete this hike?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const { error } = await deleteHike(hike.id);
-            if (error) {
-              Alert.alert('Error', error);
-            } else {
-              Alert.alert('Success', 'Hike deleted');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const formatTime = (time: string) => {
-    const [hours, minutes] = time.split(':');
-    const hour = parseInt(hours, 10);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
+  // Long-pressing a date navigates to the Hikes grid screen for that day
+  const handleDayLongPress = (day: DateData) => {
+    lastLongPressAtRef.current = Date.now();
+    setSelectedDate(day.dateString);
+    router.push({
+      pathname: '/Hikes',
+      params: { date: day.dateString, mountainId: activeMountainId ?? undefined },
+    });
   };
 
   const formatDate = (dateString: string) => {
@@ -241,9 +192,9 @@ export default function CalendarScreen() {
     return 'cloud-outline';
   };
 
-  const getWeatherIconColor = (iconCode?: string, isSelected?: boolean) => {
+  const getWeatherIconColor = (iconCode?: string) => {
     if (!iconCode) {
-      return isSelected ? '#0E1520' : 'rgba(201,169,110,0.35)';
+      return 'rgba(201,169,110,0.35)';
     }
 
     if (iconCode.startsWith('01')) return '#F2C94C';
@@ -257,10 +208,19 @@ export default function CalendarScreen() {
   };
 
   const hikeDates = new Set(hikes.map((hike) => hike.date));
-  const hikesOnSelectedDate = hikes.filter((h) => h.date === selectedDate);
   const todayDateString = new Date().toISOString().split('T')[0];
 
-  const renderDayComponent = ({ date, state, onPress }: { date?: DateData; state?: string; onPress?: (date: DateData) => void }) => {
+  const renderDayComponent = ({
+    date,
+    state,
+    onPress,
+    onLongPress,
+  }: {
+    date?: DateData;
+    state?: string;
+    onPress?: (date: DateData) => void;
+    onLongPress?: (date: DateData) => void;
+  }) => {
     if (!date) {
       return null;
     }
@@ -271,15 +231,16 @@ export default function CalendarScreen() {
     const isToday = date.dateString === todayDateString;
     const isDisabled = state === 'disabled';
     const weatherIconName = getWeatherIconName(weather?.icon);
-    const weatherIconColor = getWeatherIconColor(weather?.icon, isSelected);
+    const weatherIconColor = getWeatherIconColor(weather?.icon);
 
     return (
       <TouchableOpacity
         onPress={() => !isDisabled && onPress?.(date)}
+        onLongPress={() => !isDisabled && onLongPress?.(date)}
+        delayLongPress={350}
         style={[
           styles.dayContainer,
           isSelected && styles.daySelected,
-          !isSelected && isToday && styles.dayToday,
           isDisabled && styles.dayDisabled,
         ]}
         activeOpacity={0.7}
@@ -287,64 +248,73 @@ export default function CalendarScreen() {
         <Text style={[
           styles.dayNumber,
           isDisabled && styles.dayNumberDisabled,
-          isSelected && styles.dayNumberSelected,
-          !isSelected && isToday && styles.dayNumberToday,
+          isToday && styles.dayNumberToday,
         ]}>
           {date.day}
         </Text>
 
-        <Ionicons
-          name={weatherIconName}
-          size={14}
-          color={weatherIconColor}
-          style={[styles.weatherMarker, !weather && styles.weatherMarkerPlaceholder]}
-        />
-
-        {hasHike ? (
-          <View style={styles.hikeMarker}>
-            <Ionicons name="people-outline" size={10} color="#C9A96E" />
-          </View>
-        ) : null}
+        <View style={styles.dayIconRow}>
+          <Ionicons
+            name={weatherIconName}
+            size={9}
+            color={weatherIconColor}
+            style={!weather && styles.weatherMarkerPlaceholder}
+          />
+          {hasHike ? (
+            <View style={styles.hikeMarker}>
+              <Ionicons name="people-outline" size={7} color="#C9A96E" />
+            </View>
+          ) : null}
+        </View>
       </TouchableOpacity>
     );
   };
 
+  const handleHomePress = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/Home');
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#C9A96E" />}
-      >
+      <View style={styles.centerWrap}>
         {/* Calendar card */}
         <View style={styles.calendarCard}>
-          <View style={styles.calendarHeaderTop}>
-            <View style={styles.calendarHeaderItem}>
-              <View style={styles.calendarIconWrapper}>
-                <Ionicons name="calendar" size={16} color="#C9A96E" />
-              </View>
-              <View>
-                <Text style={styles.calendarTitle}>Calendar</Text>
-                <Text style={styles.calendarSubTitle}>Tap a date to schedule a hike</Text>
-                {forecastLoading ? (
-                  <Text style={styles.forecastLoadingText}>Updating forecast for selected mountain...</Text>
-                ) : null}
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.homeBtn}
-              onPress={handleBackPress}
-              accessibilityLabel="Go back"
-              accessibilityRole="button"
-            >
-              <Ionicons name="arrow-back-outline" size={18} color="#C9A96E" />
-            </TouchableOpacity>
-          </View>
+          {forecastLoading ? (
+            <Text style={styles.forecastLoadingText}>Updating forecast…</Text>
+          ) : null}
 
           <Calendar
             style={styles.calendar}
             onDayPress={handleDayPress}
+            onDayLongPress={handleDayLongPress}
             markedDates={markedDates}
             dayComponent={renderDayComponent}
+            monthFormat="MMMM yyyy"
+            renderHeader={(date: any) => (
+              <View style={styles.monthHeaderRow}>
+                <TouchableOpacity
+                  style={styles.headerIconBtn}
+                  onPress={handleHomePress}
+                  accessibilityLabel="Go home"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="home-outline" size={13} color="#C9A96E" />
+                </TouchableOpacity>
+                <Text style={styles.monthHeaderText}>{date ? date.toString('MMMM yyyy') : ''}</Text>
+                <TouchableOpacity
+                  style={styles.infoBtn}
+                  onPress={() => setInfoVisible(true)}
+                  accessibilityLabel="How to use the calendar"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.infoBtnText}>i</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             theme={{
               backgroundColor: 'transparent',
               calendarBackground: 'transparent',
@@ -358,9 +328,9 @@ export default function CalendarScreen() {
               arrowColor: '#C9A96E',
               monthTextColor: '#FFFFFF',
               textMonthFontWeight: '700',
-              textDayFontSize: 13,
-              textMonthFontSize: 14,
-              textDayHeaderFontSize: 11,
+              textDayFontSize: 11,
+              textMonthFontSize: 12,
+              textDayHeaderFontSize: 9,
               textDayHeaderFontWeight: '600',
               textSectionTitleColor: 'rgba(255,255,255,0.35)',
             }}
@@ -377,227 +347,47 @@ export default function CalendarScreen() {
           />
 
           <View style={styles.legendRow}>
-            <View style={styles.legendItem}>
-              <Ionicons name="partly-sunny-outline" size={12} color="#C9A96E" />
-              <Text style={styles.legendText}>Weather</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <Ionicons name="people-outline" size={12} color="#C9A96E" />
-              <Text style={styles.legendText}>Hike scheduled</Text>
-            </View>
+            <Ionicons name="partly-sunny-outline" size={10} color="rgba(201,169,110,0.7)" />
+            <Text style={styles.legendText}>Weather</Text>
+            <Text style={styles.legendDot}>·</Text>
+            <Ionicons name="people-outline" size={10} color="rgba(201,169,110,0.7)" />
+            <Text style={styles.legendText}>Hike scheduled</Text>
           </View>
         </View>
+      </View>
 
-        {/* Hike list for selected date */}
-        <View style={styles.hikesSection}>
-          <Text style={styles.hikesSectionLabel}>
-            {hikesOnSelectedDate.length > 0
-              ? `${hikesOnSelectedDate.length} hike${hikesOnSelectedDate.length > 1 ? 's' : ''} on this day`
-              : 'No hikes on this date'}
-          </Text>
+      <HikeFormModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        editingHike={null}
+        defaultDate={selectedDate}
+        mountainId={activeMountainId}
+        onSaved={() => {
+          toastRef.current?.show({
+            type: 'success',
+            title: 'Hike scheduled',
+            message: 'Added to your calendar.',
+          });
+        }}
+      />
+      <Toast ref={toastRef} />
 
-          {hikesOnSelectedDate.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconWrap}>
-                <Ionicons name="map-outline" size={22} color="rgba(201,169,110,0.5)" />
-              </View>
-              <Text style={styles.emptyTitle}>Nothing planned yet</Text>
-              <Text style={styles.emptyBody}>Tap any date on the calendar to schedule a hike.</Text>
+      {/* How-to-use popover, opened from the small "i" circle in the month header */}
+      <Modal animationType="fade" transparent visible={infoVisible} onRequestClose={() => setInfoVisible(false)}>
+        <View style={styles.infoOverlay}>
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>How to use the calendar</Text>
+            <View style={styles.infoRow}>
+              <Ionicons name="finger-print-outline" size={14} color="#C9A96E" />
+              <Text style={styles.infoText}>Tap a date to schedule a new hike.</Text>
             </View>
-          ) : (
-            <View style={styles.hikeList}>
-              {hikesOnSelectedDate.map((hike) => (
-                <View key={hike.id} style={styles.hikeCard}>
-                  {/* Card header */}
-                  <View style={styles.hikeCardHeader}>
-                    <View style={styles.hikeCardHeaderLeft}>
-                      <View style={styles.hikeIconWrap}>
-                        <Ionicons name="trail-sign" size={14} color="#C9A96E" />
-                      </View>
-                      <Text style={styles.hikeCardTitle}>Hike</Text>
-                    </View>
-                    <View style={styles.hikeBadge}>
-                      <Ionicons name="time-outline" size={11} color="rgba(201,169,110,0.7)" />
-                      <Text style={styles.hikeBadgeText}>
-                        {formatTime(hike.start_time)} – {formatTime(hike.end_time)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Card body */}
-                  <View style={styles.hikeCardBody}>
-                    <View style={styles.hikeInfoRow}>
-                      <View style={styles.hikeInfoItem}>
-                        <Ionicons name="people-outline" size={13} color="rgba(255,255,255,0.4)" />
-                        <Text style={styles.hikeInfoLabel}>Tagalongs</Text>
-                        <Text style={styles.hikeInfoValue}>{hike.tagalongs}</Text>
-                      </View>
-                      <View style={styles.hikeInfoDivider} />
-                      <View style={styles.hikeInfoItem}>
-                        <Ionicons name="call-outline" size={13} color="rgba(255,255,255,0.4)" />
-                        <Text style={styles.hikeInfoLabel}>Contact</Text>
-                        <Text style={styles.hikeInfoValue} numberOfLines={1}>{hike.contact_number}</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.emergencyRow}>
-                      <Ionicons name="warning-outline" size={12} color="rgba(201,169,110,0.6)" />
-                      <Text style={styles.emergencyLabel}>Emergency</Text>
-                      <Text style={styles.emergencyValue} numberOfLines={1}>{hike.emergency_contact}</Text>
-                    </View>
-
-                    <View style={styles.hikeActions}>
-                      <TouchableOpacity style={styles.editBtn} onPress={() => openEditModal(hike)}>
-                        <Ionicons name="pencil-outline" size={13} color="#C9A96E" />
-                        <Text style={styles.editBtnText}>Edit</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(hike)}>
-                        <Ionicons name="trash-outline" size={13} color="#E07070" />
-                        <Text style={styles.deleteBtnText}>Delete</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              ))}
+            <View style={styles.infoRow}>
+              <Ionicons name="time-outline" size={14} color="#C9A96E" />
+              <Text style={styles.infoText}>Hold a date to see the hikes already planned that day.</Text>
             </View>
-          )}
-        </View>
-      </ScrollView>
-
-      {/* Modal — ProfileCard dark theme */}
-      <Modal animationType="fade" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-
-            {/* Left accent panel */}
-            <View style={styles.modalLeftPanel}>
-              <View style={styles.modalAvatarWrap}>
-                <Ionicons name="trail-sign" size={18} color="#C9A96E" />
-              </View>
-              <Text style={styles.modalPanelTitle}>
-                {editingHike ? 'Edit\nHike' : 'New\nHike'}
-              </Text>
-
-              <View style={styles.modalDividerH} />
-
-              <View style={styles.modalDateBlock}>
-                <Ionicons name="calendar-outline" size={12} color="rgba(201,169,110,0.6)" />
-                <Text style={styles.modalDateSmall}>{formData.date}</Text>
-              </View>
-
-              <Text style={styles.modalDateFull} numberOfLines={3}>
-                {formatDate(formData.date)}
-              </Text>
-
-              <View style={{ flex: 1 }} />
-
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={12} color="rgba(255,255,255,0.5)" />
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Vertical divider */}
-            <View style={styles.modalDividerV} />
-
-            {/* Right form panel */}
-            <View style={styles.modalRightPanel}>
-              <View style={styles.modalRightHeader}>
-                <Text style={styles.modalRightTitle}>
-                  {editingHike ? 'Update Adventure' : 'Plan Adventure'}
-                </Text>
-              </View>
-
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalFormScroll}>
-
-                {/* Time row */}
-                <Text style={styles.fieldGroupLabel}>Time</Text>
-                <View style={styles.timeRow}>
-                  <View style={styles.timeField}>
-                    <Text style={styles.fieldLabel}>Start</Text>
-                    <View style={styles.inputWrap}>
-                      <Ionicons name="time-outline" size={12} color="rgba(201,169,110,0.5)" style={styles.inputIcon} />
-                      <TextInput
-                        style={styles.input}
-                        value={formData.start_time}
-                        onChangeText={(text) => setFormData({ ...formData, start_time: text })}
-                        placeholder="08:00"
-                        placeholderTextColor="rgba(255,255,255,0.18)"
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.timeSep}>
-                    <Text style={styles.timeSepText}>–</Text>
-                  </View>
-                  <View style={styles.timeField}>
-                    <Text style={styles.fieldLabel}>End</Text>
-                    <View style={styles.inputWrap}>
-                      <Ionicons name="time-outline" size={12} color="rgba(201,169,110,0.5)" style={styles.inputIcon} />
-                      <TextInput
-                        style={styles.input}
-                        value={formData.end_time}
-                        onChangeText={(text) => setFormData({ ...formData, end_time: text })}
-                        placeholder="16:00"
-                        placeholderTextColor="rgba(255,255,255,0.18)"
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                {/* Tagalongs */}
-                <Text style={styles.fieldGroupLabel}>Group</Text>
-                <View style={styles.inputWrap}>
-                  <Ionicons name="people-outline" size={12} color="rgba(201,169,110,0.5)" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    value={formData.tagalongs}
-                    onChangeText={(text) => setFormData({ ...formData, tagalongs: text })}
-                    keyboardType="number-pad"
-                    placeholder="Number of tagalongs"
-                    placeholderTextColor="rgba(255,255,255,0.18)"
-                  />
-                </View>
-
-                {/* Contact */}
-                <Text style={styles.fieldGroupLabel}>Contact *</Text>
-                <View style={styles.inputWrap}>
-                  <Ionicons name="call-outline" size={12} color="rgba(110,175,138,0.6)" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    value={formData.contact_number}
-                    onChangeText={(text) => setFormData({ ...formData, contact_number: text })}
-                    keyboardType="phone-pad"
-                    placeholder="Your contact number"
-                    placeholderTextColor="rgba(255,255,255,0.18)"
-                  />
-                </View>
-
-                {/* Emergency */}
-                <Text style={styles.fieldGroupLabel}>Emergency *</Text>
-                <View style={[styles.inputWrap, styles.inputWrapLast]}>
-                  <Ionicons name="warning-outline" size={12} color="rgba(224,112,112,0.6)" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    value={formData.emergency_contact}
-                    onChangeText={(text) => setFormData({ ...formData, emergency_contact: text })}
-                    placeholder="Name & number"
-                    placeholderTextColor="rgba(255,255,255,0.18)"
-                  />
-                </View>
-
-                {/* Save button */}
-                <TouchableOpacity
-                  onPress={handleSave}
-                  disabled={isLoading}
-                  style={[styles.saveBtn, isLoading && styles.saveBtnDisabled]}
-                >
-                  <Ionicons name={editingHike ? 'save-outline' : 'add-circle-outline'} size={14} color={isLoading ? 'rgba(255,255,255,0.4)' : '#0E1520'} />
-                  <Text style={[styles.saveBtnText, isLoading && styles.saveBtnTextDisabled]}>
-                    {isLoading ? 'Saving…' : editingHike ? 'Update Hike' : 'Schedule Hike'}
-                  </Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
+            <TouchableOpacity style={styles.infoCloseBtn} onPress={() => setInfoVisible(false)}>
+              <Text style={styles.infoCloseBtnText}>Got it</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -610,522 +400,188 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0A111A',
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 28,
+  centerWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
 
   // ── Calendar card ────────────────────────────
   calendarCard: {
     backgroundColor: '#0E1520',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
-    padding: 12,
-    marginBottom: 16,
-  },
-  calendarHeaderTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  calendarHeaderItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  homeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calendarIconWrapper: {
-    backgroundColor: 'rgba(201,169,110,0.1)',
     padding: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.2)',
-  },
-  calendarTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  calendarSubTitle: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 10,
+    marginBottom: 8,
   },
   calendar: {
     width: '100%',
   },
   dayContainer: {
-    width: 42,
-    minHeight: 52,
+    position: 'relative',
+    width: 30,
+    minHeight: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
-    borderRadius: 14,
-    marginVertical: 2,
+    paddingVertical: 1,
+    borderRadius: 8,
+    marginVertical: 0.5,
   },
+  // Selected = border outline only, not a filled block
   daySelected: {
-    backgroundColor: '#C9A96E',
-  },
-  dayToday: {
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.6)',
+    borderWidth: 1.5,
+    borderColor: '#C9A96E',
+    backgroundColor: 'rgba(201,169,110,0.08)',
   },
   dayDisabled: {
     opacity: 0.4,
   },
   dayNumber: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '600',
   },
+  // Today = accent-colored, bold numeral — kept visually distinct from the
+  // border used for "selected" so the two never look the same
   dayNumberToday: {
     color: '#C9A96E',
+    fontWeight: '700',
   },
   dayNumberDisabled: {
     color: 'rgba(255,255,255,0.28)',
   },
-  dayNumberSelected: {
-    color: '#0E1520',
-  },
-  weatherMarker: {
-    marginTop: 4,
+  // Weather + hike marker now sit side-by-side in one row under the day
+  // number, instead of stacked on separate lines.
+  dayIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 1,
   },
   weatherMarkerPlaceholder: {
     opacity: 0.28,
   },
   hikeMarker: {
-    marginTop: 4,
     backgroundColor: 'rgba(201,169,110,0.12)',
-    padding: 2,
-    borderRadius: 6,
+    padding: 1,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: 12,
-    marginTop: 10,
-    paddingHorizontal: 4,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 3,
   },
   legendText: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 9,
+  },
+  legendDot: {
+    color: 'rgba(255,255,255,0.25)',
+    fontSize: 9,
+    marginHorizontal: 2,
   },
   forecastLoadingText: {
     color: 'rgba(255,255,255,0.35)',
-    fontSize: 10,
-    marginTop: 2,
+    fontSize: 9,
+    marginBottom: 4,
   },
   arrowWrapper: {
     backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: 7,
-    borderRadius: 8,
+    padding: 5,
+    borderRadius: 7,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
 
-  // ── Hikes section ────────────────────────────
-  hikesSection: {
-    gap: 10,
-  },
-  hikesSectionLabel: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 4,
-    paddingHorizontal: 2,
-  },
-  emptyCard: {
-    backgroundColor: '#0E1520',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    padding: 24,
-    alignItems: 'center',
-    gap: 6,
-  },
-  emptyIconWrap: {
-    backgroundColor: 'rgba(201,169,110,0.08)',
-    padding: 14,
-    borderRadius: 40,
-    marginBottom: 4,
-  },
-  emptyTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  emptyBody: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 11,
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  hikeList: {
-    gap: 10,
-  },
-  hikeCard: {
-    backgroundColor: '#0E1520',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    overflow: 'hidden',
-  },
-  hikeCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#111927',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  hikeCardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  hikeIconWrap: {
-    backgroundColor: 'rgba(201,169,110,0.1)',
-    padding: 6,
-    borderRadius: 8,
-  },
-  hikeCardTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  hikeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(201,169,110,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.18)',
-  },
-  hikeBadgeText: {
-    color: '#C9A96E',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  hikeCardBody: {
-    padding: 14,
-    gap: 10,
-  },
-  hikeInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  hikeInfoItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  hikeInfoDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    marginHorizontal: 8,
-  },
-  hikeInfoLabel: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 10,
-  },
-  hikeInfoValue: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
-    flex: 1,
-  },
-  emergencyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(201,169,110,0.05)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  emergencyLabel: {
-    color: 'rgba(201,169,110,0.6)',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  emergencyValue: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 11,
-    flex: 1,
-  },
-  hikeActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  editBtn: {
-    flex: 1,
+  // ── Custom month header (home + month/year + info) ──
+  monthHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
+    gap: 10,
+  },
+  headerIconBtn: {
+    width: 24,
+    height: 24,
     borderRadius: 8,
-    backgroundColor: 'rgba(201,169,110,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.25)',
-  },
-  editBtnText: {
-    color: '#C9A96E',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  deleteBtn: {
-    flex: 1,
-    flexDirection: 'row',
+    borderColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(224,112,112,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.2)',
   },
-  deleteBtnText: {
-    color: '#E07070',
+  monthHeaderText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  infoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoBtnText: {
+    color: '#C9A96E',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
+    fontStyle: 'italic',
   },
 
-  // ── Modal ────────────────────────────────────
-  modalOverlay: {
+  // ── How-to-use popover ───────────────────────
+  infoOverlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'transparent',
-    padding: 20,
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(10,17,26,0.4)',
   },
-  modalCard: {
-    flexDirection: 'row',
+  infoCard: {
     width: '100%',
-    maxWidth: 420,
-    height: 260,
+    maxWidth: 320,
     backgroundColor: '#0E1520',
     borderRadius: 16,
-    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: 'rgba(255,255,255,0.1)',
+    padding: 16,
+    gap: 10,
   },
-
-  // Left accent panel (mirrors ProfileCard leftPanel)
-  modalLeftPanel: {
-    width: 110,
-    paddingHorizontal: 12,
-    paddingTop: 14,
-    paddingBottom: 12,
-    alignItems: 'flex-start',
-    backgroundColor: '#111927',
-  },
-  modalAvatarWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(201,169,110,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  modalPanelTitle: {
+  infoTitle: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
-    lineHeight: 20,
-    marginBottom: 10,
+    marginBottom: 2,
   },
-  modalDividerH: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    alignSelf: 'stretch',
-    marginBottom: 10,
-  },
-  modalDateBlock: {
+  infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
+    alignItems: 'flex-start',
+    gap: 8,
   },
-  modalDateSmall: {
-    color: 'rgba(201,169,110,0.6)',
-    fontSize: 9,
-    fontWeight: '600',
+  infoText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    lineHeight: 17,
   },
-  modalDateFull: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 10,
-    lineHeight: 15,
-  },
-  modalCancelBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'stretch',
+  infoCloseBtn: {
+    marginTop: 6,
+    alignSelf: 'flex-end',
+    paddingHorizontal: 14,
     paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-  },
-  modalCancelText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
-  // Vertical divider
-  modalDividerV: {
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-
-  // Right form panel
-  modalRightPanel: {
-    flex: 1,
-    paddingTop: 14,
-    paddingBottom: 0,
-    backgroundColor: '#0E1520',
-    overflow: 'hidden',
-  },
-  modalRightHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    marginBottom: 10,
-  },
-  modalRightTitle: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  modalCloseBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalFormScroll: {
-    paddingHorizontal: 14,
-    paddingBottom: 1,
-    gap: 6,
-  },
-  fieldGroupLabel: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 9,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  timeField: {
-    flex: 1,
-  },
-  fieldLabel: {
-    color: 'rgba(255,255,255,0.3)',
-    fontSize: 9,
-    marginBottom: 3,
-  },
-  timeSep: {
-    paddingTop: 14,
-  },
-  timeSepText: {
-    color: 'rgba(255,255,255,0.25)',
-    fontSize: 12,
-  },
-  inputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 10,
-    marginBottom: 4,
-  },
-  inputWrapLast: {
-    marginBottom: 10,
-  },
-  inputIcon: {
-    marginRight: 6,
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 9,
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
     borderRadius: 8,
     backgroundColor: '#C9A96E',
-    marginBottom: 12,
   },
-  saveBtnDisabled: {
-    backgroundColor: 'rgba(201,169,110,0.3)',
-  },
-  saveBtnText: {
+  infoCloseBtnText: {
     color: '#0E1520',
-    fontWeight: '700',
     fontSize: 12,
-  },
-  saveBtnTextDisabled: {
-    color: 'rgba(14,21,32,0.5)',
+    fontWeight: '700',
   },
 });
