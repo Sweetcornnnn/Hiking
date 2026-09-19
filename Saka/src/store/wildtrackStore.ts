@@ -1,8 +1,7 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../config/api';
 import { WildTrackAPI } from '../services/wildtrackApi';
+import { wildTrackSupabase } from '../services/wildtrackSupabase';
 
 export interface Species {
   id: number;
@@ -86,38 +85,6 @@ interface WildTrackState {
 const CACHE_KEY_PREFIX = 'wildtrack_species_cache_';
 const DISCOVERIES_CACHE_KEY = 'wildtrack_discoveries_cache';
 
-const parseJsonResponse = async (response: Response) => {
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    try {
-      return await response.json();
-    } catch (err) {
-      const text = await response.text();
-      return { error: `Invalid JSON response: ${text}`, rawText: text };
-    }
-  }
-
-  const text = await response.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { error: `Non-JSON response: ${text}`, rawText: text };
-  }
-};
-
-// Helper that logs, performs fetch and returns both response and parsed data.
-const safeFetch = async (url: string, options?: RequestInit) => {
-  console.log('[WildTrack] fetch ->', url, options?.method || 'GET');
-  try {
-    const response = await fetch(url, options);
-    const data = await parseJsonResponse(response);
-    return { response, data } as { response: Response; data: any };
-  } catch (error) {
-    console.error('[WildTrack] fetch error for', url, error);
-    throw error;
-  }
-};
-
 export const useWildTrackStore = create<WildTrackState>((set, get) => ({
   species: [],
   discoveries: [],
@@ -125,7 +92,7 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
   mountainSpecies: [],
   stats: null,
   mountainBiodiversity: null,
-  selectedMountainId: '1',
+  selectedMountainId: '',
   isLoading: false,
   isDemoMode: false,
 
@@ -139,72 +106,27 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
 
   fetchSpecies: async (mountainId, category) => {
     set({ isLoading: true });
-    
+
     try {
-      let token = await SecureStore.getItemAsync('authToken');
-      const authState = get();
-      
-      if (authState.isDemoMode) {
-        set({ isLoading: false });
-        return;
-      }
-
-      const queryParams = new URLSearchParams();
-      if (mountainId) queryParams.append('mountain_id', mountainId);
-      if (category) queryParams.append('category', category);
-
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/species?${queryParams}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-        },
-      });
-
-      if (!response.ok) {
-        console.error('Failed to fetch species:', data.error);
-        set({ isLoading: false });
-        return;
-      }
-
-      set({ species: data.species });
+      if (get().isDemoMode) return;
+      set({ species: await wildTrackSupabase.fetchSpecies(mountainId, category) });
     } catch (error) {
       console.error('Network error fetching species:', error);
+    } finally {
+      set({ isLoading: false });
     }
-    
-    set({ isLoading: false });
   },
 
   fetchSpeciesById: async (id) => {
     try {
-      let token = await SecureStore.getItemAsync('authToken');
-      const authState = get();
-      
-      if (authState.isDemoMode) {
+      if (get().isDemoMode) {
         const cached = await get().getCachedSpecies(id);
         return cached;
       }
 
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/species/${id}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-        },
-      });
-
-      if (!response.ok) {
-        console.error('Failed to fetch species:', data.error);
-        return null;
-      }
-
-      await get().cacheSpecies(data.species);
-      
-      return data.species;
+      const species = await wildTrackSupabase.fetchSpeciesById(id);
+      if (species) await get().cacheSpecies(species);
+      return species;
     } catch (error) {
       console.error('Network error fetching species:', error);
       return null;
@@ -213,12 +135,9 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
 
   fetchDiscoveries: async (mountainId, category) => {
     set({ isLoading: true });
-    
+
     try {
-      let token = await SecureStore.getItemAsync('authToken');
-      const authState = get();
-      
-      if (authState.isDemoMode) {
+      if (get().isDemoMode) {
         const cached = await AsyncStorage.getItem(DISCOVERIES_CACHE_KEY);
         if (cached) {
           const allDiscoveries = JSON.parse(cached);
@@ -232,38 +151,12 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         set({ isLoading: false });
         return;
       }
-
-      if (!token) {
-        set({ isLoading: false });
-        return;
-      }
-
-      const queryParams = new URLSearchParams();
-      if (mountainId) queryParams.append('mountain_id', mountainId);
-      if (category) queryParams.append('category', category);
-
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/discoveries?${queryParams}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        console.error('Failed to fetch discoveries:', data.error);
-        set({ isLoading: false });
-        return;
-      }
-
-      set({ discoveries: data.discoveries });
+      set({ discoveries: await wildTrackSupabase.fetchDiscoveries(mountainId, category) });
     } catch (error) {
       console.error('Network error fetching discoveries:', error);
+    } finally {
+      set({ isLoading: false });
     }
-    
-    set({ isLoading: false });
   },
 
   createDiscovery: async (speciesId, mountainId, latitude, longitude, notes) => {
@@ -317,32 +210,16 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
     }
 
     try {
-      let token = await SecureStore.getItemAsync('authToken');
-      if (!token) {
+      const result = await wildTrackSupabase.createDiscovery(
+        speciesId,
+        mountainId,
+        latitude,
+        longitude,
+        notes,
+      );
+      if (result.error) {
         set({ isLoading: false });
-        return { error: 'Not authenticated' };
-      }
-
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/discover`;
-      const { response, data } = await safeFetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          species_id: speciesId,
-          mountain_id: mountainId,
-          latitude,
-          longitude,
-          notes,
-        }),
-      });
-
-      if (!response.ok) {
-        set({ isLoading: false });
-        return { error: data.error || 'Failed to create discovery' };
+        return result;
       }
 
       await get().fetchDiscoveries(mountainId);
@@ -359,26 +236,12 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
 
   fetchFeaturedSpecies: async (mountainId) => {
     set({ isLoading: true });
-    
+
     try {
-      const queryParams = new URLSearchParams();
-      if (mountainId) queryParams.append('mountain_id', mountainId);
-
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/featured?${queryParams}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        console.error('Failed to fetch featured species:', data.error);
-        set({ isLoading: false });
-        return;
-      }
+      const species = await wildTrackSupabase.fetchMountainSpecies(mountainId || get().selectedMountainId);
 
       const speciesWithRealImages = await Promise.all(
-        data.species.map(async (species: Species) => {
+        species.map(async (species: Species) => {
           let finalImageUrl: string | undefined;
           
           if (species.inaturalist_id || species.gbif_id) {
@@ -389,17 +252,15 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
                 species.scientific_name
               );
               if (realImage) {
-                console.log(`[WildTrack] Successfully fetched image for ${species.common_name}`);
                 finalImageUrl = realImage;
               }
-            } catch (error) {
-              console.log(`[WildTrack] Failed to fetch image for ${species.common_name}, using fallback`);
+            } catch {
+              // Ignore external image fetch failures and use the fallback image.
             }
           }
           
           if (!finalImageUrl) {
             finalImageUrl = WildTrackAPI.getDefaultSilhouette(species.category);
-            console.log(`[WildTrack] Using silhouette for ${species.common_name}`);
           }
           
           return { ...species, image_url: finalImageUrl };
@@ -416,38 +277,20 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
 
   fetchMountainSpecies: async (mountainId) => {
     set({ isLoading: true });
-    
+
     try {
-      let token = await SecureStore.getItemAsync('authToken');
       const authState = get();
-      
+
       const cachedChecklist = await get().getCachedMountainChecklist(mountainId);
       if (cachedChecklist && authState.isDemoMode) {
-        console.log(`[WildTrack] Using cached checklist for mountain: ${mountainId}`);
         set({ mountainSpecies: cachedChecklist, isLoading: false });
         return;
       }
-      
-      const queryParams = new URLSearchParams();
-      if (token && !authState.isDemoMode) {
-        queryParams.append('user_id', String(authState.isDemoMode ? 'demo' : token));
-      }
 
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/mountain/${mountainId}?${queryParams}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        console.error('Failed to fetch mountain species:', data.error);
-        set({ isLoading: false });
-        return;
-      }
+      const species = await wildTrackSupabase.fetchMountainSpecies(mountainId);
 
       const speciesWithRealImages = await Promise.all(
-        data.species.map(async (species: Species) => {
+        species.map(async (species: Species) => {
           let finalImageUrl: string | undefined;
           
           if (species.inaturalist_id || species.gbif_id) {
@@ -458,17 +301,15 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
                 species.scientific_name
               );
               if (realImage) {
-                console.log(`[WildTrack] Successfully fetched image for ${species.common_name}`);
                 finalImageUrl = realImage;
               }
-            } catch (error) {
-              console.log(`[WildTrack] Failed to fetch image for ${species.common_name}, using fallback`);
+            } catch {
+              // Ignore external image fetch failures and use the fallback image.
             }
           }
           
           if (!finalImageUrl) {
             finalImageUrl = WildTrackAPI.getDefaultSilhouette(species.category);
-            console.log(`[WildTrack] Using silhouette for ${species.common_name}`);
           }
           
           return { ...species, image_url: finalImageUrl };
@@ -483,7 +324,6 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
       
       const cachedChecklist = await get().getCachedMountainChecklist(mountainId);
       if (cachedChecklist) {
-        console.log(`[WildTrack] Using cached checklist as fallback for mountain: ${mountainId}`);
         set({ mountainSpecies: cachedChecklist });
       }
     }
@@ -493,37 +333,8 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
 
   fetchStats: async (mountainId) => {
     try {
-      let token = await SecureStore.getItemAsync('authToken');
-      const authState = get();
-      
-      if (authState.isDemoMode) {
-        set({ isLoading: false });
-        return;
-      }
-
-      if (!token) {
-        return;
-      }
-
-      const queryParams = new URLSearchParams();
-      if (mountainId) queryParams.append('mountain_id', mountainId);
-
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/stats?${queryParams}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        console.error('Failed to fetch stats:', data.error);
-        return;
-      }
-
-      set({ stats: data });
+      if (get().isDemoMode) return;
+      set({ stats: await wildTrackSupabase.fetchStats(mountainId) });
     } catch (error) {
       console.error('Network error fetching stats:', error);
     }
@@ -553,11 +364,9 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         const { data, cachedAt } = JSON.parse(cached);
         const cacheAge = Date.now() - new Date(cachedAt).getTime();
         if (cacheAge < 7 * 24 * 60 * 60 * 1000) {
-          console.log(`[WildTrack] Cache hit for species: ${speciesId}`);
           return data;
         }
       }
-      console.log(`[WildTrack] Cache miss for species: ${speciesId}`);
       return null;
     } catch (error) {
       console.error('[WildTrack] Error getting cached species:', error);
@@ -567,7 +376,6 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
 
   removeDiscovery: async (discoveryId) => {
     set({ isLoading: true });
-    console.log(`[WildTrack] Removing discovery: ${discoveryId}`);
 
     const authState = get();
     if (authState.isDemoMode) {
@@ -581,7 +389,6 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
           await get().fetchDiscoveries(authState.selectedMountainId);
           await get().fetchStats(authState.selectedMountainId);
           
-          console.log(`[WildTrack] Discovery removed in demo mode: ${discoveryId}`);
           set({ isLoading: false });
           return { error: null };
         }
@@ -595,32 +402,15 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
     }
 
     try {
-      let token = await SecureStore.getItemAsync('authToken');
-      if (!token) {
+      const result = await wildTrackSupabase.removeDiscovery(discoveryId);
+      if (result.error) {
         set({ isLoading: false });
-        return { error: 'Not authenticated' };
-      }
-
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/discovery/${discoveryId}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        console.error('[WildTrack] Failed to remove discovery:', data.error);
-        set({ isLoading: false });
-        return { error: data.error || 'Failed to remove discovery' };
+        return result;
       }
 
       await get().fetchDiscoveries(authState.selectedMountainId);
       await get().fetchStats(authState.selectedMountainId);
 
-      console.log(`[WildTrack] Discovery removed successfully: ${discoveryId}`);
       set({ isLoading: false });
       return { error: null };
     } catch (error: any) {
@@ -631,23 +421,11 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
   },
 
   fetchMountainBiodiversity: async (mountainId) => {
-    console.log(`[WildTrack] Fetching mountain biodiversity for: ${mountainId}`);
-    
     try {
-      const base = (global as any).__API_BASE__ ?? API_BASE_URL;
-      const url = `${base}/api/wildtrack/mountain-info/${mountainId}`;
-      const { response, data } = await safeFetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        console.error('[WildTrack] Failed to fetch mountain biodiversity:', data.error);
-        return;
+      const info = await wildTrackSupabase.fetchMountainBiodiversity(mountainId);
+      if (info) {
+        set({ mountainBiodiversity: info });
       }
-
-      console.log(`[WildTrack] Mountain biodiversity retrieved for ${data.info.name}`);
-      set({ mountainBiodiversity: data.info });
     } catch (error) {
       console.error('[WildTrack] Network error fetching mountain biodiversity:', error);
     }
@@ -660,7 +438,6 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         species_list: speciesList,
         cached_at: new Date().toISOString(),
       }));
-      console.log(`[WildTrack] Cached checklist for mountain: ${mountainId}`);
     } catch (error) {
       console.error('[WildTrack] Error caching mountain checklist:', error);
     }
@@ -674,11 +451,9 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         const { species_list, cached_at } = JSON.parse(cached);
         const cacheAge = Date.now() - new Date(cached_at).getTime();
         if (cacheAge < 7 * 24 * 60 * 60 * 1000) {
-          console.log(`[WildTrack] Cache hit for mountain checklist: ${mountainId}`);
           return species_list;
         }
       }
-      console.log(`[WildTrack] Cache miss for mountain checklist: ${mountainId}`);
       return null;
     } catch (error) {
       console.error('[WildTrack] Error getting cached mountain checklist:', error);

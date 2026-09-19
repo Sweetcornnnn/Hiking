@@ -1,79 +1,63 @@
 import { Species } from '../store/wildtrackStore';
 
+const safeJsonFetch = async <T>(url: string): Promise<T | null> => {
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json') && !contentType.includes('+json')) {
+      return null;
+    }
+
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+};
+
 // GBIF API Service
 export const GBIF_API = {
   baseUrl: 'https://api.gbif.org/v1',
 
   async searchSpecies(name: string, limit: number = 10): Promise<any[]> {
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/species/match?name=${encodeURIComponent(name)}&limit=${limit}`
-      );
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('GBIF search error:', error);
-      return [];
-    }
+    const data = await safeJsonFetch<{ results?: any[] }>(
+      `${this.baseUrl}/species/match?name=${encodeURIComponent(name)}&limit=${limit}`
+    );
+    return data?.results || [];
   },
 
   async getSpeciesById(gbifId: number): Promise<any | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}/species/${gbifId}`);
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('GBIF species details error:', error);
-      return null;
-    }
+    return safeJsonFetch<any>(`${this.baseUrl}/species/${gbifId}`);
   },
 
   async getOccurrences(gbifId: number, limit: number = 20): Promise<any[]> {
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/occurrence/search?taxonKey=${gbifId}&limit=${limit}`
-      );
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('GBIF occurrences error:', error);
-      return [];
-    }
+    const data = await safeJsonFetch<{ results?: any[] }>(
+      `${this.baseUrl}/occurrence/search?taxonKey=${gbifId}&limit=${limit}`
+    );
+    return data?.results || [];
   },
 
   async getSpeciesByLocation(latitude: number, longitude: number, radius: number = 50, limit: number = 100): Promise<any[]> {
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/occurrence/search?decimalLatitude=${latitude}&decimalLongitude=${longitude}&radius=${radius}&limit=${limit}&hasCoordinate=true`
-      );
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('GBIF location search error:', error);
-      return [];
-    }
+    const data = await safeJsonFetch<{ results?: any[] }>(
+      `${this.baseUrl}/occurrence/search?decimalLatitude=${latitude}&decimalLongitude=${longitude}&radius=${radius}&limit=${limit}&hasCoordinate=true`
+    );
+    return data?.results || [];
   },
 
   async getSpeciesDescription(gbifId: number): Promise<any | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}/species/${gbifId}/descriptions`);
-      const data = await response.json();
-      return data.results?.[0] || null;
-    } catch (error) {
-      console.error('GBIF description error:', error);
-      return null;
-    }
+    const data = await safeJsonFetch<{ results?: any[] }>(`${this.baseUrl}/species/${gbifId}/descriptions`);
+    return data?.results?.[0] || null;
   },
 
   async getVernacularNames(gbifId: number): Promise<any[]> {
-    try {
-      const response = await fetch(`${this.baseUrl}/species/${gbifId}/vernacularNames`);
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('GBIF vernacular names error:', error);
-      return [];
-    }
+    const data = await safeJsonFetch<{ results?: any[] }>(`${this.baseUrl}/species/${gbifId}/vernacularNames`);
+    return data?.results || [];
   },
 };
 
@@ -81,41 +65,28 @@ export const GBIF_API = {
 export const INATURALIST_API = {
   baseUrl: 'https://api.inaturalist.org/v1',
 
+  async fetchJson(url: string): Promise<any | null> {
+    return safeJsonFetch<any>(url);
+  },
+
   async searchTaxa(q: string, perPage: number = 10): Promise<any[]> {
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/taxa?q=${encodeURIComponent(q)}&per_page=${perPage}`
-      );
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('iNaturalist search error:', error);
-      return [];
-    }
+    const data = await this.fetchJson(
+      `${this.baseUrl}/taxa?q=${encodeURIComponent(q)}&per_page=${perPage}`
+    );
+    return Array.isArray(data?.results) ? data.results : [];
   },
 
   async getTaxonById(taxonId: number): Promise<any | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}/taxa/${taxonId}`);
-      const data = await response.json();
-      return data.results?.[0] || null;
-    } catch (error) {
-      console.error('iNaturalist taxon details error:', error);
-      return null;
-    }
+    const data = await this.fetchJson(`${this.baseUrl}/taxa/${taxonId}`);
+    if (!data) return null;
+    return Array.isArray(data.results) ? data.results[0] || null : null;
   },
 
   async getObservations(taxonId: number, perPage: number = 10): Promise<any[]> {
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/observations?taxon_id=${taxonId}&per_page=${perPage}&order=desc&order_by=created_at`
-      );
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('iNaturalist observations error:', error);
-      return [];
-    }
+    const data = await this.fetchJson(
+      `${this.baseUrl}/observations?taxon_id=${taxonId}&per_page=${perPage}&order=desc&order_by=created_at`
+    );
+    return Array.isArray(data?.results) ? data.results : [];
   },
 
   async getTaxonPhotos(taxonId: number): Promise<string[]> {
@@ -150,37 +121,25 @@ export const INATURALIST_API = {
   },
 
   async getObservationsByLocation(lat: number, lng: number, radius: number = 50, perPage: number = 30): Promise<any[]> {
-    try {
-      const response = await fetch(
-        `${this.baseUrl}/observations?lat=${lat}&lng=${lng}&radius=${radius}&per_page=${perPage}&order=desc&order_by=created_at`
-      );
-      const data = await response.json();
-      return data.results || [];
-    } catch (error) {
-      console.error('iNaturalist location observations error:', error);
-      return [];
-    }
+    const data = await safeJsonFetch<{ results?: any[] }>(
+      `${this.baseUrl}/observations?lat=${lat}&lng=${lng}&radius=${radius}&per_page=${perPage}&order=desc&order_by=created_at`
+    );
+    return data?.results || [];
   },
 
   async getTaxonComplete(taxonId: number): Promise<any | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}/taxa/${taxonId}`);
-      const data = await response.json();
-      const taxon = data.results?.[0];
+    const data = await safeJsonFetch<{ results?: any[] }>(`${this.baseUrl}/taxa/${taxonId}`);
+    const taxon = data?.results?.[0];
 
-      if (!taxon) return null;
+    if (!taxon) return null;
 
-      const observations = await this.getObservations(taxonId, 3);
+    const observations = await this.getObservations(taxonId, 3);
 
-      return {
-        ...taxon,
-        recent_observations: observations,
-        observation_count: taxon.observations_count || 0,
-      };
-    } catch (error) {
-      console.error('iNaturalist complete taxon error:', error);
-      return null;
-    }
+    return {
+      ...taxon,
+      recent_observations: observations,
+      observation_count: taxon.observations_count || 0,
+    };
   },
 };
 
@@ -221,6 +180,8 @@ export const PLANTNET_API = {
 
 // Combined API Service for WildTrack
 export const WildTrackAPI = {
+  imageCache: new Map<string, string | null>(),
+
   async searchSpecies(name: string): Promise<Partial<Species>[]> {
     try {
       const gbifResults = await GBIF_API.searchSpecies(name, 5);
@@ -452,6 +413,9 @@ export const WildTrackAPI = {
 
   async getSpeciesImage(inatId?: number, gbifId?: number, scientificName?: string): Promise<string | null> {
     try {
+      const cacheKey = `${inatId || ''}:${gbifId || ''}:${scientificName || ''}`;
+      if (this.imageCache.has(cacheKey)) return this.imageCache.get(cacheKey) || null;
+
       const searchName = scientificName || (gbifId ? (await GBIF_API.getSpeciesById(gbifId))?.scientificName : null);
 
       if (inatId) {
@@ -461,44 +425,31 @@ export const WildTrackAPI = {
           if (taxonMatches) {
             const photos = await INATURALIST_API.getTaxonPhotos(inatId);
             if (photos.length > 0) {
-              console.log(`[WildTrackAPI] Using iNaturalist photos for matched taxon id=${inatId}, species='${searchName}'`, {
-                taxon: taxon.name,
-                commonName: taxon.preferred_common_name,
-                imageUrl: photos[0],
-              });
+              this.imageCache.set(cacheKey, photos[0]);
               return photos[0];
             }
-          } else {
-            console.log(`[WildTrackAPI] iNaturalist taxon id mismatch for '${searchName}'`, {
-              requestedId: inatId,
-              taxonName: taxon.name,
-              commonName: taxon.preferred_common_name,
-            });
           }
         }
       }
 
       if (searchName) {
         const inatResults = await INATURALIST_API.searchTaxa(searchName, 20);
-        console.log(`[WildTrackAPI] iNaturalist search for '${searchName}' returned ${inatResults.length} results`);
-
         const exactMatch = inatResults.find((taxon: any) => this.isTaxonMatch(searchName, taxon));
         if (exactMatch && exactMatch.default_photo) {
           const imageUrl = exactMatch.default_photo.medium_url || exactMatch.default_photo.url;
-          console.log(`[WildTrackAPI] Exact iNaturalist match for '${searchName}' -> taxon='${exactMatch.name}' common='${exactMatch.preferred_common_name}'`, imageUrl);
+          this.imageCache.set(cacheKey, imageUrl);
           return imageUrl;
         }
 
         const fallback = inatResults.find((taxon: any) => taxon.default_photo && this.isTaxonMatch(searchName, taxon));
         if (fallback) {
           const imageUrl = fallback.default_photo.medium_url || fallback.default_photo.url;
-          console.log(`[WildTrackAPI] Fallback iNaturalist match for '${searchName}' -> taxon='${fallback.name}' common='${fallback.preferred_common_name}'`, imageUrl);
+          this.imageCache.set(cacheKey, imageUrl);
           return imageUrl;
         }
-
-        console.log(`[WildTrackAPI] No satisfactory iNaturalist image match for '${searchName}'`);
       }
 
+      this.imageCache.set(cacheKey, null);
       return null;
     } catch (error) {
       console.error('Error getting species image:', error);
