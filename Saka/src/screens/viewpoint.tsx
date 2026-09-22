@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { VIEWPOINTS_DATA, ViewpointsDataType } from '../data/viewpointsData';
+import { fetchViewpointDetail } from '../services/viewpointService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -80,7 +80,50 @@ export default function ViewpointScreen() {
   const viewpointId = params.viewpointId as string | undefined;
   const mountainId  = params.mountainId as string | undefined;
 
-  const data = VIEWPOINTS_DATA[(viewpointId as keyof ViewpointsDataType) || 'v1'];
+  const [data, setData] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [imageModalVisible, setImageModalVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+
+    const loadViewpoint = async () => {
+      try {
+        const selectedId = viewpointId || 'v1';
+        const nextData = await fetchViewpointDetail(selectedId);
+        if (active) {
+          setData(nextData);
+        }
+      } catch (error) {
+        console.warn('[ViewpointScreen] Failed to load data from Supabase', error);
+        if (active) {
+          setData(null);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadViewpoint();
+
+    return () => {
+      active = false;
+    };
+  }, [viewpointId]);
+
+  if (loading) {
+    return (
+      <View style={styles.errorContainer}>
+        <View style={styles.errorIcon}>
+          <Ionicons name="trail-sign-outline" size={32} color={PC.gold} />
+        </View>
+        <Text style={styles.errorTitle}>Loading viewpoint…</Text>
+        <Text style={styles.errorSub}>Fetching trail details from Supabase.</Text>
+      </View>
+    );
+  }
 
   if (!data) {
     return (
@@ -98,7 +141,6 @@ export default function ViewpointScreen() {
     );
   }
 
-  const [imageModalVisible, setImageModalVisible] = React.useState(false);
   const heroImage = IMAGE_MAP[data.imageKey];
   const heroImageSource = heroImage ? Image.resolveAssetSource(heroImage) : null;
   const imageAspectRatio = heroImageSource ? heroImageSource.width / heroImageSource.height : 1;
