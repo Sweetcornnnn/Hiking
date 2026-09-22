@@ -26,26 +26,17 @@ import { useSpeciesDetails } from '../../hooks/useSpeciesDetails';
 import { useOccurrenceData } from '../../hooks/useOccurrenceData';
 import { useWildTrackStore } from '../../store/wildtrackStore';
 
+const COLUMNS = 4;
+const GRID_GAP = 10;
+const H_PADDING = 10;
+
 export default function SpeciesSearchScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
 
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
+  const { selectedMountainId, createDiscovery, cacheSpecies } = useWildTrackStore();
 
-  const {
-    selectedMountainId,
-    createDiscovery,
-    cacheSpecies,
-  } = useWildTrackStore();
-
-  const {
-    query,
-    setQuery,
-    results,
-    isFetching,
-    hasMore,
-    expandResults,
-  } = useSpeciesSearch();
+  const { query, setQuery, results, isFetching, hasMore, expandResults } = useSpeciesSearch();
 
   const {
     detail,
@@ -54,23 +45,15 @@ export default function SpeciesSearchScreen() {
     clearSpeciesDetails,
   } = useSpeciesDetails();
 
-  const {
-    records,
-    isLoading: occLoading,
-    loadOccurrenceData,
-  } = useOccurrenceData();
+  const { records, loadOccurrenceData } = useOccurrenceData();
 
   const [selectedSpecies, setSelectedSpecies] = useState<any | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [marking, setMarking] = useState(false);
 
-  const horizontalPadding = isLandscape ? 20 : 12;
-  const cardWidth = (width - horizontalPadding - 24) / 2;
+  const cardWidth = (width - H_PADDING * 2 - GRID_GAP * (COLUMNS - 1)) / COLUMNS;
 
-  const displayData = useMemo(
-    () => detail || selectedSpecies,
-    [detail, selectedSpecies]
-  );
+  const displayData = useMemo(() => detail || selectedSpecies, [detail, selectedSpecies]);
 
   const galleryImages = useMemo(() => {
     const images =
@@ -83,16 +66,11 @@ export default function SpeciesSearchScreen() {
 
   useEffect(() => {
     if (!detail) return;
-
-    loadOccurrenceData(
-      detail.gbif_id,
-      detail.inaturalist_id
-    );
+    loadOccurrenceData(detail.gbif_id, detail.inaturalist_id);
   }, [detail]);
 
   const handleSelectSpecies = async (item: any) => {
     setSelectedSpecies(item);
-
     setModalOpen(true);
 
     try {
@@ -111,17 +89,10 @@ export default function SpeciesSearchScreen() {
       const speciesId =
         typeof selectedSpecies.id === 'number'
           ? selectedSpecies.id
-          : selectedSpecies.gbif_id ||
-            selectedSpecies.inaturalist_id;
+          : selectedSpecies.gbif_id || selectedSpecies.inaturalist_id;
 
-      const { error } = await createDiscovery(
-        speciesId,
-        selectedMountainId
-      );
-
-      if (!error) {
-        await cacheSpecies(selectedSpecies);
-      }
+      const { error } = await createDiscovery(speciesId, selectedMountainId);
+      if (!error) await cacheSpecies(selectedSpecies);
     } catch (error) {
       console.log('Mark discovery failed:', error);
     }
@@ -148,24 +119,12 @@ export default function SpeciesSearchScreen() {
     <SafeAreaView style={styles.screen}>
       {/* HEADER */}
       <View style={styles.header}>
-        <Pressable
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={22}
-            color="#D4A574"
-          />
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={22} color="#D4A574" />
         </Pressable>
 
         <View style={styles.searchContainer}>
-          <Ionicons
-            name="search-outline"
-            size={16}
-            color="#64748B"
-            style={styles.searchIcon}
-          />
+          <Ionicons name="search-outline" size={16} color="#64748B" style={styles.searchIcon} />
 
           <TextInput
             style={styles.searchInput}
@@ -176,15 +135,8 @@ export default function SpeciesSearchScreen() {
           />
 
           {query.length > 0 && (
-            <Pressable
-              onPress={() => setQuery('')}
-              style={styles.clearButton}
-            >
-              <Ionicons
-                name="close-circle"
-                size={18}
-                color="#64748B"
-              />
+            <Pressable onPress={() => setQuery('')} style={styles.clearButton}>
+              <Ionicons name="close-circle" size={18} color="#64748B" />
             </Pressable>
           )}
         </View>
@@ -192,286 +144,172 @@ export default function SpeciesSearchScreen() {
 
       {/* RESULTS */}
       <View style={styles.resultsContainer}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.resultsContent}
-        >
-          {isFetching ? (
-            renderSkeleton()
-          ) : (
-            <FlatList
-              data={results}
-              keyExtractor={(item, index) =>
-                item?.id?.toString?.() ||
-                item?.scientific_name ||
-                index.toString()
-              }
-              numColumns={2}
-              scrollEnabled={false}
-              showsVerticalScrollIndicator={false}
-              columnWrapperStyle={styles.columnWrapper}
-              renderItem={({ item }) => (
-                <View
-                  style={{
-                    width: cardWidth,
-                    marginBottom: 12,
-                  }}
-                >
-                  <SpeciesCard
-                    species={item}
-                    onPress={() => handleSelectSpecies(item)}
-                    showDiscoveryStatus={false}
-                  />
+        {isFetching ? (
+          renderSkeleton()
+        ) : (
+          <FlatList
+            data={results}
+            keyExtractor={(item, index) =>
+              item?.id?.toString?.() || item?.scientific_name || index.toString()
+            }
+            numColumns={COLUMNS}
+            showsVerticalScrollIndicator={false}
+            columnWrapperStyle={styles.columnWrapper}
+            contentContainerStyle={styles.resultsContent}
+            renderItem={({ item }) => (
+              <View style={{ width: cardWidth, marginBottom: GRID_GAP }}>
+                <SpeciesCard
+                  species={item}
+                  onPress={() => handleSelectSpecies(item)}
+                  showDiscoveryStatus={false}
+                />
+              </View>
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconWrapper}>
+                  <Ionicons name="leaf-outline" size={44} color="#D4A574" />
                 </View>
-              )}
-              ListEmptyComponent={
-                <View style={styles.emptyState}>
-                  <View style={styles.emptyIconWrapper}>
-                    <Ionicons
-                      name="leaf-outline"
-                      size={44}
-                      color="#D4A574"
-                    />
-                  </View>
-
-                  <Text style={styles.emptyTitle}>
-                    {query
-                      ? 'No species found'
-                      : 'Search biodiversity'}
-                  </Text>
-
-                  <Text style={styles.emptyText}>
-                    Search by common name,
-                    scientific name, or keyword.
-                  </Text>
-                </View>
-              }
-            />
-          )}
-
-          {hasMore && !isFetching && (
-            <Pressable
-              style={styles.loadMoreButton}
-              onPress={expandResults}
-            >
-              <Text style={styles.loadMoreText}>
-                Load More Species
-              </Text>
-            </Pressable>
-          )}
-        </ScrollView>
+                <Text style={styles.emptyTitle}>
+                  {query ? 'No species found' : 'Search biodiversity'}
+                </Text>
+                <Text style={styles.emptyText}>
+                  Search by common name, scientific name, or keyword.
+                </Text>
+              </View>
+            }
+            ListFooterComponent={
+              hasMore ? (
+                <Pressable style={styles.loadMoreButton} onPress={expandResults}>
+                  <Text style={styles.loadMoreText}>Load More Species</Text>
+                </Pressable>
+              ) : null
+            }
+          />
+        )}
       </View>
 
-      {/* MODAL */}
+      {/* SPECIES DETAIL — centered floating card with a dimmed backdrop,
+          sized to roughly the same footprint as before but presented as an
+          actual modal rather than an edge-to-edge screen. */}
       <Modal
         visible={modalOpen}
         animationType="fade"
         transparent
+        statusBarTranslucent
         onRequestClose={handleCloseModal}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalPanel}>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={styles.backdropTap} onPress={handleCloseModal} />
 
-            {/* HEADER */}
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleWrapper}>
-                <Text
-                  style={styles.modalTitle}
-                  numberOfLines={2}
-                >
-                  {displayData?.common_name ||
-                    displayData?.scientific_name ||
-                    'Unknown Species'}
-                </Text>
-
-                <Text
-                  style={styles.modalScientific}
-                  numberOfLines={1}
-                >
-                  {displayData?.scientific_name || '—'}
-                </Text>
-              </View>
-
-              <Pressable
-                style={styles.closeModalButton}
-                onPress={handleCloseModal}
-              >
-                <Ionicons
-                  name="close"
-                  size={20}
-                  color="#CBD5E1"
-                />
-              </Pressable>
+          <View style={styles.modalCard}>
+            <View style={styles.modalScreen}>
+          {/* HEADER */}
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleWrapper}>
+              <Text style={styles.modalTitle} numberOfLines={2}>
+                {displayData?.common_name || displayData?.scientific_name || 'Unknown Species'}
+              </Text>
+              <Text style={styles.modalScientific} numberOfLines={1}>
+                {displayData?.scientific_name || '—'}
+              </Text>
             </View>
 
-            {/* CONTENT */}
-            <ScrollView
-              style={styles.modalContent}
-              contentContainerStyle={styles.modalContentContainer}
-              showsVerticalScrollIndicator={false}
+            <Pressable
+              style={styles.markDiscoveredInline}
+              onPress={handleMarkDiscovered}
+              disabled={marking}
+              hitSlop={8}
             >
-              {detailLoading ? (
-                <View style={styles.modalLoading}>
-                  <ActivityIndicator
-                    size="large"
-                    color="#D4A574"
-                  />
-
-                  <Text style={styles.modalLoadingText}>
-                    Loading species details...
-                  </Text>
-                </View>
-              ) : detail ? (
-                <View
-                  style={[
-                    styles.modalBody,
-                    {
-                      flexDirection: isLandscape
-                        ? 'row'
-                        : 'column',
-                    },
-                  ]}
-                >
-                  <View style={styles.modalLeft}>
-                    {galleryImages.length > 0 ? (
-                      <SpeciesGallery images={galleryImages} />
-                    ) : (
-                      <View style={styles.noImageCard}>
-                        <Ionicons
-                          name="images-outline"
-                          size={28}
-                          color="#94A3B8"
-                        />
-                        <Text style={styles.noImageText}>
-                          No image data available
-                        </Text>
-                      </View>
-                    )}
-
-                    <View style={styles.infoSection}>
-                      <TaxonomyTree taxonomy={detail?.taxonomy} />
-                    </View>
-                  </View>
-
-                  <View style={styles.modalRight}>
-                    <View style={styles.quickFactsCard}>
-                      <Text style={styles.cardTitle}>Quick facts</Text>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>Status</Text>
-                        <Text style={styles.factText}>
-                          {detail?.conservation_status || 'Not listed'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>Habitat</Text>
-                        <Text style={styles.factText}>
-                          {detail?.habitat || 'Mountain ecosystem'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>Native</Text>
-                        <Text style={styles.factText}>
-                          {detail?.is_native === false ? 'Introduced' : 'Native'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.factRow}>
-                        <Text style={styles.factLabel}>Occurrence</Text>
-                        <Text style={styles.factText}>
-                          {detail?.occurrence_count || records?.length || 0}{' '}
-                          records
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.infoSection}>
-                      <DistributionMap occurrences={records || []} />
-                    </View>
-
-                    <View style={styles.infoSection}>
-                      <ObservationTimeline observations={records || []} />
-                    </View>
-                  </View>
-                </View>
-              ) : displayData ? (
-                <View
-                  style={[
-                    styles.modalBody,
-                    {
-                      flexDirection: isLandscape
-                        ? 'row'
-                        : 'column',
-                    },
-                  ]}
-                >
-                  <View style={styles.modalLeft}>
-                    <View style={styles.noImageCard}>
-                      <Ionicons
-                        name="leaf-outline"
-                        size={28}
-                        color="#94A3B8"
-                      />
-                      <Text style={styles.noImageText}>
-                        Species summary unavailable
-                      </Text>
-                    </View>
-                  </View>
-                </View>
+              {marking ? (
+                <ActivityIndicator size="small" color="#D4A574" />
               ) : (
-                <View style={styles.modalLoading}>
-                  <Text style={styles.modalLoadingText}>
-                    Unable to load species data.
-                  </Text>
-                </View>
+                <>
+                  <Ionicons name="heart-outline" size={16} color="#D4A574" />
+                  <Text style={styles.markDiscoveredText} numberOfLines={1}>Mark Discovered</Text>
+                </>
               )}
-            </ScrollView>
+            </Pressable>
+          </View>
 
-            {/* FOOTER */}
-            <View style={styles.modalFooter}>
-              <Pressable
-                style={styles.modalActionSecondary}
-              >
-                <Ionicons
-                  name="share-social-outline"
-                  size={15}
-                  color="#E2E8F0"
-                />
-
-                <Text
-                  style={
-                    styles.modalActionTextSecondary
-                  }
-                >
-                  Share Species
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.modalActionPrimary}
-                onPress={handleMarkDiscovered}
-                disabled={marking}
-              >
-                {marking ? (
-                  <ActivityIndicator
-                    color="#FFFFFF"
-                  />
+          {/* CONTENT */}
+          <ScrollView
+            style={styles.modalContent}
+            contentContainerStyle={styles.modalContentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {detailLoading ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color="#D4A574" />
+                <Text style={styles.modalLoadingText}>Loading species details...</Text>
+              </View>
+            ) : detail ? (
+              <View style={styles.modalBody}>
+                {galleryImages.length > 0 ? (
+                  <SpeciesGallery images={galleryImages} />
                 ) : (
-                  <>
-                    <Ionicons
-                      name="heart-outline"
-                      size={15}
-                      color="#FFFFFF"
-                    />
-
-                    /* Lines 546-552 omitted */
-                  </>
+                  <View style={styles.noImageCard}>
+                    <Ionicons name="images-outline" size={28} color="#94A3B8" />
+                    <Text style={styles.noImageText}>No image data available</Text>
+                  </View>
                 )}
-              </Pressable>
-            </View>
 
+                <View style={styles.quickFactsCard}>
+                  <Text style={styles.cardTitle}>Quick facts</Text>
+
+                  <View style={styles.factRow}>
+                    <Text style={styles.factLabel}>Status</Text>
+                    <Text style={styles.factText}>
+                      {detail?.conservation_status || 'Not listed'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.factRow}>
+                    <Text style={styles.factLabel}>Habitat</Text>
+                    <Text style={styles.factText}>
+                      {detail?.habitat || 'Mountain ecosystem'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.factRow}>
+                    <Text style={styles.factLabel}>Native</Text>
+                    <Text style={styles.factText}>
+                      {detail?.is_native === false ? 'Introduced' : 'Native'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.factRow}>
+                    <Text style={styles.factLabel}>Occurrence</Text>
+                    <Text style={styles.factText}>
+                      {detail?.occurrence_count || records?.length || 0} records
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.infoSection}>
+                  <TaxonomyTree taxonomy={detail?.taxonomy} />
+                </View>
+
+                <View style={styles.infoSection}>
+                  <DistributionMap occurrences={records || []} />
+                </View>
+
+                <View style={styles.infoSection}>
+                  <ObservationTimeline observations={records || []} />
+                </View>
+              </View>
+            ) : displayData ? (
+              <View style={styles.noImageCard}>
+                <Ionicons name="leaf-outline" size={28} color="#94A3B8" />
+                <Text style={styles.noImageText}>Species summary unavailable</Text>
+              </View>
+            ) : (
+              <View style={styles.modalLoading}>
+                <Text style={styles.modalLoadingText}>Unable to load species data.</Text>
+              </View>
+            )}
+          </ScrollView>
+          </View>
           </View>
         </View>
       </Modal>
@@ -480,10 +318,7 @@ export default function SpeciesSearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#0B1220',
-  },
+  screen: { flex: 1, backgroundColor: '#0B1220' },
 
   header: {
     flexDirection: 'row',
@@ -494,7 +329,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
-
   backButton: {
     width: 38,
     height: 38,
@@ -505,7 +339,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#233047',
   },
-
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
@@ -517,56 +350,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 40,
   },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, color: '#F8FAFC', fontSize: 13, fontWeight: '600' },
+  clearButton: { padding: 4 },
 
-  searchIcon: {
-    marginRight: 8,
-  },
-
-  searchInput: {
-    flex: 1,
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-
-  clearButton: {
-    padding: 4,
-  },
-
-  resultsContainer: {
-    flex: 1,
-    paddingHorizontal: 8,
-    paddingTop: 8,
-  },
-
-  resultsContent: {
-    paddingBottom: 20,
-  },
-
+  resultsContainer: { flex: 1, paddingHorizontal: 8, paddingTop: 8 },
+  resultsContent: { paddingBottom: 20 },
   columnWrapper: {
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    gap: GRID_GAP,
+    marginBottom: GRID_GAP,
   },
 
   skeletonGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    paddingHorizontal: 4,
   },
+  skeletonCard: { width: '31%', height: 165, backgroundColor: '#172033', borderRadius: 16, marginBottom: 10 },
 
-  skeletonCard: {
-    width: '48%',
-    height: 220,
-    backgroundColor: '#172033',
-    borderRadius: 20,
-    marginBottom: 12,
-  },
-
-  emptyState: {
-    marginTop: 80,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-
+  emptyState: { marginTop: 80, alignItems: 'center', paddingHorizontal: 20 },
   emptyIconWrapper: {
     width: 72,
     height: 72,
@@ -575,14 +379,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  emptyTitle: {
-    marginTop: 18,
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
+  emptyTitle: { marginTop: 18, color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
   emptyText: {
     marginTop: 10,
     color: '#94A3B8',
@@ -600,215 +397,88 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
+  loadMoreText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
 
-  loadMoreText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  modalOverlay: {
+  modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(2,6,23,0.88)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
   },
-
-  modalPanel: {
-    width: '100%',
-    maxWidth: 1500,
-    maxHeight: '95%',
-    backgroundColor: '#111827',
-    borderRadius: 30,
+  backdropTap: { ...StyleSheet.absoluteFill },
+  modalCard: {
+    width: '95%',
+    height: '92%',
+    borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#1E293B',
+    backgroundColor: '#111827',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 12,
   },
-
+  modalScreen: { flex: 1, backgroundColor: '#111827' },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 22,
-    paddingVertical: 18,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
-
-  modalTitleWrapper: {
-    flex: 1,
-    paddingRight: 12,
-  },
-
-  modalTitle: {
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  modalScientific: {
-    marginTop: 4,
-    color: '#D4A574',
-    fontSize: 11,
-    fontStyle: 'italic',
-  },
-
-  closeModalButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#172033',
-    justifyContent: 'center',
+  modalTitleWrapper: { flex: 1, paddingRight: 12 },
+  modalTitle: { color: '#F8FAFC', fontSize: 17, fontWeight: '700' },
+  modalScientific: { marginTop: 4, color: '#D4A574', fontSize: 12, fontStyle: 'italic' },
+  markDiscoveredInline: {
+    flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
   },
+  markDiscoveredText: { color: '#D4A574', fontSize: 11, fontWeight: '700' },
 
-  modalContent: {
-    flex: 1,
-  },
-
-  modalContentContainer: {
-    padding: 18,
-  },
-
-  modalBody: {
-    gap: 18,
-  },
-
-  modalLeft: {
-    flex: 0.48,
-    gap: 16,
-  },
-
-  modalRight: {
-    flex: 0.52,
-    gap: 16,
-  },
+  modalContent: { flex: 1 },
+  modalContentContainer: { padding: 14, paddingBottom: 20 },
+  modalBody: { gap: 14 },
 
   quickFactsCard: {
     backgroundColor: '#172033',
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#233047',
   },
-
-  cardTitle: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-
-  factRow: {
-    marginTop: 12,
-  },
-
-  factLabel: {
-    color: '#64748B',
-    fontSize: 9,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-
-  factText: {
-    marginTop: 4,
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  cardTitle: { color: '#F8FAFC', fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  factRow: { marginTop: 12 },
+  factLabel: { color: '#64748B', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.8 },
+  factText: { marginTop: 4, color: '#F8FAFC', fontSize: 13, fontWeight: '600' },
 
   infoSection: {
     backgroundColor: '#172033',
-    borderRadius: 22,
+    borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#233047',
   },
 
   noImageCard: {
-    height: 240,
-    borderRadius: 22,
+    aspectRatio: 16 / 10,
+    borderRadius: 20,
     backgroundColor: '#172033',
     borderWidth: 1,
     borderColor: '#233047',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-
-  noImageText: {
-    marginTop: 12,
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  modalLoading: {
-    paddingVertical: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  modalLoadingText: {
-    marginTop: 12,
-    color: '#94A3B8',
-    fontSize: 12,
-  },
-
-  timelineLoading: {
-    paddingVertical: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  timelineLoadingText: {
-    marginTop: 10,
-    color: '#94A3B8',
-    fontSize: 11,
-  },
-
-  modalFooter: {
-    flexDirection: 'row',
     gap: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#1E293B',
   },
+  noImageText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
 
-  modalActionSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#172033',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#233047',
-    paddingVertical: 14,
-  },
-
-  modalActionPrimary: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#D4A574',
-    borderRadius: 16,
-    paddingVertical: 14,
-  },
-
-  modalActionTextSecondary: {
-    color: '#E2E8F0',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  modalActionTextPrimary: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  modalLoading: { paddingVertical: 60, justifyContent: 'center', alignItems: 'center' },
+  modalLoadingText: { marginTop: 12, color: '#94A3B8', fontSize: 12 },
 });

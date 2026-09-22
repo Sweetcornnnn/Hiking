@@ -1,0 +1,1038 @@
+{
+  "2cd5666c-1deb-4499-812e-eb95a992ef68": {
+    "mountain": {
+      "id": "2cd5666c-1deb-4499-812e-eb95a992ef68",
+      "name": "Mt. Balinsayaw",
+      "latitude": 11.735,
+      "longitude": 122.23
+    },
+    "candidates": [
+      {
+        "scientific_name": "Saxicola caprata",
+        "common_name": "Pied Bushchat",
+        "inaturalist_id": 12910,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/14006651/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 4,
+        "distance_km": 4.37,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 4,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Lonchura atricapilla",
+        "common_name": "Chestnut Munia",
+        "inaturalist_id": 72989,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/313615542/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 2,
+        "distance_km": 4.62,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 3,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Cerbera manghas",
+        "common_name": "Grey Milkwood",
+        "inaturalist_id": 336787,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/27970569/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.75,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Hemidactylus platyurus",
+        "common_name": "Flat-tailed House Gecko",
+        "inaturalist_id": 33376,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/66693665/medium.jpg",
+        "category": "Reptilia",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.93,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Cinnyris jugularis",
+        "common_name": "Garden Sunbird",
+        "inaturalist_id": 145194,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/597836560/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.18,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Draco spilopterus",
+        "common_name": "Philippine Flying Dragon",
+        "inaturalist_id": 99566,
+        "image_url": "https://static.inaturalist.org/photos/9572386/medium.jpg",
+        "category": "Reptilia",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.37,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Gerygone sulphurea",
+        "common_name": "Golden-bellied Gerygone",
+        "inaturalist_id": 13495,
+        "image_url": "https://static.inaturalist.org/photos/64829261/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.37,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Chalcites minutillus",
+        "common_name": "Little Bronze Cuckoo",
+        "inaturalist_id": 369157,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/52387789/medium.jpeg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.37,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Merops philippinus",
+        "common_name": "Blue-tailed Bee-eater",
+        "inaturalist_id": 2212,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/41165864/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.88,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Pycnonotus goiavier",
+        "common_name": "Yellow-vented Bulbul",
+        "inaturalist_id": 14623,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/191239279/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.88,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Lanius cristatus",
+        "common_name": "Brown Shrike",
+        "inaturalist_id": 12021,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/472286950/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.88,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Dicaeum haematostictum",
+        "common_name": "Black-belted Flowerpecker",
+        "inaturalist_id": 72807,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/252099854/medium.jpeg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.9,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Butorides atricapilla",
+        "common_name": "Little Heron",
+        "inaturalist_id": 1636180,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/166334459/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.72,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Urena lobata",
+        "common_name": "Caesar weed",
+        "inaturalist_id": 127638,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/642852036/medium.jpg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.93,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Psidium guajava",
+        "common_name": "Common guava",
+        "inaturalist_id": 62859,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/259834166/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.93,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Solanum diphyllum",
+        "common_name": "twoleaf nightshade",
+        "inaturalist_id": 169060,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/97746517/medium.jpg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.93,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      }
+    ]
+  },
+  "d39ff04a-069b-4d90-b448-f66e6ae05772": {
+    "mountain": {
+      "id": "d39ff04a-069b-4d90-b448-f66e6ae05772",
+      "name": "Mt. M",
+      "latitude": 11.73,
+      "longitude": 122.225
+    },
+    "candidates": [
+      {
+        "scientific_name": "Cerbera manghas",
+        "common_name": "Grey Milkwood",
+        "inaturalist_id": 336787,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/27970569/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.52,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Hemidactylus platyurus",
+        "common_name": "Flat-tailed House Gecko",
+        "inaturalist_id": 33376,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/66693665/medium.jpg",
+        "category": "Reptilia",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.58,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Cinnyris jugularis",
+        "common_name": "Garden Sunbird",
+        "inaturalist_id": 145194,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/597836560/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.95,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Merops philippinus",
+        "common_name": "Blue-tailed Bee-eater",
+        "inaturalist_id": 2212,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/41165864/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 5,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Pycnonotus goiavier",
+        "common_name": "Yellow-vented Bulbul",
+        "inaturalist_id": 14623,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/191239279/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 5,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Lanius cristatus",
+        "common_name": "Brown Shrike",
+        "inaturalist_id": 12021,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/472286950/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 5,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Dicaeum haematostictum",
+        "common_name": "Black-belted Flowerpecker",
+        "inaturalist_id": 72807,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/252099854/medium.jpeg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 5,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Butorides atricapilla",
+        "common_name": "Little Heron",
+        "inaturalist_id": 1636180,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/166334459/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.47,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Urena lobata",
+        "common_name": "Caesar weed",
+        "inaturalist_id": 127638,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/642852036/medium.jpg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.58,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Psidium guajava",
+        "common_name": "Common guava",
+        "inaturalist_id": 62859,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/259834166/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.58,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Solanum diphyllum",
+        "common_name": "twoleaf nightshade",
+        "inaturalist_id": 169060,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/97746517/medium.jpg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.58,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Xylocarpus granatum",
+        "common_name": "cannonball mangrove",
+        "inaturalist_id": 196657,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/60981698/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.9,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Thinornis dubius",
+        "common_name": "Little Ringed Plover",
+        "inaturalist_id": 1580336,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/28895106/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.94,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      }
+    ]
+  },
+  "219d0ca0-dba5-41cd-b6cd-414c5d7e98e6": {
+    "mountain": {
+      "id": "219d0ca0-dba5-41cd-b6cd-414c5d7e98e6",
+      "name": "Mt. Madjaas",
+      "latitude": 11.152,
+      "longitude": 122.323
+    },
+    "candidates": []
+  },
+  "aeffeadd-0cb8-418f-b356-5c6dab35b219": {
+    "mountain": {
+      "id": "aeffeadd-0cb8-418f-b356-5c6dab35b219",
+      "name": "Mt. Nausang",
+      "latitude": 11.741,
+      "longitude": 122.226
+    },
+    "candidates": [
+      {
+        "scientific_name": "Saxicola caprata",
+        "common_name": "Pied Bushchat",
+        "inaturalist_id": 12910,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/14006651/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 4,
+        "distance_km": 3.85,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 4,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Lonchura atricapilla",
+        "common_name": "Chestnut Munia",
+        "inaturalist_id": 72989,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/313615542/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 2,
+        "distance_km": 4.15,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 3,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Dicaeum haematostictum",
+        "common_name": "Black-belted Flowerpecker",
+        "inaturalist_id": 72807,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/252099854/medium.jpeg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 2,
+        "distance_km": 4.6,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 3,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Cerbera manghas",
+        "common_name": "Grey Milkwood",
+        "inaturalist_id": 336787,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/27970569/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.53,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Draco spilopterus",
+        "common_name": "Philippine Flying Dragon",
+        "inaturalist_id": 99566,
+        "image_url": "https://static.inaturalist.org/photos/9572386/medium.jpg",
+        "category": "Reptilia",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.85,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Gerygone sulphurea",
+        "common_name": "Golden-bellied Gerygone",
+        "inaturalist_id": 13495,
+        "image_url": "https://static.inaturalist.org/photos/64829261/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.85,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Chalcites minutillus",
+        "common_name": "Little Bronze Cuckoo",
+        "inaturalist_id": 369157,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/52387789/medium.jpeg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.85,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Cinnyris jugularis",
+        "common_name": "Garden Sunbird",
+        "inaturalist_id": 145194,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/597836560/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.13,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Hemidactylus platyurus",
+        "common_name": "Flat-tailed House Gecko",
+        "inaturalist_id": 33376,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/66693665/medium.jpg",
+        "category": "Reptilia",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.31,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Loriculus philippensis",
+        "common_name": "Philippine Hanging-Parrot",
+        "inaturalist_id": 204536,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/350052444/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.42,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Butorides atricapilla",
+        "common_name": "Little Heron",
+        "inaturalist_id": 1636180,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/166334459/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.4,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Urena lobata",
+        "common_name": "Caesar weed",
+        "inaturalist_id": 127638,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/642852036/medium.jpg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.31,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Psidium guajava",
+        "common_name": "Common guava",
+        "inaturalist_id": 62859,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/259834166/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.31,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Solanum diphyllum",
+        "common_name": "twoleaf nightshade",
+        "inaturalist_id": 169060,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/97746517/medium.jpg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.31,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Carica papaya",
+        "common_name": "Papaya",
+        "inaturalist_id": 62811,
+        "image_url": "https://static.inaturalist.org/photos/176927180/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.41,
+        "source_count": 1,
+        "review_flags": [
+          "possible cultivated or disturbed habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Xylocarpus granatum",
+        "common_name": "cannonball mangrove",
+        "inaturalist_id": 196657,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/60981698/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.52,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Thinornis dubius",
+        "common_name": "Little Ringed Plover",
+        "inaturalist_id": 1580336,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/28895106/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.99,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      }
+    ]
+  },
+  "f2173971-80bf-40dd-96e9-c6b015be194b": {
+    "mountain": {
+      "id": "f2173971-80bf-40dd-96e9-c6b015be194b",
+      "name": "Pandan Hills",
+      "latitude": 11.715,
+      "longitude": 122.19
+    },
+    "candidates": [
+      {
+        "scientific_name": "Thinornis dubius",
+        "common_name": "Little Ringed Plover",
+        "inaturalist_id": 1580336,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/28895106/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 2.73,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Dicaeum haematostictum",
+        "common_name": "Black-belted Flowerpecker",
+        "inaturalist_id": 72807,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/252099854/medium.jpeg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 3.4,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Spilornis holospilus",
+        "common_name": "Philippine Serpent-Eagle",
+        "inaturalist_id": 5160,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/398392204/medium.jpeg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.69,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Sarcops calvus",
+        "common_name": "Coleto",
+        "inaturalist_id": 15002,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/313613269/medium.jpg",
+        "category": "Aves",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.91,
+        "source_count": 1,
+        "review_flags": [
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 2,
+        "review_status": "review: single source"
+      },
+      {
+        "scientific_name": "Xylocarpus granatum",
+        "common_name": "cannonball mangrove",
+        "inaturalist_id": 196657,
+        "image_url": "https://inaturalist-open-data.s3.amazonaws.com/photos/60981698/medium.jpeg",
+        "category": "Plantae",
+        "sources": [
+          "iNaturalist"
+        ],
+        "observation_count": 1,
+        "distance_km": 4.12,
+        "source_count": 1,
+        "review_flags": [
+          "possible coastal or lowland habitat",
+          "farther from coordinate",
+          "single source"
+        ],
+        "confidence_score": 1,
+        "review_status": "review: single source"
+      }
+    ]
+  }
+}

@@ -2,6 +2,27 @@ import { SpeciesSearchResult, SpeciesDetails, TaxonomyNode, OccurrenceRecord } f
 
 const BASE_URL = 'https://api.gbif.org/v1';
 
+const safeJsonFetch = async <T>(url: string): Promise<T | null> => {
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json') && !contentType.includes('+json')) {
+      return null;
+    }
+
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+};
+
 const mapTaxonomy = (record: any): TaxonomyNode => ({
   kingdom: record.kingdom,
   phylum: record.phylum,
@@ -32,55 +53,52 @@ const inferCategoryFromRank = (rank?: string, family?: string, genus?: string): 
 
 export const GBIFService = {
   async searchSpecies(name: string, limit: number = 18): Promise<SpeciesSearchResult[]> {
-    try {
-      const response = await fetch(`${BASE_URL}/species/search?q=${encodeURIComponent(name)}&limit=${limit}&rank=SPECIES`);
-      const data = await response.json();
-      const results = data.results || [];
-      return results.map((item: any) => ({
-        id: `gbif-${item.key}`,
-        source: 'gbif',
-        gbif_id: item.key,
-        scientific_name: item.scientificName || item.canonicalName || item.scientificName,
-        common_name: item.vernacularName || item.canonicalName,
-        taxon_rank: item.rank,
-        category: inferCategoryFromRank(item.rank, item.family, item.genus),
-        taxonomy: mapTaxonomy(item),
-        image_url: undefined,
-        conservation_status: item.taxonomicStatus,
-        is_endemic: false,
-        is_native: false,
-        occurrence_count: item.numDescendants ?? item.usageKey ?? undefined,
-        habitat: item.kingdom,
-        description: item.taxonomicStatus || `${item.rank || 'Species'} within ${item.kingdom || 'the tree of life'}`,
-      }));
-    } catch (error) {
-      console.error('[GBIFService] searchSpecies error', error);
-      return [];
-    }
+    const data = await safeJsonFetch<{ results?: any[] }>(
+      `${BASE_URL}/species/search?q=${encodeURIComponent(name)}&limit=${limit}&rank=SPECIES`
+    );
+
+    const results = data?.results || [];
+    return results.map((item: any) => ({
+      id: `gbif-${item.key}`,
+      source: 'gbif',
+      gbif_id: item.key,
+      scientific_name: item.scientificName || item.canonicalName || item.scientificName,
+      common_name: item.vernacularName || item.canonicalName,
+      taxon_rank: item.rank,
+      category: inferCategoryFromRank(item.rank, item.family, item.genus),
+      taxonomy: mapTaxonomy(item),
+      image_url: undefined,
+      conservation_status: item.taxonomicStatus,
+      is_endemic: false,
+      is_native: false,
+      occurrence_count: item.numDescendants ?? item.usageKey ?? undefined,
+      habitat: item.kingdom,
+      description: item.taxonomicStatus || `${item.rank || 'Species'} within ${item.kingdom || 'the tree of life'}`,
+    }));
   },
 
   async getSpeciesDetails(gbifId: number): Promise<SpeciesDetails | null> {
     try {
-      const [speciesResp, vernacularResp, occurrenceResp] = await Promise.all([
-        fetch(`${BASE_URL}/species/${gbifId}`),
-        fetch(`${BASE_URL}/species/${gbifId}/vernacularNames`),
-        fetch(`${BASE_URL}/occurrence/search?taxonKey=${gbifId}&limit=12&hasCoordinate=true`),
+      const [speciesData, vernacularData, occurrenceData] = await Promise.all([
+        safeJsonFetch<any>(`${BASE_URL}/species/${gbifId}`),
+        safeJsonFetch<any>(`${BASE_URL}/species/${gbifId}/vernacularNames`),
+        safeJsonFetch<any>(`${BASE_URL}/occurrence/search?taxonKey=${gbifId}&limit=12&hasCoordinate=true`),
       ]);
 
-      const speciesData = await speciesResp.json();
-      const vernacularData = await vernacularResp.json();
-      const occurrenceData = await occurrenceResp.json();
+      if (!speciesData) return null;
 
-      const vernacularNames = (vernacularData.results || []).map((item: any) => item.vernacularName).filter(Boolean);
-      const occurrences = (occurrenceData.results || []).map((item: any) => item);
-      const sortedObservations = occurrences.sort((a: any, b: any) => {
+      const vernacularNames = ((vernacularData?.results || []) as any[])
+        .map((item: any) => item.vernacularName)
+        .filter(Boolean);
+      const occurrences = (occurrenceData?.results || []) as any[];
+      const sortedObservations = [...occurrences].sort((a: any, b: any) => {
         const aDate = new Date(a.eventDate || a.created || 0).getTime();
         const bDate = new Date(b.eventDate || b.created || 0).getTime();
         return bDate - aDate;
       });
 
       const observationSummary = {
-        total_records: occurrenceData.count || occurrences.length,
+        total_records: occurrenceData?.count || occurrences.length,
         last_observed: sortedObservations[0]?.eventDate || sortedObservations[0]?.created || undefined,
         elevation_min: Math.min(...occurrences.filter((o: any) => typeof o.elevation === 'number').map((o: any) => o.elevation || Infinity), Infinity),
         elevation_max: Math.max(...occurrences.filter((o: any) => typeof o.elevation === 'number').map((o: any) => o.elevation || -Infinity), -Infinity),
@@ -113,37 +131,31 @@ export const GBIFService = {
           : undefined,
         last_observed: observationSummary.last_observed,
       };
-    } catch (error) {
-      console.error('[GBIFService] getSpeciesDetails error', error);
+    } catch {
       return null;
     }
   },
 
   async getSpeciesOccurrences(gbifId: number, limit: number = 18): Promise<OccurrenceRecord[]> {
-    try {
-      const response = await fetch(
-        `${BASE_URL}/occurrence/search?taxonKey=${gbifId}&limit=${limit}&hasCoordinate=true&country=PH`
-      );
-      const data = await response.json();
-      return (data.results || []).map((item: any) => ({
-        id: `occ-${item.key}`,
-        source: 'gbif',
-        recordedAt: item.eventDate || item.created,
-        coordinates: item.decimalLatitude && item.decimalLongitude ? {
-          latitude: item.decimalLatitude,
-          longitude: item.decimalLongitude,
-        } : undefined,
-        elevation: item.elevation,
-        country: item.country,
-        locality: item.locality || item.localityText || item.town,
-        dataset: item.datasetTitle,
-        confidence: item.coordinatePrecision ? `±${item.coordinatePrecision} m` : undefined,
-        habitat: item.habitat,
-        imageUrl: item.media?.[0]?.identifier,
-      }));
-    } catch (error) {
-      console.error('[GBIFService] getSpeciesOccurrences error', error);
-      return [];
-    }
+    const data = await safeJsonFetch<{ results?: any[]; count?: number }>(
+      `${BASE_URL}/occurrence/search?taxonKey=${gbifId}&limit=${limit}&hasCoordinate=true&country=PH`
+    );
+
+    return (data?.results || []).map((item: any) => ({
+      id: `occ-${item.key}`,
+      source: 'gbif',
+      recordedAt: item.eventDate || item.created,
+      coordinates: item.decimalLatitude && item.decimalLongitude ? {
+        latitude: item.decimalLatitude,
+        longitude: item.decimalLongitude,
+      } : undefined,
+      elevation: item.elevation,
+      country: item.country,
+      locality: item.locality || item.localityText || item.town,
+      dataset: item.datasetTitle,
+      confidence: item.coordinatePrecision ? `±${item.coordinatePrecision} m` : undefined,
+      habitat: item.habitat,
+      imageUrl: item.media?.[0]?.identifier,
+    }));
   },
 };

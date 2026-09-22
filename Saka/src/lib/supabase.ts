@@ -51,7 +51,7 @@ export type Tables = {
     created_at: string;
     updated_at?: string | null;
   };
-  hikes: {
+    hikes: {
     id: string;
     user_id: string;
     date: string;
@@ -60,7 +60,10 @@ export type Tables = {
     tagalongs: number;
     contact_number: string;
     emergency_contact: string;
+    mountain_id?: string | null;
+    mountain_name?: string | null;
     created_at: string;
+    updated_at?: string | null;
   };
   // Add more tables as needed
   mountains: {

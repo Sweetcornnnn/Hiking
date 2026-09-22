@@ -1,18 +1,12 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Dimensions } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   BG_PANEL,
   BG_SUBTLE,
   BORDER_DEFAULT,
   TEXT_PRIMARY,
-  TEXT_MUTED,
-  ACCENT_GOLD,
-  ACCENT_GREEN,
 } from '../../theme/designTokens';
-
-const { width, height } = Dimensions.get('window');
-const isLandscape = width >= height;
 
 interface QuickAction {
   icon: keyof typeof Ionicons.glyphMap;
@@ -35,9 +29,11 @@ export const QuickActions: React.FC<QuickActionsProps> = ({ actions }) => {
           activeOpacity={0.7}
         >
           <View style={styles.iconContainer}>
-            <Ionicons name={action.icon} size={24} color="#2C3E50" />
+            <Ionicons name={action.icon} size={22} color="#2C3E50" />
           </View>
-          <Text style={styles.actionLabel}>{action.label}</Text>
+          <Text style={styles.actionLabel} numberOfLines={1}>
+            {action.label}
+          </Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -48,24 +44,23 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: isLandscape ? 14 : 12,
-    marginBottom: isLandscape ? 16 : 20,
+    gap: 10,
   },
   actionButton: {
-    flex: 1,
-    minWidth: isLandscape ? '30%' : '45%',
+    flexBasis: '47%',
+    flexGrow: 1,
     backgroundColor: BG_PANEL,
     borderRadius: 16,
-    padding: isLandscape ? 18 : 16,
+    paddingVertical: 16,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
   },
   iconContainer: {
     backgroundColor: BG_SUBTLE,
-    padding: 12,
+    padding: 11,
     borderRadius: 12,
-    marginBottom: 10,
+    marginBottom: 9,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
   },

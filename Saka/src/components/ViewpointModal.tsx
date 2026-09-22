@@ -267,7 +267,13 @@ export default function ViewpointModal({
             style={[styles.primaryBtn, { backgroundColor: ACCENT_GOLD }]}
             onPress={() => {
               onDismiss();
-              router.push('/Calendar');
+              if (!mountainId) {
+                return;
+              }
+              router.push({
+                pathname: '/Calendar',
+                params: { mountainId },
+              });
             }}
             activeOpacity={0.85}
             accessibilityLabel="Schedule a hike"

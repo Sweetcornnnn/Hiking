@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
+import { useWildTrackStore } from '../store/wildtrackStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
@@ -32,7 +33,6 @@ function VideoViewPlayer({ source, isActive }: { source: { uri: string }; isActi
   const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
-    p.staysActiveInBackground = true;
   });
 
   useEffect(() => {
@@ -81,7 +81,7 @@ const MountainSlide = memo(function MountainSlide({
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
-        {mountain.video_url ? (
+        {mountain.video_url && isActive ? (
           <VideoViewPlayer source={{ uri: mountain.video_url }} isActive={isActive} />
         ) : mountain.image_url ? (
           <Image source={{ uri: mountain.image_url }} style={styles.fullScreenImage} resizeMode="cover" />
@@ -122,6 +122,7 @@ const MountainSlide = memo(function MountainSlide({
 export default function HomeScreen() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
+  const { setSelectedMountainId } = useWildTrackStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(false);
@@ -247,6 +248,10 @@ export default function HomeScreen() {
         onMomentumScrollEnd={(event) => {
           const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
           setActiveIndex(newIndex);
+
+          if (mountains[newIndex]) {
+            setSelectedMountainId(mountains[newIndex].id);
+          }
         }}
         decelerationRate="fast"
       >

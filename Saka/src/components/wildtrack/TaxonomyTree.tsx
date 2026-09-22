@@ -1,19 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TaxonomyNode } from '../../types/wildtrack';
 import {
   BG_PANEL,
-  BG_SUBTLE,
   BORDER_DEFAULT,
   TEXT_PRIMARY,
   TEXT_MUTED,
-  ACCENT_GOLD,
-  ACCENT_GREEN,
 } from '../../theme/designTokens';
-
-const { width, height } = Dimensions.get('window');
-const isLandscape = width >= height;
 
 interface TaxonomyTreeProps {
   taxonomy?: TaxonomyNode;
@@ -45,6 +39,7 @@ export const TaxonomyTree: React.FC<TaxonomyTreeProps> = ({ taxonomy }) => {
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color="#0F172A" />
       </Pressable>
+
       {expanded && (
         <View style={styles.list}>
           {entries.map((entry) => (
@@ -62,50 +57,17 @@ export const TaxonomyTree: React.FC<TaxonomyTreeProps> = ({ taxonomy }) => {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: BG_PANEL,
-    borderRadius: 22,
-    padding: isLandscape ? 18 : 16,
-    marginBottom: 12,
+    borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: isLandscape ? 14 : 12,
-  },
-  titleRow: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-  },
-  subtitle: {
-    fontSize: 10,
-    color: TEXT_MUTED,
-    marginTop: 2,
-  },
-  list: {
-    borderTopWidth: 1,
-    borderTopColor: BORDER_DEFAULT,
-    paddingTop: isLandscape ? 14 : 12,
-  },
-  entryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: isLandscape ? 12 : 10,
-  },
-  rank: {
-    fontSize: 9,
-    color: TEXT_MUTED,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  value: {
-    fontSize: 12,
-    color: TEXT_PRIMARY,
-    fontWeight: '500',
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  titleRow: { flex: 1, paddingRight: 10 },
+  title: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
+  subtitle: { fontSize: 10, color: TEXT_MUTED, marginTop: 2 },
+  list: { borderTopWidth: 1, borderTopColor: BORDER_DEFAULT, paddingTop: 12 },
+  entryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  rank: { fontSize: 9, color: TEXT_MUTED, textTransform: 'uppercase', letterSpacing: 0.5 },
+  value: { fontSize: 12, color: TEXT_PRIMARY, fontWeight: '500' },
 });
