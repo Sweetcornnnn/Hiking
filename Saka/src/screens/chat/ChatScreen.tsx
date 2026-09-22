@@ -1,9 +1,10 @@
-// ChatScreen.tsx - Fixed with proper layout and transparent backgrounds
+// screens/ChatScreen.tsx
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BG_CARD, TEXT_PRIMARY, ACCENT_GOLD, BG_PANEL } from '../../theme/designTokens';
+import { Ionicons } from '@expo/vector-icons';
+import { BG_PANEL, TEXT_PRIMARY } from '../../theme/designTokens';
 import ChatTabs from '../../components/chat/ChatTabs';
 import WorldChatScreen from './WorldChatScreen';
 import PrivateChatScreen from './PrivateChatScreen';
@@ -13,28 +14,39 @@ export default function ChatScreen() {
   const [active, setActive] = useState<'world' | 'private'>('world');
 
   return (
-    <View style={[styles.container, { backgroundColor: BG_PANEL }]}>
+    <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>←</Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.iconBtn}
+            hitSlop={8}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
+
           <View style={styles.headerCenter}>
-            <Text style={[styles.title, { color: TEXT_PRIMARY }]}>SAKA Chat</Text>
-            <View style={[styles.statusDot, { backgroundColor: '#4CAF50' }]} />
+            <Text style={styles.title}>SAKA Chat</Text>
+            <View style={styles.statusRow}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>Online</Text>
+            </View>
           </View>
-          <TouchableOpacity style={styles.headerAction}>
-            <Text style={styles.headerActionText}>⋯</Text>
+
+          <TouchableOpacity style={styles.iconBtn} hitSlop={8} activeOpacity={0.7}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
-        
+
+        {/* Tabs */}
         <ChatTabs active={active} onChange={setActive} />
-        
-        <View style={styles.contentContainer}>
-          <View style={styles.content}>
-            {active === 'world' && <WorldChatScreen />}
-            {active === 'private' && <PrivateChatScreen />}
-          </View>
+
+        {/* Content */}
+        <View style={styles.content}>
+          {active === 'world' && <WorldChatScreen />}
+          {active === 'private' && <PrivateChatScreen />}
         </View>
       </SafeAreaView>
     </View>
@@ -42,72 +54,52 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1,
-    backgroundColor: BG_PANEL,
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
+  container: { flex: 1, backgroundColor: BG_PANEL },
+  safeArea: { flex: 1, backgroundColor: BG_PANEL },
   header: {
-    height: 64,
-    paddingHorizontal: 16,
+    height: 56,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.04)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
     backgroundColor: BG_PANEL,
   },
   headerCenter: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    letterSpacing: -0.3,
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.2,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 1,
   },
   statusDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    marginTop: 1,
+    backgroundColor: '#4CAF50',
   },
-  backBtn: {
-    width: 36,
-    height: 36,
+  statusText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '500',
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 20,
   },
-  backText: {
-    fontSize: 20,
-    color: '#fff',
-    fontWeight: '300',
-  },
-  headerAction: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  headerActionText: {
-    fontSize: 18,
-    color: '#fff',
-    fontWeight: '700',
-  },
-  contentContainer: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  content: { 
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
+  content: { flex: 1, backgroundColor: 'transparent' },
 });

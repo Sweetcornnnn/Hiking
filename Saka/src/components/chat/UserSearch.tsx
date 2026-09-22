@@ -1,9 +1,18 @@
-// UserSearch.tsx - Enhanced with modern search and debounce
+// components/chat/UserSearch.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, TextInput, FlatList, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SPACING, BG_PANEL, TEXT_PRIMARY, TEXT_MUTED, RADIUS_PILL } from '../../theme/designTokens';
+import { TEXT_PRIMARY, TEXT_MUTED, ACCENT_GOLD } from '../../theme/designTokens';
 import { supabase } from '../../lib/supabase';
+import { getAvatarColor, getInitials } from '../../utils/colors';
 
 export default function UserSearch({ onSelect }: { onSelect: (u: any) => void }) {
   const [q, setQ] = useState('');
@@ -17,17 +26,23 @@ export default function UserSearch({ onSelect }: { onSelect: (u: any) => void })
       setResults([]);
       return;
     }
-    
+
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id,name,email,avatar_url')
-        .ilike('name', `%${text}%`)
+        .select('id, full_name, username, email, avatar_url')
+        .ilike('full_name', `%${text}%`)
         .limit(10);
-      
+
       if (error) throw error;
-      setResults(data || []);
+
+      const formattedData = (data || []).map((item) => ({
+        ...item,
+        name: item.full_name || item.username || 'Unknown User',
+      }));
+
+      setResults(formattedData);
     } catch (error) {
       console.warn('user search', error);
     } finally {
@@ -35,136 +50,165 @@ export default function UserSearch({ onSelect }: { onSelect: (u: any) => void })
     }
   }, []);
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
-  };
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (q.trim()) search(q);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [q, search]);
 
-  const getRandomColor = (id: string) => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
-    const index = parseInt(id) % colors.length;
-    return colors[index];
+  const handleSelect = (user: any) => {
+    onSelect(user);
+    setQ('');
+    setResults([]);
   };
 
   return (
     <View style={styles.container}>
       <View style={[styles.searchBar, focused && styles.searchBarFocused]}>
-        <Ionicons name="search-outline" size={20} color={TEXT_MUTED} />
-        <TextInput 
-          placeholder="Search users..." 
-          placeholderTextColor={TEXT_MUTED}
-          value={q} 
-          onChangeText={search}
+        <Ionicons name="search-outline" size={17} color={TEXT_MUTED} />
+        <TextInput
+          placeholder="Search users…"
+          placeholderTextColor="rgba(255,255,255,0.3)"
+          value={q}
+          onChangeText={setQ}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           style={[styles.input, { color: TEXT_PRIMARY }]}
+          returnKeyType="search"
         />
-        {q.length > 0 && (
-          <TouchableOpacity onPress={() => { setQ(''); setResults([]); }}>
-            <Ionicons name="close-circle" size={20} color={TEXT_MUTED} />
+        {loading ? (
+          <ActivityIndicator size="small" color={TEXT_MUTED} />
+        ) : q.length > 0 ? (
+          <TouchableOpacity
+            onPress={() => {
+              setQ('');
+              setResults([]);
+            }}
+            hitSlop={6}
+          >
+            <Ionicons name="close-circle" size={17} color="rgba(255,255,255,0.35)" />
           </TouchableOpacity>
-        )}
-        {loading && <ActivityIndicator size="small" color={TEXT_MUTED} />}
+        ) : null}
       </View>
 
       {results.length > 0 && (
-        <FlatList 
-          data={results} 
-          keyExtractor={(i) => i.id} 
-          renderItem={({ item }) => (
-            <TouchableOpacity 
-              style={styles.row} 
-              onPress={() => { onSelect(item); setQ(''); setResults([]); }}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.avatar, { backgroundColor: getRandomColor(item.id) }]}>
-                <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+        <View style={styles.resultsCard}>
+          <FlatList
+            data={results}
+            keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            renderItem={({ item }) => (
+              <View style={styles.row}>
+                <TouchableOpacity
+                  style={styles.rowLeft}
+                  onPress={() => handleSelect(item)}
+                  activeOpacity={0.7}
+                >
+                  <View
+                    style={[styles.avatar, { backgroundColor: getAvatarColor(item.id) }]}
+                  >
+                    <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+                  </View>
+                  <View style={styles.userInfo}>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.email} numberOfLines={1}>
+                      {item.email}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.addBtn}
+                  onPress={() => handleSelect(item)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add" size={15} color="#fff" />
+                  <Text style={styles.addText}>Add</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.userInfo}>
-                <Text style={[styles.name, { color: TEXT_PRIMARY }]}>{item.name}</Text>
-                <Text style={[styles.email, { color: TEXT_MUTED }]}>{item.email}</Text>
-              </View>
-              <TouchableOpacity style={styles.addBtn}>
-                <Text style={styles.addText}>Add</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          )}
-          style={styles.resultsList}
-        />
+            )}
+            style={styles.resultsList}
+            nestedScrollEnabled
+          />
+        </View>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: SPACING.gap / 2,
-    position: 'relative',
-  },
+  container: { paddingVertical: 4 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 2,
+    paddingHorizontal: 12,
+    height: 44,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
-    gap: 10,
+    gap: 8,
   },
   searchBarFocused: {
-    borderColor: '#4ECDC4',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(201,169,110,0.5)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
   input: {
     flex: 1,
-    paddingVertical: 12,
-    fontSize: 15,
+    paddingVertical: 8,
+    fontSize: 14.5,
   },
-  resultsList: {
-    maxHeight: 300,
+  resultsCard: {
     marginTop: 8,
+    backgroundColor: '#16202F',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+    maxHeight: 320,
+  },
+  resultsList: { maxHeight: 320 },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginLeft: 60,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.03)',
-    gap: 12,
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  rowLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  userInfo: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  email: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
+  avatarText: { color: '#fff', fontWeight: '700', fontSize: 13.5 },
+  userInfo: { flex: 1, minWidth: 0 },
+  name: { fontSize: 14, fontWeight: '600', color: TEXT_PRIMARY },
+  email: { fontSize: 12, color: TEXT_MUTED, opacity: 0.75, marginTop: 1 },
   addBtn: {
-    backgroundColor: '#4ECDC4',
-    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: ACCENT_GOLD,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 999,
   },
-  addText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  addText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

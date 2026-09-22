@@ -1,25 +1,56 @@
-// ChatMessage.tsx - Cleaner bubble design
+// components/chat/ChatMessage.tsx
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { ACCENT_GOLD, BG_PANEL, TEXT_PRIMARY, TEXT_MUTED, SPACING } from '../../theme/designTokens';
+import { ACCENT_GOLD, TEXT_PRIMARY, TEXT_MUTED } from '../../theme/designTokens';
+import { getAvatarColor, getInitials } from '../../utils/colors';
 
-export default function ChatMessage({ message, currentUserId }: { message: any; currentUserId?: string | null }) {
+export default function ChatMessage({
+  message,
+  currentUserId,
+}: {
+  message: any;
+  currentUserId?: string | null;
+}) {
   const isMe = currentUserId && message.user_id === currentUserId;
-  const name = message.profiles?.full_name || message.profiles?.username || 'Anonymous';
-  const time = message.created_at ? new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+  const profile = message.profiles || message.users || {};
+  const name = profile.full_name || profile.username || 'Anonymous';
+
+  const time = message.created_at
+    ? new Date(message.created_at).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '';
 
   return (
     <View style={[styles.row, isMe ? styles.me : styles.other]}>
       {!isMe && (
-        <Text style={[styles.name, { color: TEXT_MUTED }]} numberOfLines={1}>
-          {name}
-        </Text>
+        <View style={styles.headerRow}>
+          <View
+            style={[
+              styles.avatar,
+              { backgroundColor: getAvatarColor(message.user_id) },
+            ]}
+          >
+            <Text style={styles.avatarText}>{getInitials(name)}</Text>
+          </View>
+          <Text style={styles.name} numberOfLines={1}>
+            {name}
+          </Text>
+        </View>
       )}
+
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
         <Text style={[styles.text, { color: isMe ? '#fff' : TEXT_PRIMARY }]}>
           {message.content}
         </Text>
-        <Text style={[styles.time, { color: isMe ? 'rgba(255,255,255,0.6)' : TEXT_MUTED }]}>
+        <Text
+          style={[
+            styles.time,
+            { color: isMe ? 'rgba(255,255,255,0.72)' : TEXT_MUTED },
+          ]}
+        >
           {time}
         </Text>
       </View>
@@ -28,43 +59,63 @@ export default function ChatMessage({ message, currentUserId }: { message: any; 
 }
 
 const styles = StyleSheet.create({
-  row: { 
-    marginVertical: 2,
-    marginHorizontal: 2,
+  row: {
+    marginVertical: 4,
+    paddingHorizontal: 2,
   },
   me: { alignItems: 'flex-end' },
   other: { alignItems: 'flex-start' },
-  name: { 
-    fontSize: 10, 
-    marginBottom: 2,
-    marginLeft: 4,
-    fontWeight: '500',
-    opacity: 0.5,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+    marginLeft: 2,
   },
-  bubble: { 
-    maxWidth: '82%',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+  avatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  bubbleMe: { 
+  avatarText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  name: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: TEXT_MUTED,
+    letterSpacing: 0.1,
+    maxWidth: 200,
+  },
+  bubble: {
+    maxWidth: '80%',
+    paddingVertical: 9,
+    paddingHorizontal: 13,
+    borderRadius: 18,
+  },
+  bubbleMe: {
     backgroundColor: ACCENT_GOLD,
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 6,
   },
-  bubbleOther: { 
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderBottomLeftRadius: 4,
+  bubbleOther: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderBottomLeftRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.04)',
   },
-  text: { 
-    fontSize: 14,
-    lineHeight: 18,
+  text: {
+    fontSize: 14.5,
+    lineHeight: 20,
+    letterSpacing: 0.1,
   },
-  time: { 
-    fontSize: 9, 
+  time: {
+    fontSize: 10,
     marginTop: 4,
     alignSelf: 'flex-end',
-    opacity: 0.5,
+    opacity: 0.7,
   },
 });
