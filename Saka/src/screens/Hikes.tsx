@@ -13,6 +13,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useHikesStore } from '../store/hikesStore';
+import { useAuthStore } from '../store/authStore';
 import { mountainService } from '../services/mountainService'; // ⚠️ adjust path if different in your project
 import { getWeatherForecast } from '../services/weatherService';
 import { Hike } from '../types';
@@ -87,6 +88,7 @@ const getWeatherIconColor = (iconCode?: string) => {
 interface HikeCardProps {
   hike: Hike;
   weather: DayWeather | null;
+  canEdit: boolean;
   onEdit: (hike: Hike) => void;
   onDelete: (hike: Hike) => void;
 }
@@ -95,7 +97,7 @@ interface HikeCardProps {
 // down (resistance) as it nears the right edge, while the card shakes
 // harder the further the wipe has gotten. Let go early and it snaps back —
 // the wipe reaching the far edge IS the confirmation, no alert needed.
-function HikeCard({ hike, weather, onEdit, onDelete }: HikeCardProps) {
+function HikeCard({ hike, weather, canEdit, onEdit, onDelete }: HikeCardProps) {
   const fillAnim = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const fillAnimation = useRef<Animated.CompositeAnimation | null>(null);
@@ -154,9 +156,9 @@ function HikeCard({ hike, weather, onEdit, onDelete }: HikeCardProps) {
 
   return (
     <Pressable
-      onPress={() => onEdit(hike)}
-      onPressIn={startHold}
-      onPressOut={cancelHold}
+      onPress={() => canEdit && onEdit(hike)}
+      onPressIn={() => canEdit && startHold()}
+      onPressOut={() => canEdit && cancelHold()}
       style={styles.cardTouchable}
     >
       <Animated.View style={[styles.card, { transform: [{ translateX }] }]}>
@@ -172,15 +174,22 @@ function HikeCard({ hike, weather, onEdit, onDelete }: HikeCardProps) {
             {weather ? (
               <Ionicons name={getWeatherIconName(weather.icon)} size={11} color={getWeatherIconColor(weather.icon)} />
             ) : null}
+            {!canEdit ? (
+              <Ionicons name="eye-outline" size={11} color="rgba(255,255,255,0.55)" />
+            ) : null}
           </View>
           <View style={styles.cardRow}>
             <Ionicons name="people-outline" size={10} color="rgba(255,255,255,0.5)" />
             <Text style={styles.cardRowText}>{hike.tagalongs}</Text>
+            {!canEdit ? (
+              <Text style={styles.viewOnlyText}>View only</Text>
+            ) : null}
           </View>
         </View>
 
-        {/* Left-to-right delete wipe, drawn on top of the card content */}
-        <Animated.View pointerEvents="none" style={[styles.deleteWipe, { width: wipeWidth }]} />
+        {canEdit ? (
+          <Animated.View pointerEvents="none" style={[styles.deleteWipe, { width: wipeWidth }]} />
+        ) : null}
       </Animated.View>
     </Pressable>
   );
@@ -189,18 +198,24 @@ function HikeCard({ hike, weather, onEdit, onDelete }: HikeCardProps) {
 export default function HikesScreen() {
   const router = useRouter();
   const { date, mountainId } = useLocalSearchParams<{ date: string; mountainId?: string }>();
-  const { hikes, deleteHike } = useHikesStore();
+  const { mountainHikes, deleteHike } = useHikesStore();
+  const { user } = useAuthStore();
   const [editingHike, setEditingHike] = useState<Hike | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [resolvedMountain, setResolvedMountain] = useState<Mountain | null>(null);
   const [dayWeather, setDayWeather] = useState<DayWeather | null>(null);
   const toastRef = useRef<ToastHandle>(null);
 
-  const hikesOnDate = hikes.filter((h) => h.date === date);
+  const hikesOnDate = mountainHikes.filter((h) => h.date === date);
   const mountainName = resolvedMountain?.name ?? hikesOnDate[0]?.mountain_name;
 
   // Resolve the mountain (for its name and lat/long) — cache first, same as
   // Calendar.tsx, then a network fetch as fallback.
+  useEffect(() => {
+    if (!mountainId) return;
+    useHikesStore.getState().fetchMountainHikes(mountainId);
+  }, [mountainId]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -303,7 +318,7 @@ export default function HikesScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerMountain} numberOfLines={1}>{mountainName ?? 'Hikes'}</Text>
           <Text style={styles.headerSubtitle}>
-            {date ? formatDate(date) : ''} · {hikesOnDate.length} hike{hikesOnDate.length === 1 ? '' : 's'} · hold to delete
+            {date ? formatDate(date) : ''} · {hikesOnDate.length} hike{hikesOnDate.length === 1 ? '' : 's'} · your hikes can be edited, others are view-only
           </Text>
         </View>
       </View>
@@ -318,7 +333,13 @@ export default function HikesScreen() {
           data={hikesOnDate}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <HikeCard hike={item} weather={dayWeather} onEdit={handleEdit} onDelete={handleDelete} />
+            <HikeCard
+              hike={item}
+              weather={dayWeather}
+              canEdit={item.user_id === user?.id}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
           )}
           numColumns={COLUMNS}
           columnWrapperStyle={styles.row}
@@ -431,6 +452,11 @@ const styles = StyleSheet.create({
   cardRowText: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 10,
+  },
+  viewOnlyText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 9,
+    marginLeft: 4,
   },
   deleteWipe: {
     position: 'absolute',

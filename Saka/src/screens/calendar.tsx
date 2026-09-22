@@ -31,7 +31,7 @@ interface Mountain {
 export default function CalendarScreen() {
   const router = useRouter();
   const { mountainId } = useLocalSearchParams<{ mountainId?: string }>();
-  const { hikes, fetchHikes } = useHikesStore();
+  const { mountainHikes, fetchMountainHikes } = useHikesStore();
   const { user } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
@@ -47,12 +47,12 @@ export default function CalendarScreen() {
   const [resolvedMountain, setResolvedMountain] = useState<Mountain | null>(null);
 
   useEffect(() => {
-    if (!user || !activeMountainId) {
+    if (!activeMountainId) {
       return;
     }
 
-    fetchHikes(activeMountainId);
-  }, [user, activeMountainId]);
+    fetchMountainHikes(activeMountainId);
+  }, [activeMountainId, fetchMountainHikes]);
 
   // Resolve the active mountain by its Supabase UUID — cache first (same
   // cache MountainTop reads from), then a network fetch as a fallback.
@@ -126,7 +126,7 @@ export default function CalendarScreen() {
   }, [resolvedMountain?.id, resolvedMountain?.latitude, resolvedMountain?.longitude]);
 
 
-  const markedDates = hikes.reduce((acc, hike) => {
+  const markedDates = mountainHikes.reduce((acc, hike) => {
     const isSelected = hike.date === selectedDate;
     acc[hike.date] = {
       marked: true,
@@ -207,7 +207,7 @@ export default function CalendarScreen() {
     return '#C9A96E';
   };
 
-  const hikeDates = new Set(hikes.map((hike) => hike.date));
+  const hikeDates = new Set(mountainHikes.map((hike) => hike.date));
   const todayDateString = new Date().toISOString().split('T')[0];
 
   const renderDayComponent = ({

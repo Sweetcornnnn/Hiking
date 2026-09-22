@@ -5,12 +5,14 @@ import { supabase } from '../lib/supabase';
 
 interface HikesState {
   hikes: Hike[];
+  mountainHikes: Hike[];
   allHikes: Hike[];
   adminStats: { total_hikes: number; total_users: number } | null;
   isLoading: boolean;
   latestFetchToken: number;
 
   fetchHikes: (mountainId?: string) => Promise<void>;
+  fetchMountainHikes: (mountainId?: string) => Promise<void>;
   fetchAllHikes: () => Promise<void>;
   fetchAdminStats: () => Promise<void>;
   createHike: (
@@ -53,6 +55,7 @@ const mapUserShape = (userRow?: { email?: string | null; full_name?: string | nu
 
 export const useHikesStore = create<HikesState>((set, get) => ({
   hikes: [],
+  mountainHikes: [],
   allHikes: [],
   adminStats: null,
   isLoading: false,
@@ -105,6 +108,32 @@ export const useHikesStore = create<HikesState>((set, get) => ({
 
     if (get().latestFetchToken === fetchToken) {
       set({ isLoading: false });
+    }
+  },
+
+  fetchMountainHikes: async (mountainId?: string) => {
+    if (!mountainId) {
+      set({ mountainHikes: [] });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('hikes')
+        .select('*')
+        .eq('mountain_id', mountainId)
+        .order('date', { ascending: true });
+
+      if (error) {
+        console.error('[HikesStore] fetchMountainHikes error:', error);
+        set({ mountainHikes: [] });
+        return;
+      }
+
+      set({ mountainHikes: (data || []) as Hike[] });
+    } catch (error: any) {
+      console.error('[HikesStore] Network error fetching mountain hikes:', error);
+      set({ mountainHikes: [] });
     }
   },
 
