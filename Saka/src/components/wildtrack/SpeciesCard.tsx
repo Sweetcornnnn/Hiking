@@ -45,7 +45,12 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
-  const hasImage = !!species?.image_url && !imageError;
+  const resolvedImage =
+    typeof species?.image_url === 'number'
+      ? Image.resolveAssetSource(species.image_url).uri
+      : species?.image_url;
+
+  const hasImage = !!resolvedImage && !imageError;
 
   return (
     <Pressable
@@ -58,7 +63,7 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
         {hasImage ? (
           <>
             <Image
-              source={{ uri: species.image_url }}
+              source={{ uri: resolvedImage }}
               style={styles.image}
               resizeMode="cover"
               onLoadStart={() => setImageLoading(true)}

@@ -131,7 +131,12 @@ export default function DiscoveriesScreen() {
                 <View style={styles.modalImageWrap}>
                   {selectedDiscovery.image_url ? (
                     <Image
-                      source={{ uri: selectedDiscovery.image_url }}
+                      source={{
+                        uri:
+                          typeof selectedDiscovery.image_url === 'number'
+                            ? Image.resolveAssetSource(selectedDiscovery.image_url).uri
+                            : selectedDiscovery.image_url,
+                      }}
                       style={styles.modalImage}
                       resizeMode="cover"
                     />

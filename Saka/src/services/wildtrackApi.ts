@@ -1,3 +1,4 @@
+import { Image } from 'react-native';
 import { Species } from '../store/wildtrackStore';
 
 const safeJsonFetch = async <T>(url: string): Promise<T | null> => {
@@ -459,9 +460,11 @@ export const WildTrackAPI = {
 
   getDefaultSilhouette(category: string): string {
     try {
-      return require('../../assets/images/wildtrackdefaultimg.png');
+      const asset = require('../../assets/images/wildtrackdefaultimg.png');
+      return Image.resolveAssetSource(asset).uri;
     } catch (e) {
-      return require('../../assets/images/icon.png');
+      const fallback = require('../../assets/images/icon.png');
+      return Image.resolveAssetSource(fallback).uri;
     }
   },
 };

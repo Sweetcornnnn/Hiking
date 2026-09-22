@@ -291,7 +291,12 @@ export default function WildTrackScreen() {
                 <View style={styles.modalImgWrap}>
                   {selectedSpecies.image_url && !imageError ? (
                     <Image
-                      source={{ uri: selectedSpecies.image_url }}
+                      source={{
+                        uri:
+                          typeof selectedSpecies.image_url === 'number'
+                            ? Image.resolveAssetSource(selectedSpecies.image_url).uri
+                            : selectedSpecies.image_url,
+                      }}
                       style={styles.modalImg}
                       resizeMode="cover"
                       onError={() => setImageError(true)}

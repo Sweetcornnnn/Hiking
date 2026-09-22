@@ -124,7 +124,12 @@ export default function FeaturedSpeciesScreen() {
                 <View style={styles.modalImageWrap}>
                   {selectedSpecies.image_url ? (
                     <Image
-                      source={{ uri: selectedSpecies.image_url }}
+                      source={{
+                        uri:
+                          typeof selectedSpecies.image_url === 'number'
+                            ? Image.resolveAssetSource(selectedSpecies.image_url).uri
+                            : selectedSpecies.image_url,
+                      }}
                       style={styles.modalImage}
                       resizeMode="cover"
                     />
