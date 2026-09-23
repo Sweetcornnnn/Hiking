@@ -39,6 +39,7 @@ export default function RootLayout() {
         <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
         <Stack.Screen name="Weather" options={screenOptionsNoHeader} />
         <Stack.Screen name="Settings" options={screenOptionsNoHeader} />
+        <Stack.Screen name="journal" options={screenOptionsNoHeader} />
       </Stack>
     </SafeAreaProvider>
   );

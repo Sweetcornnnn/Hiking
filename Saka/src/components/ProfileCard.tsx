@@ -19,6 +19,8 @@ import { useWildTrackStore } from '../store/wildtrackStore';
 import { mountainService, Mountain } from '../services/mountainService';
 import weatherService, { WeatherCondition } from '../services/weatherService';
 import { useLocationTracking } from '../hooks/useLocationTracking';
+import { useJournalStore } from '../store/journalStore';
+import JournalShowcase from './journal/JournalShowcase';
 
 interface ProfileCardProps {
   visible: boolean;
@@ -31,7 +33,7 @@ interface ProfileCardProps {
 
 const screenDimensions = Dimensions.get('screen');
 
-type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
+type TabId = 'showcase' | 'journal' | 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
 
 export default function ProfileCard({
   visible,
@@ -53,6 +55,12 @@ export default function ProfileCard({
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const {
+    entries: journalEntries,
+    isLoading: journalLoading,
+    error: journalError,
+    fetchEntries,
+  } = useJournalStore();
 
   const {
     lastLocation,
@@ -64,9 +72,28 @@ export default function ProfileCard({
     requestPermissions,
   } = useLocationTracking();
 
+  async function loadWeather(mountain: Mountain) {
+    try {
+      setWeatherLoading(true);
+      setWeatherError(null);
+      const currentWeather = await weatherService.getCurrentWeather(
+        mountain.latitude,
+        mountain.longitude
+      );
+      setWeather(currentWeather);
+    } catch (error: any) {
+      console.error('Weather load failed:', error);
+      setWeather(null);
+      setWeatherError(error?.message || 'Unable to load weather.');
+    } finally {
+      setWeatherLoading(false);
+    }
+  }
+
   // Load mountains when visible – use the first one for weather
   useEffect(() => {
     if (visible) {
+      fetchEntries();
       const loadData = async () => {
         try {
           const data = await mountainService.fetchMountains();
@@ -83,25 +110,7 @@ export default function ProfileCard({
       };
       loadData();
     }
-  }, [visible]);
-
-  const loadWeather = async (mountain: Mountain) => {
-    try {
-      setWeatherLoading(true);
-      setWeatherError(null);
-      const currentWeather = await weatherService.getCurrentWeather(
-        mountain.latitude,
-        mountain.longitude
-      );
-      setWeather(currentWeather);
-    } catch (error: any) {
-      console.error('Weather load failed:', error);
-      setWeather(null);
-      setWeatherError(error?.message || 'Unable to load weather.');
-    } finally {
-      setWeatherLoading(false);
-    }
-  };
+  }, [fetchEntries, visible]);
 
   const handleLogoutPress = () => {
     onClose();
@@ -212,7 +221,11 @@ export default function ProfileCard({
             {/* Header row */}
             <View style={styles.listHeader}>
               <Text style={styles.listTitle}>
-                {activeTab === 'stats'
+                {activeTab === 'showcase'
+                  ? 'Showcase'
+                  : activeTab === 'journal'
+                  ? 'Journal'
+                  : activeTab === 'stats'
                   ? 'Mountains'
                   : activeTab === 'calendar'
                   ? 'Schedule'
@@ -226,6 +239,37 @@ export default function ProfileCard({
                 <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
               </TouchableOpacity>
             </View>
+
+            {activeTab === 'showcase' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="images-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>Trail showcase</Text>
+                {journalError ? (
+                  <Text style={styles.tabPaneBody}>{journalError}</Text>
+                ) : (
+                  <JournalShowcase entries={journalEntries} isLoading={journalLoading} />
+                )}
+              </View>
+            )}
+
+            {activeTab === 'journal' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="book-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>Your experiences</Text>
+                <Text style={styles.tabPaneBody}>
+                  {journalEntries.length
+                    ? `${journalEntries.length} saved ${journalEntries.length === 1 ? 'entry' : 'entries'}. Add another memory from the trail.`
+                    : 'Write about a hike, add photos, and make the memory part of your profile.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.tabPaneBtn}
+                  onPress={() => { onClose(); router.push('/journal'); }}
+                >
+                  <Text style={styles.tabPaneBtnText}>Open Journal</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Stats tab – list all mountains with green dot */}
             {activeTab === 'stats' && (
@@ -361,6 +405,8 @@ export default function ProfileCard({
             <View style={styles.tabStrip}>
               <View style={styles.tabStripInner}>
                 {([
+                  { id: 'showcase', icon: 'images-outline' },
+                  { id: 'journal', icon: 'book-outline' },
                   { id: 'stats', icon: 'stats-chart' },
                   { id: 'calendar', icon: 'calendar-outline' },
                   { id: 'wildtrack', icon: 'book-outline' },
