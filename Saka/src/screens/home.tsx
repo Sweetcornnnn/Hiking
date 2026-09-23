@@ -9,12 +9,12 @@ import {
   Image,
   TouchableOpacity,
   BackHandler,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
+import { useWildTrackStore } from '../store/wildtrackStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
@@ -33,7 +33,6 @@ function VideoViewPlayer({ source, isActive }: { source: { uri: string }; isActi
   const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
-    p.staysActiveInBackground = true;
   });
 
   useEffect(() => {
@@ -82,7 +81,7 @@ const MountainSlide = memo(function MountainSlide({
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
-        {mountain.video_url ? (
+        {mountain.video_url && isActive ? (
           <VideoViewPlayer source={{ uri: mountain.video_url }} isActive={isActive} />
         ) : mountain.image_url ? (
           <Image source={{ uri: mountain.image_url }} style={styles.fullScreenImage} resizeMode="cover" />
@@ -123,34 +122,26 @@ const MountainSlide = memo(function MountainSlide({
 export default function HomeScreen() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
+  const { setSelectedMountainId } = useWildTrackStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [mountains, setMountains] = useState<Mountain[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
   const [error, setError] = useState<string | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
 
-  // Load mountains from Supabase
   useEffect(() => {
-    const loadMountains = async () => {
-      try {
-        setLoading(true);
-        const data = await mountainService.fetchMountains();
-        setMountains(data);
-        setError(null);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load mountains');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadMountains();
-  }, []);
+    if (mountains.length === 0) {
+      setError('Mountain feed was not loaded yet.');
+      return;
+    }
+
+    setError(null);
+  }, [mountains]);
 
   // Force landscape orientation
   useEffect(() => {
@@ -220,13 +211,6 @@ export default function HomeScreen() {
   }, [profileCardVisible, showLogoutConfirm, openLogoutConfirm, dismissLogoutConfirm]);
 
   // Loading / error states
-  if (loading) {
-    return (
-      <View style={styles.immersiveContainer}>
-        <ActivityIndicator size="large" color="#C9A96E" />
-      </View>
-    );
-  }
   if (error) {
     return (
       <View style={styles.immersiveContainer}>
@@ -237,7 +221,7 @@ export default function HomeScreen() {
   if (mountains.length === 0) {
     return (
       <View style={styles.immersiveContainer}>
-        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>No mountains available</Text>
+        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>Preparing your mountain feed...</Text>
       </View>
     );
   }
@@ -264,6 +248,10 @@ export default function HomeScreen() {
         onMomentumScrollEnd={(event) => {
           const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
           setActiveIndex(newIndex);
+
+          if (mountains[newIndex]) {
+            setSelectedMountainId(mountains[newIndex].id);
+          }
         }}
         decelerationRate="fast"
       >
@@ -315,7 +303,7 @@ export default function HomeScreen() {
         {/* Chat button on the right side of the header */}
         <View style={styles.headerRightButtons}>
           <TouchableOpacity
-            onPress={() => router.push('/Chat' as any)}
+            onPress={() => router.push('/chat/Chat' as any)}
             style={styles.chatButton}
             activeOpacity={0.8}
           >
@@ -688,32 +676,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   paginationFixed: {
-    position: 'absolute',
-    right: 16,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-  },
-  paginationStack: {
-    alignItems: 'center',
-    gap: 5,
-  },
-  paginationDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-  },
-  paginationDotActive: {
-    backgroundColor: '#FFF',
-    width: 5,
-    height: 14,
-    borderRadius: 3,
-  },
-  paginationDotInactive: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
+  position: 'absolute',
+  bottom: 8,               // <-- "At the edge, but not touching" (adjust between 8–16)
+  left: 0,
+  right: 0,
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 100,
+},
+paginationStack: {
+  flexDirection: 'row',     // Horizontal layout
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,                  // Spacing between dots
+},
+paginationDot: {
+  width: 6,
+  height: 6,
+  borderRadius: 3,
+},
+paginationDotActive: {
+  backgroundColor: '#C9A96E',
+  width: 26,               // Wider active indicator for horizontal scroll
+  height: 6,
+  borderRadius: 3,
+},
+paginationDotInactive: {
+  backgroundColor: 'rgba(255,255,255,0.3)',
+},
   logoutToast: {
     position: 'absolute',
     bottom: 32,

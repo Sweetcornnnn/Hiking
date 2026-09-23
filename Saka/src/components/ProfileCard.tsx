@@ -45,8 +45,7 @@ export default function ProfileCard({
 }: ProfileCardProps) {
   const router = useRouter();
   const { user } = useAuthStore();
-  // We won't use selectedMountainId from wildtrackStore anymore
-  // const { selectedMountainId } = useWildTrackStore();
+  const { selectedMountainId } = useWildTrackStore();
 
   const [selectedMountain, setSelectedMountain] = useState<Mountain | null>(null);
   const [mountains, setMountains] = useState<Mountain[]>([]);
@@ -90,7 +89,7 @@ export default function ProfileCard({
     }
   }
 
-  // Load mountains when visible – use the first one for weather
+  // Load mountains when visible and align the current mountain to the active selection
   useEffect(() => {
     if (visible) {
       fetchEntries();
@@ -98,11 +97,14 @@ export default function ProfileCard({
         try {
           const data = await mountainService.fetchMountains();
           setMountains(data);
-          if (data.length > 0) {
-            const first = data[0];
-            setSelectedMountain(first);
-            setLocation(first.name);
-            loadWeather(first);
+
+          const currentMountain =
+            data.find((mountain) => mountain.id === selectedMountainId) || data[0] || null;
+
+          setSelectedMountain(currentMountain);
+          if (currentMountain) {
+            setLocation(currentMountain.name);
+            loadWeather(currentMountain);
           }
         } catch (error) {
           console.error('Failed to load mountains for ProfileCard', error);
@@ -110,7 +112,25 @@ export default function ProfileCard({
       };
       loadData();
     }
-  }, [fetchEntries, visible]);
+  }, [visible]);
+
+  const loadWeather = async (mountain: Mountain) => {
+    try {
+      setWeatherLoading(true);
+      setWeatherError(null);
+      const currentWeather = await weatherService.getCurrentWeather(
+        mountain.latitude,
+        mountain.longitude
+      );
+      setWeather(currentWeather);
+    } catch (error: any) {
+      console.error('Weather load failed:', error);
+      setWeather(null);
+      setWeatherError(error?.message || 'Unable to load weather.');
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
 
   const handleLogoutPress = () => {
     onClose();
@@ -298,7 +318,13 @@ export default function ProfileCard({
                 </Text>
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { onClose(); router.push('/Calendar'); }}
+                  onPress={() => {
+                    onClose();
+                    router.push({
+                      pathname: '/Calendar',
+                      params: { mountainId: selectedMountain?.id ?? selectedMountainId ?? undefined },
+                    });
+                  }}
                 >
                   <Text style={styles.tabPaneBtnText}>Open Calendar</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />

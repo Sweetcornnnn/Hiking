@@ -1,6 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet } from 'react-native';
 import { OccurrenceRecord } from '../../types/wildtrack';
 import {
   BG_PANEL,
@@ -8,12 +7,8 @@ import {
   BORDER_DEFAULT,
   TEXT_PRIMARY,
   TEXT_MUTED,
-  ACCENT_GOLD,
   ACCENT_GREEN,
 } from '../../theme/designTokens';
-
-const { width, height } = Dimensions.get('window');
-const isLandscape = width >= height;
 
 interface DistributionMapProps {
   occurrences?: OccurrenceRecord[];
@@ -22,8 +17,14 @@ interface DistributionMapProps {
 export const DistributionMap: React.FC<DistributionMapProps> = ({ occurrences = [] }) => {
   const summary = {
     total: occurrences.length,
-    philippine: occurrences.filter((record) => record.country?.toLowerCase().includes('philippines')).length,
-    mountain: occurrences.filter((record) => record.locality?.toLowerCase().includes('mt.') || record.locality?.toLowerCase().includes('mount')).length,
+    philippine: occurrences.filter((record) =>
+      record.country?.toLowerCase().includes('philippines')
+    ).length,
+    mountain: occurrences.filter(
+      (record) =>
+        record.locality?.toLowerCase().includes('mt.') ||
+        record.locality?.toLowerCase().includes('mount')
+    ).length,
   };
 
   return (
@@ -32,12 +33,14 @@ export const DistributionMap: React.FC<DistributionMapProps> = ({ occurrences = 
         <Text style={styles.title}>Distribution</Text>
         <Text style={styles.subtitle}>Philippine mountain occurrence preview</Text>
       </View>
+
       <View style={styles.mapCard}>
         <View style={styles.mapBackground}>
           <View style={[styles.marker, styles.markerNorth]} />
           <View style={[styles.marker, styles.markerCentral]} />
           <View style={[styles.marker, styles.markerSouth]} />
         </View>
+
         <View style={styles.mapStats}>
           <Text style={styles.statTitle}>Observation points</Text>
           <Text style={styles.statValue}>{summary.total}</Text>
@@ -45,9 +48,14 @@ export const DistributionMap: React.FC<DistributionMapProps> = ({ occurrences = 
           <Text style={styles.statDetail}>{summary.mountain} mountain hotspots</Text>
         </View>
       </View>
+
       <View style={styles.badgeRow}>
-        <View style={styles.badge}><Text style={styles.badgeText}>{summary.total} sightings</Text></View>
-        <View style={styles.badge}><Text style={styles.badgeText}>{summary.philippine} in PH</Text></View>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{summary.total} sightings</Text>
+        </View>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{summary.philippine} in PH</Text>
+        </View>
       </View>
     </View>
   );
@@ -56,37 +64,26 @@ export const DistributionMap: React.FC<DistributionMapProps> = ({ occurrences = 
 const styles = StyleSheet.create({
   container: {
     backgroundColor: BG_PANEL,
-    borderRadius: 24,
-    padding: isLandscape ? 18 : 16,
-    marginBottom: 12,
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
   },
-  headerRow: {
-    marginBottom: isLandscape ? 16 : 14,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-  },
-  subtitle: {
-    fontSize: 10,
-    color: TEXT_MUTED,
-    marginTop: 4,
-  },
+  headerRow: { marginBottom: 14 },
+  title: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
+  subtitle: { fontSize: 10, color: TEXT_MUTED, marginTop: 4 },
   mapCard: {
     backgroundColor: BG_SUBTLE,
-    borderRadius: 22,
-    padding: isLandscape ? 16 : 14,
-    flexDirection: isLandscape ? 'row' : 'column',
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: isLandscape ? 16 : 12,
+    gap: 14,
   },
   mapBackground: {
-    width: isLandscape ? 180 : 140,
-    height: isLandscape ? 140 : 120,
-    borderRadius: 18,
+    width: '100%',
+    height: 130,
+    borderRadius: 16,
     backgroundColor: '#0B1220',
     overflow: 'hidden',
     justifyContent: 'center',
@@ -103,44 +100,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: TEXT_PRIMARY,
   },
-  markerNorth: {
-    top: 18,
-    left: isLandscape ? 70 : 52,
-  },
-  markerCentral: {
-    top: 38,
-    left: isLandscape ? 130 : 98,
-  },
-  markerSouth: {
-    top: 76,
-    left: isLandscape ? 50 : 34,
-  },
-  mapStats: {
-    flex: 1,
-  },
-  statTitle: {
-    fontSize: 12,
-    color: TEXT_PRIMARY,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: ACCENT_GREEN,
-    marginBottom: 4,
-  },
-  statDetail: {
-    fontSize: 10,
-    color: TEXT_MUTED,
-    marginBottom: 2,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 14,
-  },
+  markerNorth: { top: 20, left: '30%' },
+  markerCentral: { top: 44, left: '58%' },
+  markerSouth: { top: 84, left: '20%' },
+  mapStats: { width: '100%' },
+  statTitle: { fontSize: 12, color: TEXT_PRIMARY, fontWeight: '600', marginBottom: 8 },
+  statValue: { fontSize: 18, fontWeight: '700', color: ACCENT_GREEN, marginBottom: 4 },
+  statDetail: { fontSize: 10, color: TEXT_MUTED, marginBottom: 2 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
   badge: {
     backgroundColor: BG_SUBTLE,
     borderRadius: 16,
@@ -149,9 +116,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
   },
-  badgeText: {
-    fontSize: 10,
-    color: TEXT_PRIMARY,
-    fontWeight: '600',
-  },
+  badgeText: { fontSize: 10, color: TEXT_PRIMARY, fontWeight: '600' },
 });
