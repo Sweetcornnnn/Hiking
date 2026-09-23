@@ -39,15 +39,12 @@ export default function RootLayout() {
         <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
         <Stack.Screen name="Weather" options={screenOptionsNoHeader} />
         <Stack.Screen name="Settings" options={screenOptionsNoHeader} />
-<<<<<<< HEAD
         <Stack.Screen name="organizations/Dashboard" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/BecomeOrganizer" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/Events" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/CreateEvent" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/Profile" options={screenOptionsNoHeader} />
-=======
         <Stack.Screen name="journal" options={screenOptionsNoHeader} />
->>>>>>> b5f030fd9e775986fccbf0d61aaf8eeae399295d
       </Stack>
     </SafeAreaProvider>
   );
