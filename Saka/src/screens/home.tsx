@@ -28,7 +28,7 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-// Video player component (unchanged, but now accepts a URI source)
+// Video player component
 function VideoViewPlayer({ source, isActive }: { source: { uri: string }; isActive: boolean }) {
   const player = useVideoPlayer(source, (p) => {
     p.loop = true;
@@ -60,7 +60,7 @@ function VideoViewPlayer({ source, isActive }: { source: { uri: string }; isActi
   );
 }
 
-// Memoized slide component – now dynamic and no lock logic
+// Memoized slide component
 const MountainSlide = memo(function MountainSlide({
   mountain,
   index,
@@ -68,6 +68,7 @@ const MountainSlide = memo(function MountainSlide({
   width,
   height,
   isPortrait,
+  onEventsPress,
 }: {
   mountain: Mountain;
   index: number;
@@ -75,6 +76,7 @@ const MountainSlide = memo(function MountainSlide({
   width: number;
   height: number;
   isPortrait: boolean;
+  onEventsPress: (mountainId: string) => void;
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
 
@@ -98,16 +100,29 @@ const MountainSlide = memo(function MountainSlide({
         {mountain.funny_warning && (
           <Text style={styles.funnyWarningText}>{mountain.funny_warning}</Text>
         )}
+
+        {/* Meta row: difficulty + elevation + events button */}
         <View style={styles.infoMetaRow}>
           <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
             <View style={[styles.difficultyDot, { backgroundColor: diffColor }]} />
             <Text style={[styles.difficultyText, { color: diffColor }]}>{mountain.difficulty}</Text>
           </View>
+
           <View style={styles.elevationPill}>
             <Ionicons name="trending-up-outline" size={11} color="rgba(255,255,255,0.7)" />
             <Text style={styles.elevationText}>{mountain.elevationDisplay}</Text>
           </View>
+
+          <TouchableOpacity
+            style={styles.eventsPill}
+            onPress={() => onEventsPress(mountain.id)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="calendar-outline" size={11} color="#C9A96E" />
+            <Text style={styles.eventsPillText}>Events</Text>
+          </TouchableOpacity>
         </View>
+
         <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]} numberOfLines={1}>
           {mountain.name}
         </Text>
@@ -121,7 +136,7 @@ const MountainSlide = memo(function MountainSlide({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, signOut } = useAuthStore();
+  const { user, profile, signOut } = useAuthStore();
   const { setSelectedMountainId } = useWildTrackStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
@@ -139,7 +154,6 @@ export default function HomeScreen() {
       setError('Mountain feed was not loaded yet.');
       return;
     }
-
     setError(null);
   }, [mountains]);
 
@@ -163,6 +177,17 @@ export default function HomeScreen() {
 
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
+
+  // Stable handler for the per-slide Events button (keeps MountainSlide memoized)
+  const handleEventsPress = useCallback(
+    (mountainId: string) => {
+      router.push({
+        pathname: '/events/Events',
+        params: { mountainId },
+      } as any);
+    },
+    [router]
+  );
 
   // Logout toast state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -264,11 +289,12 @@ export default function HomeScreen() {
             width={dimensions.width}
             height={dimensions.height}
             isPortrait={isPortrait}
+            onEventsPress={handleEventsPress}
           />
         ))}
       </Animated.ScrollView>
 
-      {/* Floating Header (only show if user is logged in) */}
+      {/* Floating Header */}
       <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
         <TouchableOpacity
           onPress={openProfileCard}
@@ -300,8 +326,26 @@ export default function HomeScreen() {
             <Ionicons name="chevron-down" size={11} color="#C9A96E" />
           </View>
         </TouchableOpacity>
-        {/* Chat button on the right side of the header */}
+
+        {/* Header actions on the right */}
         <View style={styles.headerRightButtons}>
+          {profile?.role === 'organization' && (
+            <TouchableOpacity
+              onPress={() => router.push('/organizations/Dashboard')}
+              style={styles.chatButton}
+              activeOpacity={0.8}
+              accessibilityLabel="Back to organizer dashboard"
+            >
+              <Ionicons name="business-outline" size={20} color="#3FD69D" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => router.push('/events/Events' as any)}
+            style={styles.chatButton}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="calendar-outline" size={20} color="#C9A96E" />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push('/chat/Chat' as any)}
             style={styles.chatButton}
@@ -323,7 +367,7 @@ export default function HomeScreen() {
         onProfileImageSelect={setProfileImage}
       />
 
-      {/* CTA button – shown on every slide */}
+      {/* CTA button */}
       {mountains[activeIndex] && (
         <TouchableOpacity
           style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
@@ -342,7 +386,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Pagination – simple dots, no locks */}
+      {/* Pagination */}
       <View style={styles.paginationFixed}>
         <View style={styles.paginationStack}>
           {mountains.map((_, index) => (
@@ -357,7 +401,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Logout Toast (unchanged) */}
+      {/* Logout Toast */}
       {showLogoutConfirm && (
         <Animated.View style={[styles.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
           <View style={styles.logoutToastBar} />
@@ -379,7 +423,6 @@ export default function HomeScreen() {
   );
 }
 
-// Styles (unchanged, keep exactly as before – no edits needed)
 const styles = StyleSheet.create({
   immersiveContainer: {
     flex: 1,
@@ -500,6 +543,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 8,
+    flexWrap: 'wrap',
   },
   difficultyBadge: {
     flexDirection: 'row',
@@ -536,6 +580,24 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     fontSize: 11,
     fontWeight: '600',
+  },
+  // NEW — Events pill styled to match, but with gold accent so it reads as tappable
+  eventsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: 'rgba(201,169,110,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.55)',
+  },
+  eventsPillText: {
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   mountainDescription: {
     color: 'rgba(255,255,255,0.65)',
@@ -676,34 +738,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   paginationFixed: {
-  position: 'absolute',
-  bottom: 8,               // <-- "At the edge, but not touching" (adjust between 8–16)
-  left: 0,
-  right: 0,
-  justifyContent: 'center',
-  alignItems: 'center',
-  zIndex: 100,
-},
-paginationStack: {
-  flexDirection: 'row',     // Horizontal layout
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,                  // Spacing between dots
-},
-paginationDot: {
-  width: 6,
-  height: 6,
-  borderRadius: 3,
-},
-paginationDotActive: {
-  backgroundColor: '#C9A96E',
-  width: 26,               // Wider active indicator for horizontal scroll
-  height: 6,
-  borderRadius: 3,
-},
-paginationDotInactive: {
-  backgroundColor: 'rgba(255,255,255,0.3)',
-},
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  paginationStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  paginationDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  paginationDotActive: {
+    backgroundColor: '#C9A96E',
+    width: 26,
+    height: 6,
+    borderRadius: 3,
+  },
+  paginationDotInactive: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
   logoutToast: {
     position: 'absolute',
     bottom: 32,
