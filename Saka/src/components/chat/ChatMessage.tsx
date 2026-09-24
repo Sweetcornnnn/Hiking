@@ -1,6 +1,6 @@
 // components/chat/ChatMessage.tsx
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { ACCENT_GOLD, TEXT_PRIMARY, TEXT_MUTED } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 
@@ -12,6 +12,7 @@ export default function ChatMessage({
   currentUserId?: string | null;
 }) {
   const isMe = currentUserId && message.user_id === currentUserId;
+  const { width: windowWidth } = useWindowDimensions();
 
   const profile = message.profiles || message.users || {};
   const name = profile.full_name || profile.username || 'Anonymous';
@@ -22,6 +23,11 @@ export default function ChatMessage({
         minute: '2-digit',
       })
     : '';
+
+  const bubbleWidth = Math.min(
+    Math.max(58, String(message.content || '').length * 8.5 + 32),
+    windowWidth * 0.8
+  );
 
   return (
     <View style={[styles.row, isMe ? styles.me : styles.other]}>
@@ -41,18 +47,43 @@ export default function ChatMessage({
         </View>
       )}
 
-      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
-        <Text style={[styles.text, { color: isMe ? '#fff' : TEXT_PRIMARY }]}>
-          {message.content}
-        </Text>
-        <Text
+      {/* ✅ Single column wrapper so bubble + meta share alignment */}
+      <View
+        style={[
+          styles.column,
+          isMe ? styles.columnMe : styles.columnOther,
+          { width: bubbleWidth },
+        ]}
+      >
+        <View
           style={[
-            styles.time,
-            { color: isMe ? 'rgba(255,255,255,0.72)' : TEXT_MUTED },
+            styles.bubble,
+            isMe ? styles.bubbleMe : styles.bubbleOther,
+            { width: '100%' },
           ]}
         >
-          {time}
-        </Text>
+          <Text
+            style={[styles.text, { color: isMe ? '#fff' : TEXT_PRIMARY }]}
+          >
+            {message.content}
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.meta,
+            isMe ? styles.metaMe : styles.metaOther,
+          ]}
+        >
+          <Text
+            style={[
+              styles.time,
+              { color: isMe ? 'rgba(255,255,255,0.72)' : TEXT_MUTED },
+            ]}
+          >
+            {time}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -62,9 +93,11 @@ const styles = StyleSheet.create({
   row: {
     marginVertical: 4,
     paddingHorizontal: 2,
+    alignSelf: 'stretch',
   },
   me: { alignItems: 'flex-end' },
   other: { alignItems: 'flex-start' },
+
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -91,31 +124,55 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     maxWidth: 200,
   },
+
+  column: {
+    flexShrink: 0,
+  },
+  columnMe: { alignItems: 'flex-end' },
+  columnOther: { alignItems: 'flex-start' },
+
   bubble: {
-    maxWidth: '80%',
     paddingVertical: 9,
     paddingHorizontal: 13,
     borderRadius: 18,
+    alignSelf: 'stretch',
   },
   bubbleMe: {
     backgroundColor: ACCENT_GOLD,
     borderBottomRightRadius: 6,
+    alignSelf: 'flex-end',
   },
   bubbleOther: {
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderBottomLeftRadius: 6,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.04)',
+    alignSelf: 'flex-start',
   },
   text: {
     fontSize: 14.5,
     lineHeight: 20,
     letterSpacing: 0.1,
+    flexShrink: 1,
+    // ✅ Prevent clipping on Android
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+
+  meta: {
+    flexDirection: 'row',
+    marginTop: 3,
+  },
+  metaMe: {
+    alignSelf: 'flex-end',
+    justifyContent: 'flex-end',
+  },
+  metaOther: {
+    alignSelf: 'flex-start',
+    justifyContent: 'flex-start',
   },
   time: {
     fontSize: 10,
-    marginTop: 4,
-    alignSelf: 'flex-end',
     opacity: 0.7,
   },
 });
