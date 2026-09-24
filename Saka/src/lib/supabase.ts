@@ -145,7 +145,7 @@ export type Tables = {
     status: string;
     joined_at: string;
   };
-  hiking_events: {
+    hiking_events: {
     id: string;
     organization_id: string;
     mountain_id: string;
@@ -159,7 +159,9 @@ export type Tables = {
     capacity?: number | null;
     is_public: boolean;
     allow_walkins: boolean;
-    status: string;
+    status: 'draft' | 'published' | 'full' | 'cancelled' | 'completed';
+    safety_notes?: string | null;
+    required_gear?: string | null;
     created_by: string;
     created_at: string;
     updated_at: string;
