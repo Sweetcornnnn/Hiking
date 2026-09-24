@@ -19,6 +19,8 @@ import { useWildTrackStore } from '../store/wildtrackStore';
 import { mountainService, Mountain } from '../services/mountainService';
 import weatherService, { WeatherCondition } from '../services/weatherService';
 import { useLocationTracking } from '../hooks/useLocationTracking';
+import { useJournalStore } from '../store/journalStore';
+import JournalShowcase from './journal/JournalShowcase';
 
 interface ProfileCardProps {
   visible: boolean;
@@ -31,7 +33,7 @@ interface ProfileCardProps {
 
 const screenDimensions = Dimensions.get('screen');
 
-type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
+type TabId = 'showcase' | 'journal' | 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
 
 export default function ProfileCard({
   visible,
@@ -42,7 +44,7 @@ export default function ProfileCard({
   onProfileImageSelect
 }: ProfileCardProps) {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
   const [selectedMountain, setSelectedMountain] = useState<Mountain | null>(null);
@@ -52,6 +54,12 @@ export default function ProfileCard({
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const {
+    entries: journalEntries,
+    isLoading: journalLoading,
+    error: journalError,
+    fetchEntries,
+  } = useJournalStore();
 
   const {
     lastLocation,
@@ -63,9 +71,32 @@ export default function ProfileCard({
     requestPermissions,
   } = useLocationTracking();
 
+  // Only show the "Become an organizer" CTA to users who aren't already orgs.
+  const canBecomeOrganizer =
+    profile?.role !== 'organization' && !profile?.organization_id;
+
+  async function loadWeather(mountain: Mountain) {
+    try {
+      setWeatherLoading(true);
+      setWeatherError(null);
+      const currentWeather = await weatherService.getCurrentWeather(
+        mountain.latitude,
+        mountain.longitude
+      );
+      setWeather(currentWeather);
+    } catch (error: any) {
+      console.error('Weather load failed:', error);
+      setWeather(null);
+      setWeatherError(error?.message || 'Unable to load weather.');
+    } finally {
+      setWeatherLoading(false);
+    }
+  }
+
   // Load mountains when visible and align the current mountain to the active selection
   useEffect(() => {
     if (visible) {
+      fetchEntries();
       const loadData = async () => {
         try {
           const data = await mountainService.fetchMountains();
@@ -85,25 +116,7 @@ export default function ProfileCard({
       };
       loadData();
     }
-  }, [visible, selectedMountainId]);
-
-  const loadWeather = async (mountain: Mountain) => {
-    try {
-      setWeatherLoading(true);
-      setWeatherError(null);
-      const currentWeather = await weatherService.getCurrentWeather(
-        mountain.latitude,
-        mountain.longitude
-      );
-      setWeather(currentWeather);
-    } catch (error: any) {
-      console.error('Weather load failed:', error);
-      setWeather(null);
-      setWeatherError(error?.message || 'Unable to load weather.');
-    } finally {
-      setWeatherLoading(false);
-    }
-  };
+  }, [visible]);
 
   const handleLogoutPress = () => {
     onClose();
@@ -113,6 +126,11 @@ export default function ProfileCard({
   const handleSettings = () => {
     onClose();
     router.push('/Settings');
+  };
+
+  const handleBecomeOrganizer = () => {
+    onClose();
+    router.push('/organizations/BecomeOrganizer');
   };
 
   const pickProfileImage = async () => {
@@ -194,6 +212,17 @@ export default function ProfileCard({
 
             <View style={{ flex: 1 }} />
 
+            {canBecomeOrganizer && (
+              <TouchableOpacity
+                style={styles.organizerBtn}
+                onPress={handleBecomeOrganizer}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="business-outline" size={12} color="#C9A96E" />
+                <Text style={styles.organizerBtnText}>Become Organizer</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity style={styles.settingsBtn} onPress={handleSettings}>
               <Ionicons name="settings-outline" size={13} color="rgba(255,255,255,0.7)" />
               <Text style={styles.settingsBtnText}>Settings</Text>
@@ -214,7 +243,11 @@ export default function ProfileCard({
             {/* Header row */}
             <View style={styles.listHeader}>
               <Text style={styles.listTitle}>
-                {activeTab === 'stats'
+                {activeTab === 'showcase'
+                  ? 'Showcase'
+                  : activeTab === 'journal'
+                  ? 'Journal'
+                  : activeTab === 'stats'
                   ? 'Mountains'
                   : activeTab === 'calendar'
                   ? 'Schedule'
@@ -228,6 +261,37 @@ export default function ProfileCard({
                 <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
               </TouchableOpacity>
             </View>
+
+            {activeTab === 'showcase' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="images-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>Trail showcase</Text>
+                {journalError ? (
+                  <Text style={styles.tabPaneBody}>{journalError}</Text>
+                ) : (
+                  <JournalShowcase entries={journalEntries} isLoading={journalLoading} />
+                )}
+              </View>
+            )}
+
+            {activeTab === 'journal' && (
+              <View style={styles.tabPane}>
+                <Ionicons name="book-outline" size={28} color="rgba(201,169,110,0.5)" />
+                <Text style={styles.tabPaneTitle}>Your experiences</Text>
+                <Text style={styles.tabPaneBody}>
+                  {journalEntries.length
+                    ? `${journalEntries.length} saved ${journalEntries.length === 1 ? 'entry' : 'entries'}. Add another memory from the trail.`
+                    : 'Write about a hike, add photos, and make the memory part of your profile.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.tabPaneBtn}
+                  onPress={() => { onClose(); router.push('/journal'); }}
+                >
+                  <Text style={styles.tabPaneBtnText}>Open Journal</Text>
+                  <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Stats tab – list all mountains with green dot */}
             {activeTab === 'stats' && (
@@ -369,6 +433,8 @@ export default function ProfileCard({
             <View style={styles.tabStrip}>
               <View style={styles.tabStripInner}>
                 {([
+                  { id: 'showcase', icon: 'images-outline' },
+                  { id: 'journal', icon: 'book-outline' },
                   { id: 'stats', icon: 'stats-chart' },
                   { id: 'calendar', icon: 'calendar-outline' },
                   { id: 'wildtrack', icon: 'book-outline' },
@@ -461,7 +527,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 2,
-    marginTop: 40,
+    marginTop: 36,
   },
   email: {
     color: 'rgba(255,255,255,0.38)',
@@ -472,7 +538,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   locationText: {
     color: '#8A9BB0',
@@ -482,12 +548,12 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.07)',
     alignSelf: 'stretch',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     gap: 0,
   },
   statItem: {
@@ -529,12 +595,31 @@ const styles = StyleSheet.create({
     fontSize: 9,
     marginBottom: 0,
   },
+  organizerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'stretch',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(201,169,110,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.28)',
+    marginBottom: 5,
+    justifyContent: 'center',
+  },
+  organizerBtnText: {
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   settingsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
     alignSelf: 'stretch',
-    paddingVertical: 7,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -553,7 +638,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     alignSelf: 'stretch',
-    paddingVertical: 7,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: 'rgba(224,112,112,0.07)',

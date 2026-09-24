@@ -166,6 +166,13 @@ export default function MountainTopScreen() {
             }}
             title={vp.name}
             description={vp.notes || `Elevation: ${vp.elevation || 'N/A'}`}
+            onPress={() => {
+              if (!mountainId) return;
+              router.push({
+                pathname: '/Viewpoint',
+                params: { viewpointId: vp.id, mountainId },
+              });
+            }}
           >
             <View style={styles.markerDot}>
               <View style={styles.markerInner} />

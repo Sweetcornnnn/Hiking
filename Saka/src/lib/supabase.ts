@@ -45,6 +45,9 @@ export type Tables = {
     name?: string | null;
     full_name?: string | null;
     is_admin?: boolean | null;
+    role?: 'hiker' | 'organization' | 'admin' | null;
+    organization_id?: string | null;
+    is_verified?: boolean | null;
     avatar_url?: string | null;
     bio?: string | null;
     experience_level?: 'beginner' | 'intermediate' | 'advanced' | 'expert' | null;
@@ -123,12 +126,53 @@ export type Tables = {
   organizations: {
     id: string;
     name: string;
-    description: string;
-    logo_url: string;
-    is_accredited: boolean;
-    contact_email: string;
-    contact_phone: string;
+    slug?: string | null;
+    description?: string | null;
+    logo_url?: string | null;
+    website?: string | null;
+    contact_email?: string | null;
+    contact_phone?: string | null;
+    is_verified?: boolean | null;
+    is_accredited?: boolean | null;
     created_at: string;
     updated_at: string;
+  };
+  organization_members: {
+    id: string;
+    organization_id: string;
+    user_id: string;
+    role: string;
+    status: string;
+    joined_at: string;
+  };
+    hiking_events: {
+    id: string;
+    organization_id: string;
+    mountain_id: string;
+    title: string;
+    description?: string | null;
+    event_date: string;
+    start_time: string;
+    meeting_point: string;
+    difficulty: string;
+    duration_hours?: number | null;
+    capacity?: number | null;
+    is_public: boolean;
+    allow_walkins: boolean;
+    status: 'draft' | 'published' | 'full' | 'cancelled' | 'completed';
+    safety_notes?: string | null;
+    required_gear?: string | null;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+  };
+  event_rsvps: {
+    id: string;
+    event_id: string;
+    user_id: string;
+    status: string;
+    guest_count?: number | null;
+    checked_in?: boolean | null;
+    created_at: string;
   };
 };

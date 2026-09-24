@@ -224,6 +224,7 @@ export default function LoginScreen() {
       }
 
       const authState = useAuthStore.getState();
+      const role = authState.profile?.role ?? 'hiker';
 
       if (isAdminLogin) {
         if (!authState.profile?.is_admin) {
@@ -246,6 +247,12 @@ export default function LoginScreen() {
           resetLoading();
           return;
         }
+
+        if (role === 'organization') {
+          router.replace('/organizations/Dashboard');
+          return;
+        }
+
         router.replace('/Loading');
       }
     } catch (err: any) {

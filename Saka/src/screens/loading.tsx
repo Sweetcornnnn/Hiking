@@ -53,9 +53,14 @@ export default function LoadingScreen({
         return;
       }
 
+      const role = profile?.role ?? 'hiker';
       const targetRoute: Href = nextRoute
         ? (nextRoute as Href)
-        : (profile?.is_admin ? '/admin/Admin' : '/Home');
+        : profile?.is_admin
+          ? '/admin/Admin'
+          : role === 'organization'
+            ? '/organizations/Dashboard'
+            : '/Home';
       router.replace(targetRoute);
     };
 
