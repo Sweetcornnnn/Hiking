@@ -12,8 +12,10 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { organizationService } from '../../services/organizationService';
+import { useRequireAuth } from '../../hooks/useRoleGuard';
 
 export default function BecomeOrganizer() {
+  useRequireAuth();
   const router = useRouter();
   const { profile, loadProfile } = useAuthStore();
 

@@ -44,7 +44,7 @@ export default function ProfileCard({
   onProfileImageSelect
 }: ProfileCardProps) {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
   const [selectedMountain, setSelectedMountain] = useState<Mountain | null>(null);
@@ -70,6 +70,10 @@ export default function ProfileCard({
     permissions: locationPerms,
     requestPermissions,
   } = useLocationTracking();
+
+  // Only show the "Become an organizer" CTA to users who aren't already orgs.
+  const canBecomeOrganizer =
+    profile?.role !== 'organization' && !profile?.organization_id;
 
   async function loadWeather(mountain: Mountain) {
     try {
@@ -114,24 +118,6 @@ export default function ProfileCard({
     }
   }, [visible]);
 
-  const loadWeather = async (mountain: Mountain) => {
-    try {
-      setWeatherLoading(true);
-      setWeatherError(null);
-      const currentWeather = await weatherService.getCurrentWeather(
-        mountain.latitude,
-        mountain.longitude
-      );
-      setWeather(currentWeather);
-    } catch (error: any) {
-      console.error('Weather load failed:', error);
-      setWeather(null);
-      setWeatherError(error?.message || 'Unable to load weather.');
-    } finally {
-      setWeatherLoading(false);
-    }
-  };
-
   const handleLogoutPress = () => {
     onClose();
     onRequestLogout();
@@ -140,6 +126,11 @@ export default function ProfileCard({
   const handleSettings = () => {
     onClose();
     router.push('/Settings');
+  };
+
+  const handleBecomeOrganizer = () => {
+    onClose();
+    router.push('/organizations/BecomeOrganizer');
   };
 
   const pickProfileImage = async () => {
@@ -220,6 +211,17 @@ export default function ProfileCard({
             <Text style={styles.progressLabel}>All mountains available</Text>
 
             <View style={{ flex: 1 }} />
+
+            {canBecomeOrganizer && (
+              <TouchableOpacity
+                style={styles.organizerBtn}
+                onPress={handleBecomeOrganizer}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="business-outline" size={12} color="#C9A96E" />
+                <Text style={styles.organizerBtnText}>Become Organizer</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity style={styles.settingsBtn} onPress={handleSettings}>
               <Ionicons name="settings-outline" size={13} color="rgba(255,255,255,0.7)" />
@@ -525,7 +527,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     marginBottom: 2,
-    marginTop: 40,
+    marginTop: 36,
   },
   email: {
     color: 'rgba(255,255,255,0.38)',
@@ -536,7 +538,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   locationText: {
     color: '#8A9BB0',
@@ -546,12 +548,12 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.07)',
     alignSelf: 'stretch',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     gap: 0,
   },
   statItem: {
@@ -593,12 +595,31 @@ const styles = StyleSheet.create({
     fontSize: 9,
     marginBottom: 0,
   },
+  organizerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'stretch',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(201,169,110,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.28)',
+    marginBottom: 5,
+    justifyContent: 'center',
+  },
+  organizerBtnText: {
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   settingsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
     alignSelf: 'stretch',
-    paddingVertical: 7,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -617,7 +638,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     alignSelf: 'stretch',
-    paddingVertical: 7,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: 'rgba(224,112,112,0.07)',

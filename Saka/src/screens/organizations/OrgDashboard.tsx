@@ -17,10 +17,12 @@ import {
   type HikingEvent,
   type DashboardStats,
 } from '../../services/organizationService';
+import { useRequireOrganization } from '../../hooks/useRoleGuard';
 
 export default function OrgDashboard() {
   const router = useRouter();
   const { profile, signOut } = useAuthStore();
+  useRequireOrganization();
 
   const [org, setOrg] = useState<Organization | null>(null);
   const [events, setEvents] = useState<HikingEvent[]>([]);
@@ -132,6 +134,13 @@ export default function OrgDashboard() {
           style={styles.iconButton}
         >
           <Ionicons name="person-circle-outline" size={22} color="#F4E7C5" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.push('/Home')}
+          style={styles.iconButton}
+          accessibilityLabel="Browse as hiker"
+        >
+          <Ionicons name="compass-outline" size={20} color="#3FD69D" />
         </TouchableOpacity>
         <TouchableOpacity onPress={handleSignOut} style={styles.iconButton}>
           <Ionicons name="log-out-outline" size={20} color="#E07070" />
