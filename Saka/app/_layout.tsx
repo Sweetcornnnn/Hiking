@@ -42,8 +42,12 @@ export default function RootLayout() {
         <Stack.Screen name="organizations/Dashboard" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/BecomeOrganizer" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/Events" options={screenOptionsNoHeader} />
+        <Stack.Screen name="organizations/EventDetail" options={screenOptionsNoHeader} />
+        <Stack.Screen name="organizations/Attendees" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/CreateEvent" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/Profile" options={screenOptionsNoHeader} />
+        <Stack.Screen name="events/Events" options={screenOptionsNoHeader} />
+        <Stack.Screen name="events/EventDetail" options={screenOptionsNoHeader} />
         <Stack.Screen name="journal" options={screenOptionsNoHeader} />
       </Stack>
     </SafeAreaProvider>
