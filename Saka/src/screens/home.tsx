@@ -14,12 +14,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { Image as ExpoImage } from 'expo-image';
+import { useVideoPlayer, VideoView, type VideoPlayer, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
+import { getHomeVideoPosters, MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
 import { MOUNTAIN_TIPS, MountainTips } from '../data/mountainTips';
 import TipsAndTricks from '../components/mountainInfo/TipsAndTricks';
 import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
@@ -33,67 +35,10 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-/**
- * Bundled local videos for the Home feed.
- *
- *  - Keys are the mountain's STABLE Supabase ID (`mountain.id`), NOT the carousel index.
- *  - Values MUST be static `require(...)` calls so Metro can bundle the asset.
- *    Do not build the path dynamically (template strings, variables, etc.).
- *  - Mountains missing from this map render the solid placeholder background
- *    (no remote image is ever fetched by Home).
- */
-const MOUNTAIN_VIDEOS: Record<string, number> = {
-  '2cd5666c-1deb-4499-812e-eb95a992ef68': require('../../assets/HomeScreenVideo/Balinsyaw Home.mp4'), // Mt. Balinsayaw
-  'd39ff04a-069b-4d90-b448-f66e6ae05772': require('../../assets/HomeScreenVideo/Mount. M Home.mp4'), // Mt. M
-  '219d0ca0-dba5-41cd-b6cd-414c5d7e98e6': require('../../assets/HomeScreenVideo/Madjaas Home.mp4'), // Mt. Madjaas
-  'f2173971-80bf-40dd-96e9-c6b015be194b': require('../../assets/HomeScreenVideo/Pandan Hills Home.mp4'), // Pandan Hills
-};
-
-/**
- * Video player for a single slide.
- *
- * Behavior:
- *  - The player is mounted for EVERY slide that has a bundled video, even when
- *    the slide is off-screen. Each player is told to play immediately on mount,
- *    so every mapped video is decoding and looping in the background. When the
- *    user swipes to a slide, that video is already producing frames — no
- *    startup delay, no black gap.
- *  - Looping relies solely on `p.loop = true`. We deliberately do NOT attach a
- *    `playToEnd` listener that calls `replay()`, because `replay()` forces a
- *    seek back to 0 which flushes the decoder and paints a black frame. The
- *    native loop is seamless; the extra listener was causing the flash.
- *  - Visibility is gated only on `ready` (status === 'readyToPlay'), toggled
- *    instantly with no crossfade. Since videos play continuously, `ready` is
- *    already true by the time the user reaches any slide, so the toggle is
- *    effectively a no-op after the first second.
- *  - `surfaceType="textureView"` on Android is required because the opacity
- *    gate is meaningless against a SurfaceView (it's a separate compositor
- *    layer that ignores opacity). TextureView honors it. Ignored on iOS.
- */
-function VideoViewPlayer({ source }: { source: number }) {
-  const player = useVideoPlayer(source, (p) => {
-    p.loop = true;
-    p.muted = true;
-  });
-
-  const [ready, setReady] = useState(false);
-
-  // Track when the player has decoded enough to actually show a frame.
-  useEffect(() => {
-    const sub = player.addListener('statusChange', ({ status }) => {
-      setReady(status === 'readyToPlay');
-    });
-    return () => sub.remove();
-  }, [player]);
-
-  // Start immediately so the video is already playing before the user scrolls
-  // to it. useVideoPlayer releases the player when this component unmounts.
-  useEffect(() => {
-    player.play();
-  }, [player]);
-
+/** Renders Home's single native player over the slide's frozen poster frame. */
+function VideoViewPlayer({ player }: { player: VideoPlayer }) {
   return (
-    <View style={[styles.videoOverlay, { opacity: ready ? 1 : 0 }]} pointerEvents="none">
+    <View style={styles.videoOverlay} pointerEvents="none">
       <VideoView
         style={StyleSheet.absoluteFill}
         player={player}
@@ -112,6 +57,10 @@ function VideoViewPlayer({ source }: { source: number }) {
 // re-renders when `activeIndex` changes.
 const MountainSlide = memo(function MountainSlide({
   mountain,
+  isActive,
+  poster,
+  videoPlayer,
+  videoReady,
   width,
   height,
   isPortrait,
@@ -119,6 +68,10 @@ const MountainSlide = memo(function MountainSlide({
   onEventsPress,
 }: {
   mountain: Mountain;
+  isActive: boolean;
+  poster: VideoThumbnail | undefined;
+  videoPlayer: VideoPlayer;
+  videoReady: boolean;
   width: number;
   height: number;
   isPortrait: boolean;
@@ -135,7 +88,16 @@ const MountainSlide = memo(function MountainSlide({
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
         {localVideo ? (
-          <VideoViewPlayer source={localVideo} />
+          <>
+            {poster ? (
+              <ExpoImage source={poster} style={StyleSheet.absoluteFill} contentFit="cover" />
+            ) : (
+              <View style={styles.fullScreenVideoPlaceholder}>
+                <Ionicons name="videocam-outline" size={80} color="#8B7355" />
+              </View>
+            )}
+            {isActive && videoReady && <VideoViewPlayer player={videoPlayer} />}
+          </>
         ) : (
           <View style={styles.fullScreenVideoPlaceholder}>
             <Ionicons name="videocam-outline" size={80} color="#8B7355" />
@@ -189,9 +151,6 @@ const MountainSlide = memo(function MountainSlide({
           </TouchableOpacity>
         </View>
 
-        <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]} numberOfLines={1}>
-          {mountain.name}
-        </Text>
         <Text style={styles.mountainDescription} numberOfLines={2}>
           {mountain.description}
         </Text>
@@ -210,11 +169,108 @@ export default function HomeScreen() {
   const [tipsMountain, setTipsMountain] = useState<MountainTips | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
+  const initialVideoMountainId = mountains[0] && MOUNTAIN_VIDEOS[mountains[0].id]
+    ? mountains[0].id
+    : null;
+  const initialVideoSource = initialVideoMountainId
+    ? MOUNTAIN_VIDEOS[initialVideoMountainId]
+    : Object.values(MOUNTAIN_VIDEOS)[0];
+  const videoPlayer = useVideoPlayer(initialVideoSource, (player) => {
+    player.loop = true;
+    player.muted = true;
+  });
+  const [videoPosters, setVideoPosters] = useState<Record<string, VideoThumbnail>>(
+    () => getHomeVideoPosters()
+  );
+  const [videoReady, setVideoReady] = useState(false);
+  const activeMountainId = useRef<string | null>(mountains[0]?.id ?? null);
+  const loadedMountainId = useRef<string | null>(initialVideoMountainId);
+  const videoPositions = useRef<Record<string, number>>({});
+  const switchRequest = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
+
+  const capturePoster = useCallback(async (mountainId: string, time: number) => {
+    try {
+      const [poster] = await videoPlayer.generateThumbnailsAsync(time, {
+        maxWidth: 640,
+        maxHeight: 360,
+      });
+      if (poster) {
+        setVideoPosters((current) => ({ ...current, [mountainId]: poster }));
+      }
+    } catch (posterError) {
+      console.warn(`[Home] Could not create video poster for ${mountainId}:`, posterError);
+    }
+  }, [videoPlayer]);
+
+  useEffect(() => {
+    const mountain = mountains[activeIndex];
+    const mountainId = mountain?.id ?? null;
+    const source = mountainId ? MOUNTAIN_VIDEOS[mountainId] : undefined;
+    const currentLoadedId = loadedMountainId.current;
+    const requestId = ++switchRequest.current;
+    activeMountainId.current = mountainId;
+
+    if (!mountainId || !source) {
+      videoPlayer.pause();
+      setVideoReady(false);
+      return;
+    }
+
+    if (currentLoadedId === mountainId) {
+      setVideoReady(videoPlayer.status === 'readyToPlay');
+      videoPlayer.play();
+      if (!videoPosters[mountainId]) {
+        void capturePoster(mountainId, 0);
+      }
+      return;
+    }
+
+    if (currentLoadedId) {
+      videoPositions.current[currentLoadedId] = videoPlayer.currentTime;
+    }
+
+    videoPlayer.pause();
+    setVideoReady(false);
+    let cancelled = false;
+
+    videoPlayer.replaceAsync(source).then(() => {
+      if (cancelled || requestId !== switchRequest.current) return;
+
+      const savedPosition = videoPositions.current[mountainId] ?? 0;
+      if (savedPosition > 0 && savedPosition < videoPlayer.duration) {
+        videoPlayer.currentTime = savedPosition;
+      }
+
+      loadedMountainId.current = mountainId;
+      setVideoReady(videoPlayer.status === 'readyToPlay');
+      videoPlayer.play();
+      if (!videoPosters[mountainId]) {
+        void capturePoster(mountainId, 0);
+      }
+    }).catch((loadError) => {
+      if (!cancelled && requestId === switchRequest.current) {
+        console.warn('[Home] Failed to load mountain video:', loadError);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeIndex, capturePoster, mountains, videoPlayer, videoPosters]);
+
+  useEffect(() => {
+    const subscription = videoPlayer.addListener('statusChange', ({ status }) => {
+      setVideoReady(
+        status === 'readyToPlay' && loadedMountainId.current === activeMountainId.current
+      );
+    });
+    return () => subscription.remove();
+  }, [videoPlayer]);
 
   useEffect(() => {
     if (mountains.length === 0) {
@@ -353,6 +409,14 @@ export default function HomeScreen() {
         )}
         onMomentumScrollEnd={(event) => {
           const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
+          const outgoingMountain = mountains[activeIndex];
+          if (outgoingMountain && loadedMountainId.current === outgoingMountain.id) {
+            const time = videoPlayer.currentTime;
+            videoPositions.current[outgoingMountain.id] = time;
+            void capturePoster(outgoingMountain.id, time);
+          }
+
+          activeMountainId.current = mountains[newIndex]?.id ?? null;
           setActiveIndex(newIndex);
 
           if (mountains[newIndex]) {
@@ -361,10 +425,14 @@ export default function HomeScreen() {
         }}
         decelerationRate="fast"
       >
-        {mountains.map((mountain) => (
+        {mountains.map((mountain, index) => (
           <MountainSlide
             key={mountain.id}
             mountain={mountain}
+            isActive={index === activeIndex}
+            poster={videoPosters[mountain.id]}
+            videoPlayer={videoPlayer}
+            videoReady={videoReady}
             width={dimensions.width}
             height={dimensions.height}
             isPortrait={isPortrait}
@@ -419,13 +487,6 @@ export default function HomeScreen() {
               <Ionicons name="business-outline" size={20} color="#3FD69D" />
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            onPress={() => router.push('/events/Events' as any)}
-            style={styles.chatButton}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="calendar-outline" size={20} color="#C9A96E" />
-          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push('/chat/Chat' as any)}
             style={styles.chatButton}
@@ -771,7 +832,6 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: '#C9A96E',
     backgroundColor: BG_SUBTLE,
     alignItems: 'center',
     borderColor: BORDER_SUBTLE,
