@@ -1,4 +1,4 @@
-// screens/chat/GroupChatScreen.tsx - WITH PERSONALIZED SYSTEM MESSAGES + SCROLL-TO-LATEST FIX
+// screens/GroupChatScreen.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -14,6 +14,7 @@ import {
   TextInput,
   Modal,
   useWindowDimensions,
+  Pressable,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,20 +22,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import {
-  BG_PANEL,
+  ACCENT_GOLD,
   TEXT_PRIMARY,
   TEXT_MUTED,
-  ACCENT_GOLD,
-  BG_CARD,
-  BG_SUBTLE,
-  BORDER_DEFAULT,
+  CHAT_BG,
+  CHAT_PANEL,
+  CHAT_SUBTLE,
+  CHAT_BORDER,
+  CHAT_ONLINE,
+  CHAT_DANGER,
+  CHAT_RADIUS_BTN,
+  CHAT_RADIUS_CARD,
+  CHAT_RADIUS_MODAL,
+  CHAT_RADIUS_BUBBLE,
+  CHAT_FS_BODY,
+  CHAT_FS_META,
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 import UserSearch from '../../components/chat/UserSearch';
-
-// ============================================
-// TYPES
-// ============================================
 
 type ProfileData = {
   full_name: string | null;
@@ -73,49 +78,27 @@ type Group = {
   avatar_url: string | null;
 };
 
-// ============================================
-// HELPERS
-// ============================================
-
 const normalizeProfile = (profiles: any): ProfileData | null => {
   if (!profiles) return null;
   if (Array.isArray(profiles)) return profiles[0] || null;
   return profiles;
 };
 
-/**
- * Format a system message based on the current user's POV
- */
 const formatSystemMessage = (item: Message, currentUserId: string): string => {
-  if (!item.metadata) {
-    return item.content;
-  }
-
+  if (!item.metadata) return item.content;
   const { action, actor_id, actor_name, target_id, target_name } = item.metadata;
 
   if (action === 'member_added') {
-    if (actor_id === currentUserId) {
-      return `You added ${target_name} to the group.`;
-    }
-    if (target_id === currentUserId) {
-      return `${actor_name} added you to the group.`;
-    }
+    if (actor_id === currentUserId) return `You added ${target_name} to the group.`;
+    if (target_id === currentUserId) return `${actor_name} added you to the group.`;
     return `${actor_name} added ${target_name} to the group.`;
   }
-
   if (action === 'member_left') {
-    if (actor_id === currentUserId) {
-      return 'You left the group';
-    }
+    if (actor_id === currentUserId) return 'You left the group';
     return `${actor_name} left the group`;
   }
-
   return item.content;
 };
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function GroupChatScreen() {
   const router = useRouter();
@@ -135,21 +118,20 @@ export default function GroupChatScreen() {
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [showDeleteSheet, setShowDeleteSheet] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const listRef = useRef<FlatList>(null);
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
   const { width: windowWidth } = useWindowDimensions();
 
-  // ✅ Scroll tracking
   const isNearBottomRef = useRef(true);
   const initialScrollIndexRef = useRef<number | null>(null);
   const initialPositionPendingRef = useRef(false);
   const initialPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ============================================
-  // SCROLL HELPERS
-  // ============================================
 
   const handleScroll = useCallback((event: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
@@ -168,9 +150,7 @@ export default function GroupChatScreen() {
       } else {
         listRef.current?.scrollToEnd({ animated: false });
       }
-      if (initialPositionTimerRef.current) {
-        clearTimeout(initialPositionTimerRef.current);
-      }
+      if (initialPositionTimerRef.current) clearTimeout(initialPositionTimerRef.current);
       initialPositionTimerRef.current = setTimeout(() => {
         initialPositionPendingRef.current = false;
         initialScrollIndexRef.current = null;
@@ -192,10 +172,6 @@ export default function GroupChatScreen() {
     }
   }, [messages.length]);
 
-  // ============================================
-  // MARK GROUP AS READ
-  // ============================================
-
   const markGroupAsRead = useCallback(async () => {
     if (!user || !groupId) return;
     try {
@@ -214,10 +190,6 @@ export default function GroupChatScreen() {
     }
   }, [user, groupId]);
 
-  // ============================================
-  // LOAD GROUP
-  // ============================================
-
   const loadGroup = useCallback(async () => {
     if (!groupId) return;
     try {
@@ -233,10 +205,6 @@ export default function GroupChatScreen() {
       setError('Failed to load group');
     }
   }, [groupId]);
-
-  // ============================================
-  // LOAD MEMBERS
-  // ============================================
 
   const loadMembers = useCallback(async () => {
     if (!groupId) return;
@@ -270,10 +238,6 @@ export default function GroupChatScreen() {
       console.error('Load members error:', err);
     }
   }, [groupId]);
-
-  // ============================================
-  // LOAD MESSAGES
-  // ============================================
 
   const loadMessages = useCallback(
     async (refresh = false) => {
@@ -328,13 +292,11 @@ export default function GroupChatScreen() {
             message.sender_id !== user.id &&
             new Date(message.created_at).getTime() > lastReadAt
         );
-        initialScrollIndexRef.current =
-          firstUnreadIndex >= 0 ? firstUnreadIndex : null;
-
-        // Recalculate the initial position whenever the screen is opened or refreshed.
+        initialScrollIndexRef.current = firstUnreadIndex >= 0 ? firstUnreadIndex : null;
         initialPositionPendingRef.current = true;
 
         setMessages(normalizedMessages);
+
         setTimeout(() => {
           if (firstUnreadIndex >= 0) {
             listRef.current?.scrollToIndex({
@@ -357,10 +319,6 @@ export default function GroupChatScreen() {
     },
     [user, groupId, markGroupAsRead]
   );
-
-  // ============================================
-  // SEND MESSAGE
-  // ============================================
 
   const sendMessage = async () => {
     if (!user || !groupId || !inputText.trim() || sending) return;
@@ -436,14 +394,43 @@ export default function GroupChatScreen() {
     }
   };
 
-  // ============================================
-  // HANDLE NEW MESSAGE (REALTIME)
-  // ============================================
+  const openDeleteSheet = (message: Message) => {
+    if (message.type === 'system') return;
+    setSelectedMessage(message);
+    setShowDeleteSheet(true);
+  };
+
+  const closeDeleteSheet = () => {
+    if (deleting) return;
+    setShowDeleteSheet(false);
+    setSelectedMessage(null);
+  };
+
+  const confirmDeleteMessage = async () => {
+    if (!selectedMessage || !user) return;
+    const msgId = selectedMessage.id;
+    setDeleting(true);
+
+    const backup = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setShowDeleteSheet(false);
+    setSelectedMessage(null);
+
+    try {
+      const { error } = await supabase.from('group_messages').delete().eq('id', msgId);
+      if (error) throw error;
+    } catch (err) {
+      console.error('Delete message error:', err);
+      setMessages(backup);
+      Alert.alert('Error', 'Failed to delete message. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleNewMessage = useCallback(
     async (payload: any) => {
       if (!mountedRef.current) return;
-
       const newMessage = payload.new;
       if (Number(newMessage.group_id) !== Number(groupId)) return;
 
@@ -479,7 +466,6 @@ export default function GroupChatScreen() {
           return [...prev, normalizedMessage];
         });
 
-        // ✅ Only auto-scroll if user is already near the bottom
         if (isNearBottomRef.current) {
           setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
         }
@@ -490,15 +476,16 @@ export default function GroupChatScreen() {
     [groupId, markGroupAsRead]
   );
 
-  // ============================================
-  // REALTIME: MEMBERS - UNIQUE CHANNEL
-  // ============================================
+  const handleDeletedMessage = useCallback((payload: any) => {
+    if (!mountedRef.current) return;
+    const deletedId = payload.old?.id;
+    if (deletedId === undefined) return;
+    setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+  }, []);
 
   useEffect(() => {
     if (!groupId) return;
-
     const channelName = `group-members-${groupId}-${Date.now()}`;
-
     const memberChannel = supabase
       .channel(channelName)
       .on(
@@ -512,24 +499,17 @@ export default function GroupChatScreen() {
         () => loadMembers()
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(memberChannel);
     };
   }, [groupId, loadMembers]);
 
-  // ============================================
-  // EFFECT: INITIAL LOAD + MESSAGES REALTIME
-  // ============================================
-
   useEffect(() => {
     mountedRef.current = true;
-
     loadGroup();
     loadMembers();
     if (groupId) {
       const channelName = `group-messages-${groupId}-${Date.now()}`;
-
       const channel = supabase
         .channel(channelName)
         .on(
@@ -542,6 +522,11 @@ export default function GroupChatScreen() {
           },
           handleNewMessage
         )
+        .on(
+          'postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'group_messages' },
+          handleDeletedMessage
+        )
         .subscribe((status) => {
           console.log('Group chat subscription status:', status);
         });
@@ -550,27 +535,23 @@ export default function GroupChatScreen() {
 
       return () => {
         mountedRef.current = false;
+        if (initialPositionTimerRef.current) clearTimeout(initialPositionTimerRef.current);
         if (subscriptionRef.current) {
           supabase.removeChannel(subscriptionRef.current);
           subscriptionRef.current = null;
         }
       };
     }
-
     return () => {
       mountedRef.current = false;
     };
-  }, [groupId, loadGroup, loadMembers, loadMessages, handleNewMessage]);
+  }, [groupId, loadGroup, loadMembers, loadMessages, handleNewMessage, handleDeletedMessage]);
 
   useFocusEffect(
     useCallback(() => {
       loadMessages(true);
     }, [loadMessages])
   );
-
-  // ============================================
-  // HELPERS
-  // ============================================
 
   const goBack = async () => {
     await markGroupAsRead();
@@ -583,19 +564,13 @@ export default function GroupChatScreen() {
     loadMembers();
   };
 
-  // ============================================
-  // LEAVE GROUP - WITH SYSTEM MESSAGE
-  // ============================================
-
   const handleLeaveGroup = async () => {
     if (!user || !groupId) return;
     setLeaving(true);
 
     try {
       const userName =
-        user.user_metadata?.full_name ||
-        user.user_metadata?.username ||
-        'Someone';
+        user.user_metadata?.full_name || user.user_metadata?.username || 'Someone';
 
       const { error: msgError } = await supabase
         .from('group_messages')
@@ -604,23 +579,16 @@ export default function GroupChatScreen() {
           sender_id: user.id,
           content: `${userName} left the group`,
           type: 'system',
-          metadata: {
-            action: 'member_left',
-            actor_id: user.id,
-            actor_name: userName,
-          },
+          metadata: { action: 'member_left', actor_id: user.id, actor_name: userName },
         });
 
-      if (msgError) {
-        console.error('Failed to insert leave message:', msgError);
-      }
+      if (msgError) console.error('Failed to insert leave message:', msgError);
 
       const { error: leaveError } = await supabase
         .from('group_members')
         .delete()
         .eq('group_id', groupId)
         .eq('user_id', user.id);
-
       if (leaveError) throw leaveError;
 
       await supabase
@@ -650,10 +618,6 @@ export default function GroupChatScreen() {
     );
   };
 
-  // ============================================
-  // ADD MEMBER - WITH SYSTEM MESSAGE + METADATA
-  // ============================================
-
   const handleAddMember = async (selectedUser: any) => {
     if (!user || !groupId) return;
 
@@ -663,57 +627,44 @@ export default function GroupChatScreen() {
     }
 
     try {
-      const { error: addError } = await supabase
-        .from('group_members')
-        .insert({
-          group_id: groupId,
-          user_id: selectedUser.id,
-          role: 'member',
-        });
-
+      const { error: addError } = await supabase.from('group_members').insert({
+        group_id: groupId,
+        user_id: selectedUser.id,
+        role: 'member',
+      });
       if (addError) throw addError;
 
-      await supabase
-        .from('group_read_receipts')
-        .upsert(
-          {
-            group_id: groupId,
-            user_id: selectedUser.id,
-            last_read_at: new Date().toISOString(),
-          },
-          { onConflict: 'group_id,user_id' }
-        );
+      await supabase.from('group_read_receipts').upsert(
+        {
+          group_id: groupId,
+          user_id: selectedUser.id,
+          last_read_at: new Date().toISOString(),
+        },
+        { onConflict: 'group_id,user_id' }
+      );
 
       const adderName =
-        user.user_metadata?.full_name ||
-        user.user_metadata?.username ||
-        'Someone';
-
+        user.user_metadata?.full_name || user.user_metadata?.username || 'Someone';
       const addedName =
         selectedUser.full_name ||
         selectedUser.username ||
         selectedUser.name ||
         'a new member';
 
-      const { error: msgError } = await supabase
-        .from('group_messages')
-        .insert({
-          group_id: Number(groupId),
-          sender_id: user.id,
-          content: `${adderName} added ${addedName}`,
-          type: 'system',
-          metadata: {
-            action: 'member_added',
-            actor_id: user.id,
-            actor_name: adderName,
-            target_id: selectedUser.id,
-            target_name: addedName,
-          },
-        });
-
-      if (msgError) {
-        console.error('System message insert failed:', msgError);
-      }
+      const { error: msgError } = await supabase.from('group_messages').insert({
+        group_id: Number(groupId),
+        sender_id: user.id,
+        content: `${adderName} added ${addedName}`,
+        type: 'system',
+        metadata: {
+          action: 'member_added',
+          actor_id: user.id,
+          actor_name: adderName,
+          target_id: selectedUser.id,
+          target_name: addedName,
+        },
+      });
+      if (msgError) console.error('System message insert failed:', msgError);
 
       setShowAddMembers(false);
       Alert.alert('Success', `${addedName} has been added to the group`);
@@ -722,10 +673,6 @@ export default function GroupChatScreen() {
       Alert.alert('Error', 'Failed to add member. Please try again.');
     }
   };
-
-  // ============================================
-  // RENDER MESSAGE
-  // ============================================
 
   const renderMessage = ({ item }: { item: Message }) => {
     if (item.type === 'system') {
@@ -741,8 +688,8 @@ export default function GroupChatScreen() {
     const profile = normalizeProfile(item.profiles);
     const senderName = profile?.full_name || profile?.username || 'Anonymous';
     const bubbleWidth = Math.min(
-      Math.max(58, item.content.length * 8.5 + 32),
-      windowWidth * 0.8
+      Math.max(48, item.content.length * 7.2 + 24),
+      windowWidth * 0.75
     );
 
     const time = item.created_at
@@ -753,11 +700,10 @@ export default function GroupChatScreen() {
       : '';
 
     return (
-      <View
-        style={[
-          styles.messageRow,
-          isMe ? styles.messageRight : styles.messageLeft,
-        ]}
+      <Pressable
+        onLongPress={() => openDeleteSheet(item)}
+        delayLongPress={350}
+        style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
       >
         {!isMe && (
           <View style={styles.messageSenderRow}>
@@ -767,54 +713,34 @@ export default function GroupChatScreen() {
                 { backgroundColor: getAvatarColor(item.sender_id) },
               ]}
             >
-              <Text style={styles.smallAvatarText}>
-                {getInitials(senderName)}
-              </Text>
+              <Text style={styles.smallAvatarText}>{getInitials(senderName)}</Text>
             </View>
-            <Text style={[styles.senderName, { color: TEXT_MUTED }]}>
-              {senderName}
-            </Text>
+            <Text style={styles.senderName}>{senderName}</Text>
           </View>
         )}
         <View
           style={[
             styles.messageBubble,
             isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-            { width: bubbleWidth },
+            { maxWidth: bubbleWidth },
           ]}
         >
           <Text
             style={[
               styles.messageText,
-              { color: isMe ? '#fff' : TEXT_PRIMARY },
+              { color: isMe ? CHAT_BG : TEXT_PRIMARY },
+              isMe && { fontWeight: '600' },
             ]}
           >
             {item.content}
           </Text>
         </View>
-        <View
-          style={[
-            styles.messageMeta,
-            { width: bubbleWidth },
-            isMe ? styles.messageMetaMe : styles.messageMetaOther,
-          ]}
-        >
-          <Text
-            style={[
-              styles.messageTime,
-              { color: isMe ? 'rgba(255,255,255,0.6)' : TEXT_MUTED },
-            ]}
-          >
-            {time}
-          </Text>
+        <View style={styles.messageMeta}>
+          <Text style={styles.messageTime}>{time}</Text>
         </View>
-      </View>
+      </Pressable>
     );
   };
-
-  // ============================================
-  // RENDER MEMBER
-  // ============================================
 
   const renderMember = ({ item }: { item: GroupMember }) => {
     const profile = normalizeProfile(item.profiles);
@@ -831,10 +757,8 @@ export default function GroupChatScreen() {
           <Text style={styles.memberAvatarText}>{getInitials(name)}</Text>
         </View>
         <View style={styles.memberInfo}>
-          <Text style={[styles.memberName, { color: TEXT_PRIMARY }]}>
-            {name}
-          </Text>
-          <Text style={[styles.memberRole, { color: TEXT_MUTED }]}>
+          <Text style={styles.memberName}>{name}</Text>
+          <Text style={styles.memberRole}>
             {item.role === 'admin'
               ? '👑 Admin'
               : item.role === 'moderator'
@@ -846,31 +770,20 @@ export default function GroupChatScreen() {
     );
   };
 
-  // ============================================
-  // LOADING
-  // ============================================
-
   if (loading && messages.length === 0) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={ACCENT_GOLD} />
-        <Text style={[styles.loadingText, { color: TEXT_MUTED }]}>
-          Loading group chat...
-        </Text>
+        <ActivityIndicator size="small" color={ACCENT_GOLD} />
+        <Text style={styles.loadingText}>Loading group chat...</Text>
       </SafeAreaView>
     );
   }
 
-  // ============================================
-  // MAIN RENDER
-  // ============================================
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+        <TouchableOpacity onPress={goBack} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={18} color={TEXT_PRIMARY} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -883,23 +796,20 @@ export default function GroupChatScreen() {
               { backgroundColor: getAvatarColor(groupId || '') },
             ]}
           >
-            <Ionicons name="people" size={20} color="#fff" />
+            <Ionicons name="people" size={16} color="#fff" />
           </View>
           <View style={styles.headerGroupInfo}>
-            <Text style={[styles.headerName, { color: TEXT_PRIMARY }]}>
+            <Text style={styles.headerName} numberOfLines={1}>
               {group?.name || 'Group Chat'}
             </Text>
-            <Text style={[styles.headerStatus, { color: TEXT_MUTED }]}>
+            <Text style={styles.headerStatus}>
               {members.length} member{members.length !== 1 ? 's' : ''}
             </Text>
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.headerAction}
-          onPress={() => setShowMenu(true)}
-        >
-          <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+        <TouchableOpacity style={styles.backBtn} onPress={() => setShowMenu(true)}>
+          <Ionicons name="ellipsis-vertical" size={16} color={TEXT_PRIMARY} />
         </TouchableOpacity>
       </View>
 
@@ -909,7 +819,6 @@ export default function GroupChatScreen() {
         </View>
       )}
 
-      {/* Messages */}
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -919,16 +828,11 @@ export default function GroupChatScreen() {
           <View style={styles.emptyContainer}>
             <Ionicons
               name="chatbubbles-outline"
-              size={48}
+              size={28}
               color={TEXT_MUTED}
-              style={{ opacity: 0.3 }}
+              style={{ opacity: 0.4 }}
             />
-            <Text style={[styles.emptyText, { color: TEXT_MUTED }]}>
-              No messages yet
-            </Text>
-            <Text style={[styles.emptySubtext, { color: TEXT_MUTED }]}>
-              Be the first to say hello!
-            </Text>
+            <Text style={styles.emptyText}>No messages yet</Text>
           </View>
         ) : (
           <FlatList
@@ -948,9 +852,7 @@ export default function GroupChatScreen() {
                 colors={[ACCENT_GOLD]}
               />
             }
-            // ✅ Scroll to newest ONCE after the list has measured content
             onContentSizeChange={handleContentSizeChange}
-            // ✅ Safety net in case content size change hasn't fired yet
             onLayout={handleLayout}
             onScrollToIndexFailed={({ index }) => {
               setTimeout(() => {
@@ -967,29 +869,21 @@ export default function GroupChatScreen() {
           />
         )}
 
-        {/* Input */}
         <View style={styles.inputContainer}>
           <View style={styles.inputWrapper}>
             <TextInput
               value={inputText}
               onChangeText={setInputText}
               placeholder="Type a message..."
-              placeholderTextColor="rgba(255,255,255,0.25)"
+              placeholderTextColor="rgba(255,255,255,0.28)"
               style={[styles.input, { color: TEXT_PRIMARY }]}
               multiline
               maxLength={1000}
               editable={!sending}
             />
             {inputText.length > 0 && (
-              <TouchableOpacity
-                onPress={() => setInputText('')}
-                style={styles.clearButton}
-              >
-                <Ionicons
-                  name="close-circle"
-                  size={16}
-                  color="rgba(255,255,255,0.25)"
-                />
+              <TouchableOpacity onPress={() => setInputText('')} style={styles.clearButton}>
+                <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.3)" />
               </TouchableOpacity>
             )}
           </View>
@@ -1006,15 +900,15 @@ export default function GroupChatScreen() {
               },
             ]}
             disabled={!inputText.trim() || sending}
-            activeOpacity={0.7}
+            activeOpacity={0.85}
           >
             {sending ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={CHAT_BG} />
             ) : (
               <Ionicons
                 name="send"
-                size={16}
-                color={inputText.trim() ? '#fff' : 'rgba(255,255,255,0.2)'}
+                size={14}
+                color={inputText.trim() ? CHAT_BG : 'rgba(255,255,255,0.3)'}
               />
             )}
           </TouchableOpacity>
@@ -1025,21 +919,19 @@ export default function GroupChatScreen() {
       <Modal
         visible={showMembers}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowMembers(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.membersModal}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowMembers(false)}>
+          <Pressable style={styles.membersModal} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
                 onPress={() => setShowMembers(false)}
                 style={styles.modalCloseBtn}
               >
-                <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
+                <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
               </TouchableOpacity>
-              <Text style={[styles.modalTitle, { color: TEXT_PRIMARY }]}>
-                Members ({members.length})
-              </Text>
+              <Text style={styles.modalTitle}>Members ({members.length})</Text>
               <TouchableOpacity
                 onPress={() => {
                   setShowMembers(false);
@@ -1047,7 +939,7 @@ export default function GroupChatScreen() {
                 }}
                 style={styles.modalCloseBtn}
               >
-                <Ionicons name="person-add" size={20} color={ACCENT_GOLD} />
+                <Ionicons name="person-add" size={14} color={ACCENT_GOLD} />
               </TouchableOpacity>
             </View>
 
@@ -1057,8 +949,8 @@ export default function GroupChatScreen() {
               renderItem={renderMember}
               contentContainerStyle={styles.membersList}
             />
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Menu Modal */}
@@ -1081,13 +973,13 @@ export default function GroupChatScreen() {
                   { backgroundColor: getAvatarColor(groupId || '') },
                 ]}
               >
-                <Ionicons name="people" size={24} color="#fff" />
+                <Ionicons name="people" size={18} color="#fff" />
               </View>
               <View style={styles.menuHeaderInfo}>
-                <Text style={[styles.menuTitle, { color: TEXT_PRIMARY }]}>
+                <Text style={styles.menuTitle} numberOfLines={1}>
                   {group?.name || 'Group Chat'}
                 </Text>
-                <Text style={[styles.menuSubtitle, { color: TEXT_MUTED }]}>
+                <Text style={styles.menuSubtitle}>
                   {members.length} member{members.length !== 1 ? 's' : ''}
                 </Text>
               </View>
@@ -1100,10 +992,8 @@ export default function GroupChatScreen() {
                 setShowMembers(true);
               }}
             >
-              <Ionicons name="people-outline" size={22} color={TEXT_PRIMARY} />
-              <Text style={[styles.menuOptionText, { color: TEXT_PRIMARY }]}>
-                View Members
-              </Text>
+              <Ionicons name="people-outline" size={16} color={TEXT_PRIMARY} />
+              <Text style={styles.menuOptionText}>View Members</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1113,11 +1003,7 @@ export default function GroupChatScreen() {
                 setShowAddMembers(true);
               }}
             >
-              <Ionicons
-                name="person-add-outline"
-                size={22}
-                color={ACCENT_GOLD}
-              />
+              <Ionicons name="person-add-outline" size={16} color={ACCENT_GOLD} />
               <Text style={[styles.menuOptionText, { color: ACCENT_GOLD }]}>
                 Add Members
               </Text>
@@ -1129,11 +1015,11 @@ export default function GroupChatScreen() {
               disabled={leaving}
             >
               {leaving ? (
-                <ActivityIndicator size="small" color="#FF6B6B" />
+                <ActivityIndicator size="small" color={CHAT_DANGER} />
               ) : (
-                <Ionicons name="exit-outline" size={22} color="#FF6B6B" />
+                <Ionicons name="exit-outline" size={16} color={CHAT_DANGER} />
               )}
-              <Text style={[styles.menuOptionText, { color: '#FF6B6B' }]}>
+              <Text style={[styles.menuOptionText, { color: CHAT_DANGER }]}>
                 Leave Group
               </Text>
             </TouchableOpacity>
@@ -1142,9 +1028,7 @@ export default function GroupChatScreen() {
               style={[styles.menuOption, styles.menuCancel]}
               onPress={() => setShowMenu(false)}
             >
-              <Text style={[styles.menuOptionText, { color: TEXT_MUTED }]}>
-                Cancel
-              </Text>
+              <Text style={[styles.menuOptionText, { color: TEXT_MUTED }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -1154,114 +1038,138 @@ export default function GroupChatScreen() {
       <Modal
         visible={showAddMembers}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowAddMembers(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.addMembersModal}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowAddMembers(false)}>
+          <Pressable style={styles.addMembersModal} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
                 onPress={() => setShowAddMembers(false)}
                 style={styles.modalCloseBtn}
               >
-                <Ionicons name="close" size={24} color={TEXT_PRIMARY} />
+                <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
               </TouchableOpacity>
-              <Text style={[styles.modalTitle, { color: TEXT_PRIMARY }]}>
-                Add Members
-              </Text>
-              <View style={{ width: 40 }} />
+              <Text style={styles.modalTitle}>Add Members</Text>
+              <View style={{ width: 32 }} />
             </View>
 
             <View style={styles.addMembersBody}>
-              <Text style={[styles.addMembersHint, { color: TEXT_MUTED }]}>
+              <Text style={styles.addMembersHint}>
                 Search and tap a user to add them
               </Text>
-
               <UserSearch onSelect={handleAddMember} />
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Delete Confirmation */}
+      <Modal
+        visible={showDeleteSheet}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDeleteSheet}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={closeDeleteSheet}>
+          <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.sheetTitle}>Unsend this message?</Text>
+            <View style={styles.sheetBtnRow}>
+              <TouchableOpacity
+                style={[styles.sheetBtn, styles.sheetBtnCancel]}
+                onPress={closeDeleteSheet}
+                disabled={deleting}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.sheetBtnCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.sheetBtn, styles.sheetBtnDelete]}
+                onPress={confirmDeleteMessage}
+                disabled={deleting}
+                activeOpacity={0.85}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.sheetBtnDeleteText}>Unsend</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
 }
 
-// ============================================
-// STYLES
-// ============================================
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG_PANEL },
+  container: { flex: 1, backgroundColor: CHAT_BG },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { fontSize: 14, opacity: 0.7, marginTop: 8 },
+  loadingText: { fontSize: 11, color: TEXT_MUTED, marginTop: 6 },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-    backgroundColor: BG_PANEL,
+    borderBottomColor: CHAT_BORDER,
+    backgroundColor: CHAT_BG,
   },
-  backButton: {
-    width: 40,
-    height: 40,
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   headerGroup: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 4,
+    marginLeft: 8,
     paddingVertical: 4,
   },
   headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerGroupInfo: { marginLeft: 10 },
-  headerName: { fontSize: 16, fontWeight: '600' },
-  headerStatus: { fontSize: 11, opacity: 0.6 },
-  headerAction: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 20,
-  },
+  headerGroupInfo: { marginLeft: 9, flex: 1, minWidth: 0 },
+  headerName: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
+  headerStatus: { fontSize: 10, opacity: 0.75, color: TEXT_MUTED, marginTop: 1 },
+
   errorBanner: {
-    backgroundColor: 'rgba(255,0,0,0.1)',
-    padding: 10,
-    marginHorizontal: 16,
+    backgroundColor: 'rgba(224,112,112,0.10)',
+    padding: 8,
+    marginHorizontal: 12,
     marginTop: 8,
-    borderRadius: 8,
+    borderRadius: CHAT_RADIUS_BTN,
     borderWidth: 1,
-    borderColor: 'rgba(255,0,0,0.2)',
+    borderColor: 'rgba(224,112,112,0.22)',
   },
-  errorText: { color: '#FF6B6B', fontSize: 12, textAlign: 'center' },
+  errorText: { color: CHAT_DANGER, fontSize: 11, textAlign: 'center' },
+
   keyboardContainer: { flex: 1 },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+    gap: 6,
   },
-  emptyText: {
-    marginTop: 12,
-    fontSize: 18,
-    fontWeight: '600',
-    opacity: 0.5,
-  },
-  emptySubtext: { marginTop: 6, fontSize: 13, opacity: 0.3 },
+  emptyText: { fontSize: 13, fontWeight: '600', color: TEXT_MUTED, marginTop: 4 },
+
   messageList: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingBottom: 6,
     flexGrow: 1,
   },
   messageRow: { alignSelf: 'stretch', marginVertical: 2 },
@@ -1272,62 +1180,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 4,
-    marginLeft: 4,
+    marginLeft: 2,
   },
   smallAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  smallAvatarText: { color: '#fff', fontSize: 9, fontWeight: '700' },
-  senderName: { fontSize: 11, fontWeight: '600', opacity: 0.7 },
+  smallAvatarText: { color: '#fff', fontSize: 8.5, fontWeight: '700' },
+  senderName: { fontSize: 10, fontWeight: '600', color: TEXT_MUTED, letterSpacing: 0.3 },
+
   messageBubble: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    marginVertical: 2,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: CHAT_RADIUS_BUBBLE,
+    marginVertical: 1,
   },
   messageBubbleMe: {
     backgroundColor: ACCENT_GOLD,
     borderBottomRightRadius: 4,
   },
   messageBubbleOther: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: CHAT_SUBTLE,
     borderBottomLeftRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderColor: CHAT_BORDER,
   },
-  messageText: { fontSize: 14, lineHeight: 18, flexShrink: 1 },
+  messageText: { fontSize: CHAT_FS_BODY, lineHeight: 17, flexShrink: 1 },
+  messageMeta: { flexDirection: 'row', marginTop: 2 },
   messageTime: {
-    fontSize: 9,
-    marginTop: 4,
-    opacity: 0.5,
+    fontSize: CHAT_FS_META,
+    color: TEXT_MUTED,
+    opacity: 0.75,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.2,
   },
-  messageMeta: { flexDirection: 'row' },
-  messageMetaMe: { alignSelf: 'flex-end', justifyContent: 'flex-end' },
-  messageMetaOther: { alignSelf: 'flex-start', justifyContent: 'flex-start' },
+
   systemMessageContainer: {
     alignItems: 'center',
-    marginVertical: 12,
-    paddingHorizontal: 32,
+    marginVertical: 8,
+    paddingHorizontal: 24,
   },
   systemMessageText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: 10,
+    color: TEXT_MUTED,
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 14,
     fontWeight: '500',
+    fontStyle: 'italic',
+    opacity: 0.75,
   },
+
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
-    backgroundColor: BG_PANEL,
+    borderTopColor: CHAT_BORDER,
+    backgroundColor: CHAT_BG,
     gap: 8,
   },
   inputWrapper: {
@@ -1335,146 +1248,195 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 20,
+    borderRadius: CHAT_RADIUS_BTN,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
-    paddingHorizontal: 4,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingLeft: 4,
+    paddingRight: 6,
+    minHeight: 36,
   },
   input: {
     flex: 1,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 14,
-    maxHeight: 80,
-    minHeight: 36,
+    fontSize: CHAT_FS_BODY,
+    lineHeight: 16,
+    maxHeight: 96,
+    minHeight: 34,
   },
-  clearButton: { padding: 6 },
+  clearButton: { padding: 4 },
   sendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 34,
+    height: 34,
+    borderRadius: CHAT_RADIUS_BTN,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: ACCENT_GOLD,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
+
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
   membersModal: {
-    backgroundColor: BG_CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '80%',
-    paddingBottom: 20,
-    borderTopWidth: 1,
-    borderTopColor: BORDER_DEFAULT,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '75%',
+    backgroundColor: CHAT_PANEL,
+    borderRadius: CHAT_RADIUS_CARD,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    overflow: 'hidden',
   },
   addMembersModal: {
-    backgroundColor: BG_CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '80%',
-    paddingBottom: 20,
-    borderTopWidth: 1,
-    borderTopColor: BORDER_DEFAULT,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '75%',
+    backgroundColor: CHAT_PANEL,
+    borderRadius: CHAT_RADIUS_CARD,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    overflow: 'hidden',
   },
   addMembersBody: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
   addMembersHint: {
-    fontSize: 13,
-    marginBottom: 12,
+    fontSize: 11,
+    marginBottom: 10,
     opacity: 0.7,
+    color: TEXT_MUTED,
     textAlign: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomColor: CHAT_BORDER,
   },
   modalCloseBtn: {
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
+    borderRadius: 11,
     backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  modalTitle: { fontSize: 18, fontWeight: '700' },
-  membersList: { paddingHorizontal: 20, paddingTop: 12 },
+  modalTitle: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
+  membersList: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12 },
   memberItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
+    paddingVertical: 8,
+    gap: 10,
   },
   memberAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  memberAvatarText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  memberAvatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   memberInfo: { flex: 1 },
-  memberName: { fontSize: 15, fontWeight: '600' },
-  memberRole: { fontSize: 12, marginTop: 2, opacity: 0.6 },
+  memberName: { fontSize: 12.5, fontWeight: '600', color: TEXT_PRIMARY },
+  memberRole: { fontSize: 10, marginTop: 1, opacity: 0.7, color: TEXT_MUTED },
+
   menuBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
   menuContainer: {
-    backgroundColor: BG_CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 34,
-    paddingTop: 16,
+    backgroundColor: CHAT_PANEL,
+    borderTopLeftRadius: CHAT_RADIUS_MODAL,
+    borderTopRightRadius: CHAT_RADIUS_MODAL,
+    paddingBottom: 26,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: BORDER_DEFAULT,
+    borderTopColor: CHAT_BORDER,
   },
   menuHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
-    gap: 12,
+    borderBottomColor: CHAT_BORDER,
+    gap: 10,
   },
   menuAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuHeaderInfo: { flex: 1 },
-  menuTitle: { fontSize: 17, fontWeight: '700' },
-  menuSubtitle: { fontSize: 12, marginTop: 2, opacity: 0.6 },
+  menuHeaderInfo: { flex: 1, minWidth: 0 },
+  menuTitle: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
+  menuSubtitle: { fontSize: 10, marginTop: 1, opacity: 0.7, color: TEXT_MUTED },
   menuOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 18,
-    gap: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+    gap: 12,
   },
-  menuOptionText: { fontSize: 16, fontWeight: '600' },
+  menuOptionText: { fontSize: 13, fontWeight: '600', color: TEXT_PRIMARY },
   menuCancel: {
-    marginTop: 8,
+    marginTop: 4,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
+    borderTopColor: CHAT_BORDER,
   },
+
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  sheetCard: {
+    width: '100%',
+    maxWidth: 300,
+    backgroundColor: CHAT_BG,
+    borderRadius: CHAT_RADIUS_MODAL,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+  },
+  sheetTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  sheetBtnRow: { flexDirection: 'row', gap: 8 },
+  sheetBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: CHAT_RADIUS_BTN,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetBtnCancel: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sheetBtnCancelText: { color: TEXT_MUTED, fontSize: 12, fontWeight: '600' },
+  sheetBtnDelete: { backgroundColor: CHAT_DANGER },
+  sheetBtnDeleteText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

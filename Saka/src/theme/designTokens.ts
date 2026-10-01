@@ -94,3 +94,32 @@ export const ANIM = {
   imageDelayRatio: 0.6,   // fade image in at 60% of zoom (480ms)
   modalDelayMs:   2000,   // modal opens 2s after zoom completes
 } as const;
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// CHAT TOKENS — additive. Nothing above this line changes.
+// Same palette as the rest of the app. Small scale, thin borders.
+// ══════════════════════════════════════════════════════════════════════════
+
+export const CHAT_BG            = '#0E1520';
+export const CHAT_PANEL         = '#111927';
+export const CHAT_SUBTLE        = 'rgba(255,255,255,0.05)';
+export const CHAT_BORDER        = 'rgba(255,255,255,0.07)';
+export const CHAT_BORDER_STRONG = 'rgba(255,255,255,0.10)';
+
+export const CHAT_ONLINE  = '#6FAF8A';
+export const CHAT_OFFLINE = 'rgba(255,255,255,0.32)';
+export const CHAT_DANGER  = '#E07070';
+
+export const CHAT_RADIUS_BTN    = 8;
+export const CHAT_RADIUS_CHIP   = 13;
+export const CHAT_RADIUS_CARD   = 16;
+export const CHAT_RADIUS_MODAL  = 20;
+export const CHAT_RADIUS_BUBBLE = 14;
+export const CHAT_RADIUS_PILL   = 999;
+
+export const CHAT_FS_TITLE    = 15;
+export const CHAT_FS_SUBTITLE = 10;
+export const CHAT_FS_BODY     = 12.5;
+export const CHAT_FS_META     = 9;
+export const CHAT_FS_LABEL    = 9;

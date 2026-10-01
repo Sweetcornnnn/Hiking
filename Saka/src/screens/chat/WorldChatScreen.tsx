@@ -1,4 +1,4 @@
-// screens/WorldChatScreen.tsx - WITH UNIQUE CHANNEL + SCROLL-TO-LATEST FIX
+// screens/WorldChatScreen.tsx
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -10,25 +10,35 @@ import {
   Platform,
   RefreshControl,
 } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import ChatMessage from '../../components/chat/ChatMessage';
 import MessageInput from '../../components/chat/MessageInput';
+import ProfileCard from '../../components/chat/ProfileCard';
 import {
-  BG_PANEL,
+  ACCENT_GOLD,
   TEXT_PRIMARY,
   TEXT_MUTED,
-  ACCENT_GOLD,
+  CHAT_BG,
+  CHAT_SUBTLE,
+  CHAT_BORDER,
+  CHAT_ONLINE,
+  CHAT_RADIUS_BTN,
 } from '../../theme/designTokens';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
 
 export default function WorldChatScreen() {
+  const router = useRouter();
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [onlineCount, setOnlineCount] = useState(0);
+
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
+
   const listRef = useRef<FlatList>(null);
   const user = useAuthStore((state) => state.user);
 
@@ -36,14 +46,9 @@ export default function WorldChatScreen() {
   const mountedRef = useRef(true);
   const pendingMessagesRef = useRef(new Map<string, number[]>());
 
-  // ✅ Scroll tracking
   const isNearBottomRef = useRef(true);
   const initialPositionPendingRef = useRef(false);
   const initialPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ============================================
-  // SCROLL HELPERS
-  // ============================================
 
   const handleScroll = useCallback((event: any) => {
     const { contentOffset } = event.nativeEvent;
@@ -54,9 +59,7 @@ export default function WorldChatScreen() {
   const handleContentSizeChange = useCallback(() => {
     if (initialPositionPendingRef.current && messages.length > 0) {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
-      if (initialPositionTimerRef.current) {
-        clearTimeout(initialPositionTimerRef.current);
-      }
+      if (initialPositionTimerRef.current) clearTimeout(initialPositionTimerRef.current);
       initialPositionTimerRef.current = setTimeout(() => {
         initialPositionPendingRef.current = false;
       }, 750);
@@ -71,9 +74,28 @@ export default function WorldChatScreen() {
     }
   }, [messages.length]);
 
-  // ============================================
-  // LOAD MESSAGES
-  // ============================================
+  const openProfile = useCallback(
+    (uid: string) => {
+      if (uid === user?.id) return;
+      setProfileUserId(uid);
+      setShowProfile(true);
+    },
+    [user?.id]
+  );
+
+  const closeProfile = () => {
+    setShowProfile(false);
+    setProfileUserId(null);
+  };
+
+  const handleProfileMessage = (uid: string) => {
+    setShowProfile(false);
+    setProfileUserId(null);
+    router.push({
+      pathname: '/chat/Conversation',
+      params: { userId: uid },
+    } as any);
+  };
 
   const loadMessages = useCallback(async (refresh = false) => {
     try {
@@ -101,7 +123,6 @@ export default function WorldChatScreen() {
 
       if (queryError) throw queryError;
 
-      // Recalculate the initial position whenever the screen is opened or refreshed.
       initialPositionPendingRef.current = true;
 
       setMessages(data || []);
@@ -126,17 +147,11 @@ export default function WorldChatScreen() {
         .select('*', { count: 'exact', head: true })
         .eq('is_online', true);
 
-      if (!error && count !== null) {
-        setOnlineCount(count);
-      }
+      if (!error && count !== null) setOnlineCount(count);
     } catch (err) {
       console.warn('Failed to fetch online count:', err);
     }
   }, []);
-
-  // ============================================
-  // HANDLE NEW MESSAGE (REALTIME)
-  // ============================================
 
   const handleNewMessage = useCallback(async (payload: any) => {
     if (!mountedRef.current) return;
@@ -167,20 +182,15 @@ export default function WorldChatScreen() {
         const pendingKey = `${data.user_id}:${data.content}`;
         const pendingIds = pendingMessagesRef.current.get(pendingKey);
         const pendingId = pendingIds?.shift();
-        if (pendingIds?.length === 0) {
-          pendingMessagesRef.current.delete(pendingKey);
-        }
+        if (pendingIds?.length === 0) pendingMessagesRef.current.delete(pendingKey);
 
         if (pendingId !== undefined) {
-          return prev.map((message) =>
-            message.id === pendingId ? data : message
-          );
+          return prev.map((message) => (message.id === pendingId ? data : message));
         }
 
         return [...prev, data];
       });
 
-      // ✅ Only auto-scroll if user is already near the bottom
       if (isNearBottomRef.current) {
         setTimeout(() => {
           listRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -188,10 +198,6 @@ export default function WorldChatScreen() {
       }
     }
   }, []);
-
-  // ============================================
-  // SEND MESSAGE
-  // ============================================
 
   const handleSend = async (text: string) => {
     if (!user) return;
@@ -224,20 +230,15 @@ export default function WorldChatScreen() {
     try {
       const { error } = await supabase
         .from('chat_messages')
-        .insert({
-          user_id: user.id,
-          content: text,
-        });
+        .insert({ user_id: user.id, content: text });
 
       if (error) throw error;
     } catch (err) {
       console.warn('Send failed:', err);
-      const pendingIds = pendingMessagesRef.current.get(pendingKey) || [];
-      const pendingIndex = pendingIds.indexOf(tempId);
-      if (pendingIndex !== -1) pendingIds.splice(pendingIndex, 1);
-      if (pendingIds.length === 0) {
-        pendingMessagesRef.current.delete(pendingKey);
-      }
+      const pids = pendingMessagesRef.current.get(pendingKey) || [];
+      const idx = pids.indexOf(tempId);
+      if (idx !== -1) pids.splice(idx, 1);
+      if (pids.length === 0) pendingMessagesRef.current.delete(pendingKey);
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setError('Failed to send message');
     }
@@ -248,10 +249,6 @@ export default function WorldChatScreen() {
     await loadMessages(true);
     await fetchOnlineCount();
   }, [loadMessages, fetchOnlineCount]);
-
-  // ============================================
-  // EFFECT: INITIAL LOAD + REALTIME
-  // ============================================
 
   useEffect(() => {
     mountedRef.current = true;
@@ -265,11 +262,7 @@ export default function WorldChatScreen() {
       .channel(channelName)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-        },
+        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
         handleNewMessage
       )
       .subscribe((status) => {
@@ -296,14 +289,10 @@ export default function WorldChatScreen() {
     }, [loadMessages])
   );
 
-  // ============================================
-  // LOADING / EMPTY
-  // ============================================
-
   if (loading && messages.length === 0) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={ACCENT_GOLD} />
+        <ActivityIndicator size="small" color={ACCENT_GOLD} />
         <Text style={styles.loadingText}>Loading messages…</Text>
       </View>
     );
@@ -313,7 +302,7 @@ export default function WorldChatScreen() {
     return (
       <View style={[styles.container, styles.center]}>
         <View style={styles.emptyIcon}>
-          <Ionicons name="chatbubbles-outline" size={42} color={TEXT_MUTED} />
+          <Ionicons name="chatbubbles-outline" size={28} color={TEXT_MUTED} />
         </View>
         <Text style={styles.emptyText}>No messages yet</Text>
         <Text style={styles.emptySubtext}>Be the first to say hello 👋</Text>
@@ -321,19 +310,19 @@ export default function WorldChatScreen() {
     );
   }
 
-  // ============================================
-  // MAIN RENDER
-  // ============================================
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>World Chat</Text>
-        <View style={styles.onlineStatus}>
+      {/* Compact section header — same recipe as Discoveries */}
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionLeft}>
+          <Ionicons name="earth-outline" size={12} color={ACCENT_GOLD} />
+          <Text style={styles.sectionTitle}>WORLD CHAT</Text>
+        </View>
+        <View style={styles.onlinePill}>
           <View style={styles.onlineDot} />
           <Text style={styles.onlineText}>{onlineCount} online</Text>
         </View>
@@ -351,8 +340,13 @@ export default function WorldChatScreen() {
         inverted
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
-          <ChatMessage message={item} currentUserId={user?.id} />
+          <ChatMessage
+            message={item}
+            currentUserId={user?.id}
+            onAvatarPress={openProfile}
+          />
         )}
+        style={styles.list}
         contentContainerStyle={styles.messageList}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
@@ -365,9 +359,7 @@ export default function WorldChatScreen() {
             colors={[ACCENT_GOLD]}
           />
         }
-        // ✅ Scroll to newest ONCE after the list has measured content
         onContentSizeChange={handleContentSizeChange}
-        // ✅ Safety net in case content size change hasn't fired yet
         onLayout={handleLayout}
         onScrollToIndexFailed={() => {
           listRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -380,87 +372,107 @@ export default function WorldChatScreen() {
       <View style={styles.inputWrapper}>
         <MessageInput onSend={handleSend} allowSend={!!user} />
       </View>
+
+      <ProfileCard
+        userId={profileUserId}
+        visible={showProfile}
+        onClose={closeProfile}
+        onMessagePress={handleProfileMessage}
+      />
     </KeyboardAvoidingView>
   );
 }
 
-// ============================================
-// STYLES
-// ============================================
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG_PANEL },
-  header: {
+  container: { flex: 1, backgroundColor: CHAT_BG },
+
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: CHAT_BORDER,
   },
-  headerTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.1,
-  },
-  onlineStatus: {
+  sectionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  },
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+  },
+  onlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(74,222,128,0.10)',
+    backgroundColor: CHAT_SUBTLE,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
   },
   onlineDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#4ADE80',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: CHAT_ONLINE,
   },
   onlineText: {
-    fontSize: 11.5,
-    color: 'rgba(255,255,255,0.8)',
+    fontSize: 10,
+    color: TEXT_MUTED,
     fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.2,
   },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  loadingText: { fontSize: 13.5, color: TEXT_MUTED },
+
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  loadingText: { fontSize: 11, color: TEXT_MUTED, marginTop: 4 },
   emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: CHAT_SUBTLE,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
   },
-  emptyText: { fontSize: 16, fontWeight: '600', color: TEXT_MUTED },
-  emptySubtext: { fontSize: 13, color: 'rgba(255,255,255,0.4)' },
+  emptyText: { fontSize: 13, fontWeight: '600', color: TEXT_PRIMARY },
+  emptySubtext: { fontSize: 11, color: TEXT_MUTED, opacity: 0.7 },
+
+  list: { flex: 1 },
   messageList: {
-    paddingHorizontal: 14,
-    paddingTop: 10,
+    paddingHorizontal: 12,
+    paddingTop: 8,
     paddingBottom: 8,
     flexGrow: 1,
   },
+
   inputWrapper: {
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: Platform.OS === 'ios' ? 8 : 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    backgroundColor: BG_PANEL,
+    borderTopWidth: 1,
+    borderTopColor: CHAT_BORDER,
+    backgroundColor: CHAT_BG,
   },
   errorBanner: {
-    backgroundColor: 'rgba(239,107,107,0.10)',
-    paddingVertical: 8,
+    backgroundColor: 'rgba(224,112,112,0.10)',
+    paddingVertical: 6,
     paddingHorizontal: 12,
-    marginHorizontal: 14,
-    marginTop: 8,
-    borderRadius: 10,
+    marginHorizontal: 12,
+    marginTop: 6,
+    borderRadius: CHAT_RADIUS_BTN,
     borderWidth: 1,
-    borderColor: 'rgba(239,107,107,0.25)',
+    borderColor: 'rgba(224,112,112,0.22)',
   },
-  errorText: { color: '#EF6B6B', fontSize: 12, textAlign: 'center' },
+  errorText: { color: '#E07070', fontSize: 11, textAlign: 'center' },
 });
