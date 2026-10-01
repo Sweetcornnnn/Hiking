@@ -32,19 +32,11 @@ async function uploadJournalImage(userId: string, journalId: string, image: Jour
   let arrayBuffer: ArrayBuffer;
 
   try {
-    console.log('[Journal] Reading selected photo:', uri);
-    console.log('[Journal] Before fetch');
     const response = await fetch(uri);
-    console.log('[Journal] After fetch', {
-      status: response.status,
-      ok: response.ok,
-      type: response.type,
-    });
     if (!response.ok && response.status !== 0) {
       throw new Error(`Local photo returned HTTP ${response.status}.`);
     }
     arrayBuffer = await response.arrayBuffer();
-    console.log('[Journal] After arrayBuffer:', arrayBuffer.byteLength);
 
     if (arrayBuffer.byteLength === 0) {
       throw new Error('The selected photo is empty or unavailable.');
@@ -58,24 +50,12 @@ async function uploadJournalImage(userId: string, journalId: string, image: Jour
   const extension = getExtension(contentType);
   const path = `${userId}/${journalId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
 
-  console.log('[Journal] Before Storage upload:', {
-    bucket: JOURNAL_BUCKET,
-    path,
-    contentType,
-    bytes: arrayBuffer.byteLength,
-  });
-
-  const { data: uploadData, error: uploadError } = await supabase.storage
+  const { error: uploadError } = await supabase.storage
     .from(JOURNAL_BUCKET)
     .upload(path, arrayBuffer, {
       contentType,
       upsert: false,
     });
-
-  console.log('[Journal] Storage upload result:', {
-    data: uploadData,
-    error: uploadError?.message,
-  });
 
   if (uploadError) {
     throw new Error(`Photo upload failed: ${uploadError.message}`);
@@ -124,11 +104,6 @@ function normalizeLocalUri(uri: string): string {
 export async function createJournalEntry(input: CreateJournalEntryInput): Promise<JournalEntry> {
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) throw new Error('You must be signed in to save a journal entry.');
-
-  console.log('[Journal] Auth state:', {
-    authenticated: true,
-    userId: user.id,
-  });
 
   const uniqueImages = Array.from(
     new Map(input.images.map((image) => [image.uri, image])).values(),

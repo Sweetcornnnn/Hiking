@@ -29,6 +29,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchViewpointDetail } from '../services/viewpointService';
+import SakagramSection from '../components/sakagram/SakagramSection';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -350,6 +351,12 @@ export default function ViewpointScreen() {
               <Text style={styles.secondaryBtnText}>Back to Map</Text>
             </TouchableOpacity>
           </View>
+
+          <SakagramSection
+            viewpointId={data.id}
+            viewpointName={data.name}
+            mountainId={mountainId}
+          />
         </ScrollView>
       </View>
 

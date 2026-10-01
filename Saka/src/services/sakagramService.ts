@@ -35,12 +35,11 @@ export async function fetchSakagramPosts(
 
   if (likeError) throw new Error(`Unable to load likes: ${likeError.message}`);
 
-  // 3. Fetch author profiles (use whatever profile table/join your app already uses;
-  //    if you have a `profiles` table keyed by user_id, adjust the query below)
+  // 3. Fetch author profiles
   const userIds = Array.from(new Set(entries.map((e) => e.user_id)));
   const { data: profiles } = await supabase
-    .from('profiles')                        // <-- confirm actual table name
-    .select('id, display_name, avatar_url')
+    .from('profiles')
+    .select('id, full_name, avatar_url')
     .in('id', userIds);
 
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
@@ -58,7 +57,7 @@ export async function fetchSakagramPosts(
     const profile = profileMap.get(entry.user_id);
     return {
       ...(entry as JournalEntry),
-      authorName: profile?.display_name ?? 'Hiker',
+      authorName: profile?.full_name ?? 'Hiker',
       authorAvatarUrl: profile?.avatar_url ?? null,
       likeCount: likeCountMap.get(entry.id) ?? 0,
       likedByMe: likedByMeSet.has(entry.id),
