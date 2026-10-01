@@ -28,51 +28,91 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-// Video player component
-function VideoViewPlayer({ source, isActive }: { source: { uri: string }; isActive: boolean }) {
+/**
+ * Bundled local videos for the Home feed.
+ *
+ *  - Keys are the mountain's STABLE Supabase ID (`mountain.id`), NOT the carousel index.
+ *  - Values MUST be static `require(...)` calls so Metro can bundle the asset.
+ *    Do not build the path dynamically (template strings, variables, etc.).
+ *  - Mountains missing from this map render the solid placeholder background
+ *    (no remote image is ever fetched by Home).
+ */
+const MOUNTAIN_VIDEOS: Record<string, number> = {
+  '2cd5666c-1deb-4499-812e-eb95a992ef68': require('../../assets/HomeScreenVideo/Balinsyaw Home.mp4'), // Mt. Balinsayaw
+  'd39ff04a-069b-4d90-b448-f66e6ae05772': require('../../assets/HomeScreenVideo/Mount. M Home.mp4'), // Mt. M
+  '219d0ca0-dba5-41cd-b6cd-414c5d7e98e6': require('../../assets/HomeScreenVideo/Madjaas Home.mp4'), // Mt. Madjaas
+  'f2173971-80bf-40dd-96e9-c6b015be194b': require('../../assets/HomeScreenVideo/Pandan Hills Home.mp4'), // Pandan Hills
+};
+
+/**
+ * Video player for a single slide.
+ *
+ * Behavior:
+ *  - The player is mounted for EVERY slide that has a bundled video, even when
+ *    the slide is off-screen. Each player is told to play immediately on mount,
+ *    so every mapped video is decoding and looping in the background. When the
+ *    user swipes to a slide, that video is already producing frames — no
+ *    startup delay, no black gap.
+ *  - Looping relies solely on `p.loop = true`. We deliberately do NOT attach a
+ *    `playToEnd` listener that calls `replay()`, because `replay()` forces a
+ *    seek back to 0 which flushes the decoder and paints a black frame. The
+ *    native loop is seamless; the extra listener was causing the flash.
+ *  - Visibility is gated only on `ready` (status === 'readyToPlay'), toggled
+ *    instantly with no crossfade. Since videos play continuously, `ready` is
+ *    already true by the time the user reaches any slide, so the toggle is
+ *    effectively a no-op after the first second.
+ *  - `surfaceType="textureView"` on Android is required because the opacity
+ *    gate is meaningless against a SurfaceView (it's a separate compositor
+ *    layer that ignores opacity). TextureView honors it. Ignored on iOS.
+ */
+function VideoViewPlayer({ source }: { source: number }) {
   const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
   });
 
-  useEffect(() => {
-    if (isActive) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [isActive, player]);
+  const [ready, setReady] = useState(false);
 
+  // Track when the player has decoded enough to actually show a frame.
   useEffect(() => {
-    const sub = player.addListener('playToEnd', () => {
-      player.replay();
+    const sub = player.addListener('statusChange', ({ status }) => {
+      setReady(status === 'readyToPlay');
     });
     return () => sub.remove();
   }, [player]);
 
+  // Start immediately so the video is already playing before the user scrolls
+  // to it. useVideoPlayer releases the player when this component unmounts.
+  useEffect(() => {
+    player.play();
+  }, [player]);
+
   return (
-    <VideoView
-      style={[styles.fullScreenVideo, !isActive && styles.hiddenVideo]}
-      player={player}
-      nativeControls={false}
-      contentFit="cover"
-    />
+    <View style={[styles.videoOverlay, { opacity: ready ? 1 : 0 }]} pointerEvents="none">
+      <VideoView
+        style={StyleSheet.absoluteFill}
+        player={player}
+        nativeControls={false}
+        contentFit="cover"
+        surfaceType="textureView"
+      />
+    </View>
   );
 }
 
-// Memoized slide component
+// Memoized slide component.
+//
+// Note: no `isActive` prop. Because the slide doesn't care about the active
+// index anymore, `memo` can short-circuit every carousel swipe — no slide
+// re-renders when `activeIndex` changes.
 const MountainSlide = memo(function MountainSlide({
   mountain,
-  index,
-  isActive,
   width,
   height,
   isPortrait,
   onEventsPress,
 }: {
   mountain: Mountain;
-  index: number;
-  isActive: boolean;
   width: number;
   height: number;
   isPortrait: boolean;
@@ -80,16 +120,18 @@ const MountainSlide = memo(function MountainSlide({
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
 
+  // Bundled local video for this mountain (if one is registered for its ID).
+  // Home is video-only: no `image_url` is ever read or fetched here.
+  const localVideo = MOUNTAIN_VIDEOS[mountain.id];
+
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
-        {mountain.video_url && isActive ? (
-          <VideoViewPlayer source={{ uri: mountain.video_url }} isActive={isActive} />
-        ) : mountain.image_url ? (
-          <Image source={{ uri: mountain.image_url }} style={styles.fullScreenImage} resizeMode="cover" />
+        {localVideo ? (
+          <VideoViewPlayer source={localVideo} />
         ) : (
-          <View style={styles.fullScreenImagePlaceholder}>
-            <Ionicons name="image-outline" size={80} color="#8B7355" />
+          <View style={styles.fullScreenVideoPlaceholder}>
+            <Ionicons name="videocam-outline" size={80} color="#8B7355" />
           </View>
         )}
       </View>
@@ -280,12 +322,10 @@ export default function HomeScreen() {
         }}
         decelerationRate="fast"
       >
-        {mountains.map((mountain, index) => (
+        {mountains.map((mountain) => (
           <MountainSlide
             key={mountain.id}
             mountain={mountain}
-            index={index}
-            isActive={index === activeIndex}
             width={dimensions.width}
             height={dimensions.height}
             isPortrait={isPortrait}
@@ -440,33 +480,27 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // Solid "poster" surface. Deliberately not pure black so a slide that is
+    // waiting on its video (or has no bundled video) still reads as a themed
+    // surface rather than a void.
     backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fullScreenVideo: {
+  videoOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
   },
-  hiddenVideo: {
-    opacity: 0,
-  },
-  fullScreenImage: {
-    width: '100%',
-    height: '100%',
-    maxWidth: '100%',
-    maxHeight: '100%',
-  },
-  fullScreenImagePlaceholder: {
+  fullScreenVideoPlaceholder: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#2C3E50',
+    backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -581,7 +615,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  // NEW — Events pill styled to match, but with gold accent so it reads as tappable
   eventsPill: {
     flexDirection: 'row',
     alignItems: 'center',

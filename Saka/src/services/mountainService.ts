@@ -39,8 +39,8 @@ export const mountainService = {
     return cachedMountains.find((mountain) => mountain.id === id) ?? null;
   },
 
-  async fetchMountains(): Promise<Mountain[]> {
-    if (cachedMountains.length > 0) {
+  async fetchMountains(forceRefresh = false): Promise<Mountain[]> {
+    if (!forceRefresh && cachedMountains.length > 0) {
       return cachedMountains;
     }
 
@@ -50,7 +50,9 @@ export const mountainService = {
         const persistedMountains = JSON.parse(cachedJson) as Mountain[];
         if (Array.isArray(persistedMountains) && persistedMountains.length > 0) {
           cachedMountains = persistedMountains;
-          return cachedMountains;
+          if (!forceRefresh) {
+            return cachedMountains;
+          }
         }
       }
     } catch (error) {
@@ -64,6 +66,9 @@ export const mountainService = {
 
     if (error) {
       console.error('Error fetching mountains:', error);
+      if (cachedMountains.length > 0) {
+        return cachedMountains;
+      }
       throw new Error('Failed to load mountains');
     }
 
