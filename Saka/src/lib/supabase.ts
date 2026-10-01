@@ -116,6 +116,11 @@ export type Tables = {
     created_at: string;
     updated_at: string;
   };
+  journal_entry_likes: {
+    journal_entry_id: string;
+    user_id: string;
+    created_at: string;
+  };
   chat_messages: {
     id: string;
     user_id: string;

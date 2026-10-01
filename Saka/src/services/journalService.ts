@@ -144,6 +144,7 @@ export async function createJournalEntry(input: CreateJournalEntryInput): Promis
       rating: input.rating ?? null,
       mountain_id: input.mountainId ?? null,
       hike_id: input.hikeId ?? null,
+      viewpoint_id: input.viewpointId ?? null,
       is_public: input.isPublic ?? false,
     })
     .select()
