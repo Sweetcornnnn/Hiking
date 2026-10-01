@@ -19,6 +19,10 @@ import { useWildTrackStore } from '../store/wildtrackStore';
 import { mountainService, Mountain } from '../services/mountainService';
 import weatherService, { WeatherCondition } from '../services/weatherService';
 import { useLocationTracking } from '../hooks/useLocationTracking';
+import EmergencyContactFeature, {
+  createEmptyPlan,
+  EmergencyPlan,
+} from './emergency/EmergencyContactFeature';
 
 interface ProfileCardProps {
   visible: boolean;
@@ -31,7 +35,7 @@ interface ProfileCardProps {
 
 const screenDimensions = Dimensions.get('screen');
 
-type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
+type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location' | 'emergency';
 
 export default function ProfileCard({
   visible,
@@ -52,6 +56,7 @@ export default function ProfileCard({
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [emergencyPlan, setEmergencyPlan] = useState<EmergencyPlan>(createEmptyPlan);
 
   const {
     lastLocation,
@@ -113,6 +118,14 @@ export default function ProfileCard({
   const handleSettings = () => {
     onClose();
     router.push('/Settings');
+  };
+
+  const handleEmergencyPlanSave = (plan: EmergencyPlan) => {
+    setEmergencyPlan(plan);
+    Alert.alert(
+      'Emergency plan saved',
+      'This is saved in app memory for now. Account storage and overdue alerts are not connected yet.'
+    );
   };
 
   const pickProfileImage = async () => {
@@ -222,7 +235,9 @@ export default function ProfileCard({
                   ? 'WildTrack'
                   : activeTab === 'weather'
                   ? 'Weather'
-                  : 'Location'}
+                  : activeTab === 'location'
+                  ? 'Location'
+                  : 'Emergency Contact'}
               </Text>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                 <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
@@ -365,18 +380,31 @@ export default function ProfileCard({
               </View>
             )}
 
+            <View style={activeTab === 'emergency' ? styles.emergencyTabContainer : styles.hiddenTab}>
+              <EmergencyContactFeature
+                embedded
+                visible={activeTab === 'emergency'}
+                onClose={() => setActiveTab('stats')}
+                initialValue={emergencyPlan}
+                onSave={handleEmergencyPlanSave}
+              />
+            </View>
+
             {/* Tab strip */}
             <View style={styles.tabStrip}>
               <View style={styles.tabStripInner}>
                 {([
-                  { id: 'stats', icon: 'stats-chart' },
-                  { id: 'calendar', icon: 'calendar-outline' },
-                  { id: 'wildtrack', icon: 'book-outline' },
-                  { id: 'weather', icon: 'cloud-outline' },
-                  { id: 'location', icon: 'location-outline' },
-                ] as { id: TabId; icon: string }[]).map((tab, i, arr) => (
+                  { id: 'stats', icon: 'stats-chart', label: 'Mountains' },
+                  { id: 'calendar', icon: 'calendar-outline', label: 'Schedule' },
+                  { id: 'wildtrack', icon: 'book-outline', label: 'WildTrack' },
+                  { id: 'weather', icon: 'cloud-outline', label: 'Weather' },
+                  { id: 'location', icon: 'location-outline', label: 'Location' },
+                  { id: 'emergency', icon: 'alert-circle-outline', label: 'Emergency Contact' },
+                ] as { id: TabId; icon: string; label: string }[]).map((tab, i, arr) => (
                   <TouchableOpacity
                     key={tab.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={tab.label}
                     style={[
                       styles.tabIconBtn,
                       i < arr.length - 1 && styles.tabIconBtnBorder,
@@ -578,6 +606,13 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 16,
     overflow: 'visible',
     backgroundColor: '#0E1520',
+  },
+  emergencyTabContainer: {
+    flex: 1,
+    minHeight: 0,
+  },
+  hiddenTab: {
+    display: 'none',
   },
   listHeader: {
     flexDirection: 'row',
