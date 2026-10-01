@@ -114,24 +114,6 @@ export default function ProfileCard({
     }
   }, [visible]);
 
-  const loadWeather = async (mountain: Mountain) => {
-    try {
-      setWeatherLoading(true);
-      setWeatherError(null);
-      const currentWeather = await weatherService.getCurrentWeather(
-        mountain.latitude,
-        mountain.longitude
-      );
-      setWeather(currentWeather);
-    } catch (error: any) {
-      console.error('Weather load failed:', error);
-      setWeather(null);
-      setWeatherError(error?.message || 'Unable to load weather.');
-    } finally {
-      setWeatherLoading(false);
-    }
-  };
-
   const handleLogoutPress = () => {
     onClose();
     onRequestLogout();
@@ -261,13 +243,11 @@ export default function ProfileCard({
             </View>
 
             {activeTab === 'showcase' && (
-              <View style={styles.tabPane}>
-                <Ionicons name="images-outline" size={28} color="rgba(201,169,110,0.5)" />
-                <Text style={styles.tabPaneTitle}>Trail showcase</Text>
+              <View style={[styles.tabPane, styles.showcasePane]}>
                 {journalError ? (
                   <Text style={styles.tabPaneBody}>{journalError}</Text>
                 ) : (
-                  <JournalShowcase entries={journalEntries} isLoading={journalLoading} />
+                  <JournalShowcase entries={journalEntries} mountains={mountains} isLoading={journalLoading} />
                 )}
               </View>
             )}
@@ -736,6 +716,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 1,
+  },
+  showcasePane: {
+    justifyContent: 'flex-start',
   },
   tabPaneTitle: {
     color: '#FFFFFF',

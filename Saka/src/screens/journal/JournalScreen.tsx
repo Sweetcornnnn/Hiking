@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import JournalImageGrid from '../../components/journal/JournalImageGrid';
+import { mountainService, type Mountain } from '../../services/mountainService';
 import { useJournalStore } from '../../store/journalStore';
 import type { JournalImage } from '../../types/journal';
 import { ACCENT_GOLD, BG_CARD, BG_DANGER_SUBTLE, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_DANGER, BORDER_GOLD, BORDER_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_DANGER, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
@@ -15,6 +16,10 @@ export default function JournalScreen() {
   const [content, setContent] = useState('');
   const [images, setImages] = useState<JournalImage[]>([]);
   const [rating, setRating] = useState(0);
+  const [mountains, setMountains] = useState<Mountain[]>([]);
+  const [selectedMountainId, setSelectedMountainId] = useState<string | null>(null);
+  const [mountainsLoading, setMountainsLoading] = useState(true);
+  const [mountainsError, setMountainsError] = useState<string | null>(null);
   const saveInProgress = useRef(false);
 
   const normalizeLocalUri = (uri: string): string => {
@@ -33,7 +38,22 @@ export default function JournalScreen() {
 
   useEffect(() => {
     fetchEntries();
-    return () => clearError();
+    let isMounted = true;
+    mountainService.fetchMountains()
+      .then((data) => {
+        if (isMounted) setMountains(data);
+      })
+      .catch(() => {
+        if (isMounted) setMountainsError('Unable to load mountains. Please try again later.');
+      })
+      .finally(() => {
+        if (isMounted) setMountainsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+      clearError();
+    };
   }, [clearError, fetchEntries]);
 
   const pickImages = async () => {
@@ -70,6 +90,10 @@ export default function JournalScreen() {
       Alert.alert('Complete your entry', 'Add a title and describe your experience.');
       return;
     }
+    if (!selectedMountainId) {
+      Alert.alert('Choose a mountain', 'Select the mountain these journal photos belong to.');
+      return;
+    }
     saveInProgress.current = true;
 
     try {
@@ -77,6 +101,7 @@ export default function JournalScreen() {
         title,
         content,
         images,
+        mountainId: selectedMountainId,
         rating: rating || undefined,
       });
 
@@ -90,6 +115,7 @@ export default function JournalScreen() {
       setContent('');
       setImages([]);
       setRating(0);
+      setSelectedMountainId(null);
     } finally {
       saveInProgress.current = false;
     }
@@ -114,6 +140,30 @@ export default function JournalScreen() {
 
         <Text style={styles.label}>Your experience</Text>
         <TextInput value={content} onChangeText={setContent} placeholder="What did you notice, feel, or learn on the trail?" placeholderTextColor={TEXT_FAINT} multiline textAlignVertical="top" style={[styles.input, styles.textArea]} />
+
+        <Text style={styles.label}>Mountain *</Text>
+        {mountainsLoading ? (
+          <Text style={styles.helper}>Loading mountains...</Text>
+        ) : mountainsError ? (
+          <Text style={styles.error}>{mountainsError}</Text>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mountainOptions}>
+            {mountains.map((mountain) => (
+              <TouchableOpacity
+                key={mountain.id}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selectedMountainId === mountain.id }}
+                onPress={() => setSelectedMountainId(mountain.id)}
+                style={[styles.mountainOption, selectedMountainId === mountain.id && styles.mountainOptionSelected]}
+              >
+                <Text style={[styles.mountainOptionText, selectedMountainId === mountain.id && styles.mountainOptionTextSelected]}>
+                  {mountain.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        <Text style={styles.helper}>All photos in this entry will be shown under the selected mountain.</Text>
 
         <View style={styles.rowHeader}>
           <Text style={styles.label}>Photos</Text>
@@ -185,6 +235,11 @@ const styles = StyleSheet.create({
   input: { color: TEXT_PRIMARY, backgroundColor: BG_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   textArea: { minHeight: 125 },
   rowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  mountainOptions: { gap: 8, paddingRight: 4 },
+  mountainOption: { borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: BG_CARD },
+  mountainOptionSelected: { borderColor: BORDER_GOLD, backgroundColor: BG_SUBTLE },
+  mountainOptionText: { color: TEXT_MUTED, fontSize: 11, fontWeight: '600' },
+  mountainOptionTextSelected: { color: ACCENT_GOLD },
   addButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: BORDER_GOLD, borderRadius: RADIUS_BTN, paddingHorizontal: 10, paddingVertical: 7 },
   addButtonText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '700' },
   helper: { color: TEXT_FAINT, fontSize: 10, lineHeight: 15 },
