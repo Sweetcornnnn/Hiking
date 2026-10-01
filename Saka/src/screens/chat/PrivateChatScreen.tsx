@@ -13,6 +13,7 @@ import {
   FlatList,
   Alert,
   KeyboardAvoidingView,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -219,8 +220,7 @@ export default function PrivateChatScreen() {
 
       conversationsList.sort((a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0));
       setConversations(conversationsList);
-    } catch (err) {
-      console.error('Load conversations error:', err);
+    } catch {
       setError('Failed to load conversations');
     } finally {
       setLoading(false);
@@ -291,8 +291,7 @@ export default function PrivateChatScreen() {
         'Success',
         wasGroup ? 'You have left the group' : 'Conversation deleted'
       );
-    } catch (err) {
-      console.error('Delete/Leave error:', err);
+    } catch {
       Alert.alert('Error', 'Action failed. Please try again.');
     } finally {
       setDeleting(false);
@@ -312,9 +311,7 @@ export default function PrivateChatScreen() {
           .eq('sender_id', conversation.user_id)
           .eq('recipient_id', user.id)
           .eq('is_read', false);
-      } catch (err) {
-        console.warn('Private safety net failed:', err);
-      }
+      } catch {}
     }
 
     if (conversation.type === 'group' && conversation.group_id && user) {
@@ -327,9 +324,7 @@ export default function PrivateChatScreen() {
           },
           { onConflict: 'group_id,user_id' }
         );
-      } catch (err) {
-        console.warn('Group safety net failed:', err);
-      }
+      } catch {}
     }
 
     if (conversation.type === 'private' && conversation.user_id) {
@@ -568,6 +563,7 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
   const user = useAuthStore((state) => state.user);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
 
   const addMember = (member: any) => {
     if (!members.find((existingMember) => existingMember.id === member.id)) {
@@ -622,8 +618,7 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
         pathname: '/chat/GroupChat',
         params: { groupId: String(group.id) },
       } as any);
-    } catch (err) {
-      console.error('Create group error:', err);
+    } catch {
       setError('Failed to create group. Please try again.');
     } finally {
       setCreating(false);
@@ -686,7 +681,12 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
           style={styles.createKeyboardWrap}
           pointerEvents="box-none"
         >
-          <View style={styles.createCard}>
+          <View
+            style={[
+              styles.createCard,
+              { minHeight: Math.min(520, windowHeight * 0.68) },
+            ]}
+          >
             <View style={styles.createHeader}>
               <TouchableOpacity
                 onPress={onClose}
@@ -941,16 +941,22 @@ const styles = StyleSheet.create({
   // Create Group Modal
   createBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
   },
-  createKeyboardWrap: { width: '100%', maxHeight: '90%', justifyContent: 'center' },
+  createKeyboardWrap: {
+    width: '100%',
+    maxHeight: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   createCard: {
     width: '100%',
-    maxWidth: 480,
-    maxHeight: '90%',
+    maxWidth: 560,
+    maxHeight: '95%',
+    alignSelf: 'center',
     backgroundColor: CHAT_PANEL,
     borderRadius: CHAT_RADIUS_MODAL,
     borderWidth: 1,

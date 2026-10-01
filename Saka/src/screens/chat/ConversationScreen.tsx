@@ -28,7 +28,6 @@ import {
   CHAT_BG,
   CHAT_SUBTLE,
   CHAT_BORDER,
-  CHAT_BORDER_STRONG,
   CHAT_ONLINE,
   CHAT_DANGER,
   CHAT_RADIUS_BTN,
@@ -64,6 +63,16 @@ type Profile = {
   last_seen?: string | null;
 };
 
+const isEdited = (m: { created_at: string; updated_at: string }) => {
+  try {
+    return (
+      new Date(m.updated_at).getTime() - new Date(m.created_at).getTime() > 1000
+    );
+  } catch {
+    return false;
+  }
+};
+
 export default function ConversationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -83,7 +92,11 @@ export default function ConversationScreen() {
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Edit mode ──
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+
   const listRef = useRef<FlatList>(null);
+  const inputRef = useRef<TextInput>(null);
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
@@ -155,8 +168,8 @@ export default function ConversationScreen() {
         .eq('sender_id', userId)
         .eq('recipient_id', user.id)
         .eq('is_read', false);
-    } catch (err) {
-      console.warn('Mark as read failed:', err);
+    } catch {
+      return;
     }
   }, [user, userId]);
 
@@ -170,8 +183,8 @@ export default function ConversationScreen() {
         .single();
       if (error) throw error;
       setOtherUser(data);
-    } catch (err) {
-      console.error('Load user profile error:', err);
+    } catch {
+      return;
     }
   }, [userId]);
 
@@ -228,8 +241,7 @@ export default function ConversationScreen() {
             listRef.current?.scrollToEnd({ animated: false });
           }
         }, 300);
-      } catch (err) {
-        console.error('Load messages error:', err);
+      } catch {
         setError('Failed to load messages');
       } finally {
         setLoading(false);
@@ -239,6 +251,7 @@ export default function ConversationScreen() {
     [user, userId, markAllAsRead]
   );
 
+  // ─── SEND (new) ─────────────────────────────────────────────
   const sendMessage = async () => {
     if (!user || !userId || !inputText.trim() || sending) return;
 
@@ -278,13 +291,74 @@ export default function ConversationScreen() {
       if (error) throw error;
 
       setMessages((prev) => prev.map((msg) => (msg.id === tempId ? data : msg)));
-    } catch (err) {
-      console.error('Send message error:', err);
+    } catch {
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
       setSending(false);
     }
+  };
+
+  // ─── EDIT ───────────────────────────────────────────────────
+  const openEditFromSheet = () => {
+    if (!selectedMessage) return;
+    const target = selectedMessage;
+    setEditingMessage(target);
+    setInputText(target.content);
+    setShowDeleteSheet(false);
+    setSelectedMessage(null);
+    setTimeout(() => inputRef.current?.focus(), 120);
+  };
+
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const saveEdit = async () => {
+    if (!editingMessage || !inputText.trim() || sending) return;
+
+    const newContent = inputText.trim();
+
+    if (newContent === editingMessage.content) {
+      cancelEdit();
+      return;
+    }
+
+    const targetId = editingMessage.id;
+    const backup = messages;
+    const now = new Date().toISOString();
+
+    setSending(true);
+    // Optimistic
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === targetId ? { ...m, content: newContent, updated_at: now } : m
+      )
+    );
+
+    try {
+      const { error } = await supabase
+        .from('private_messages')
+        .update({ content: newContent, updated_at: now })
+        .eq('id', targetId);
+
+      if (error) throw error;
+
+      setEditingMessage(null);
+      setInputText('');
+    } catch {
+      setMessages(backup);
+      Alert.alert('Error', 'Failed to edit message. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Dispatch send vs save
+  const handleSendOrSave = () => {
+    if (editingMessage) return saveEdit();
+    return sendMessage();
   };
 
   const openDeleteSheet = (message: Message) => {
@@ -311,8 +385,7 @@ export default function ConversationScreen() {
     try {
       const { error } = await supabase.from('private_messages').delete().eq('id', msgId);
       if (error) throw error;
-    } catch (err) {
-      console.error('Delete message error:', err);
+    } catch {
       setMessages(backup);
       Alert.alert('Error', 'Failed to delete message. Please try again.');
     } finally {
@@ -381,6 +454,25 @@ export default function ConversationScreen() {
     setMessages((prev) => prev.filter((m) => m.id !== deletedId));
   }, []);
 
+  const handleUpdatedMessage = useCallback((payload: any) => {
+    if (!mountedRef.current) return;
+    const updated = payload.new;
+    if (!updated?.id) return;
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === updated.id
+          ? {
+              ...msg,
+              content: updated.content ?? msg.content,
+              is_read: updated.is_read ?? msg.is_read,
+              read_at: updated.read_at ?? msg.read_at,
+              updated_at: updated.updated_at ?? msg.updated_at,
+            }
+          : msg
+      )
+    );
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
 
@@ -398,17 +490,7 @@ export default function ConversationScreen() {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'private_messages' },
-        (payload) => {
-          if (payload.new.is_read && mountedRef.current) {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === payload.new.id
-                  ? { ...msg, is_read: true, read_at: payload.new.read_at }
-                  : msg
-              )
-            );
-          }
-        }
+        handleUpdatedMessage
       )
       .on(
         'postgres_changes',
@@ -438,9 +520,7 @@ export default function ConversationScreen() {
           }
         }
       )
-      .subscribe((status) => {
-        console.log('Private chat subscription status:', status);
-      });
+      .subscribe();
 
     subscriptionRef.current = channel;
 
@@ -453,7 +533,7 @@ export default function ConversationScreen() {
         subscriptionRef.current = null;
       }
     };
-  }, [user, userId, loadUserProfile, loadMessages, handleNewMessage, handleDeletedMessage]);
+  }, [user, userId, loadUserProfile, loadMessages, handleNewMessage, handleDeletedMessage, handleUpdatedMessage]);
 
   useFocusEffect(
     useCallback(() => {
@@ -479,6 +559,7 @@ export default function ConversationScreen() {
         })
       : '';
     const showDivider = firstUnreadId !== null && item.id === firstUnreadId;
+    const edited = isEdited(item);
 
     return (
       <>
@@ -512,7 +593,10 @@ export default function ConversationScreen() {
             </Text>
           </View>
           <View style={styles.messageFooter} pointerEvents="none">
-            <Text style={styles.messageTime}>{time}</Text>
+            <Text style={styles.messageTime}>
+              {time}
+              {edited ? ' · edited' : ''}
+            </Text>
             {isMe && (
               <Ionicons
                 name={item.is_read ? 'checkmark-done' : 'checkmark'}
@@ -535,6 +619,8 @@ export default function ConversationScreen() {
       </SafeAreaView>
     );
   }
+
+  const canSave = inputText.trim().length > 0 && !sending;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -632,12 +718,33 @@ export default function ConversationScreen() {
           }
         />
 
+        {/* Edit banner */}
+        {editingMessage && (
+          <View style={styles.editingBar}>
+            <Ionicons name="create-outline" size={13} color={ACCENT_GOLD} />
+            <View style={styles.editingBarText}>
+              <Text style={styles.editingBarLabel}>EDITING MESSAGE</Text>
+              <Text style={styles.editingBarPreview} numberOfLines={1}>
+                {editingMessage.content}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={cancelEdit}
+              hitSlop={8}
+              style={styles.editingBarClose}
+            >
+              <Ionicons name="close" size={15} color={TEXT_MUTED} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.inputContainer}>
           <View style={styles.inputWrapper}>
             <TextInput
+              ref={inputRef}
               value={inputText}
               onChangeText={setInputText}
-              placeholder="Type a message…"
+              placeholder={editingMessage ? 'Edit message…' : 'Type a message…'}
               placeholderTextColor="rgba(255,255,255,0.28)"
               style={[styles.input, { color: TEXT_PRIMARY }]}
               multiline
@@ -656,33 +763,30 @@ export default function ConversationScreen() {
           </View>
 
           <TouchableOpacity
-            onPress={sendMessage}
+            onPress={handleSendOrSave}
             style={[
               styles.sendButton,
               {
-                backgroundColor:
-                  inputText.trim() && !sending
-                    ? ACCENT_GOLD
-                    : 'rgba(255,255,255,0.06)',
+                backgroundColor: canSave ? ACCENT_GOLD : 'rgba(255,255,255,0.06)',
               },
             ]}
-            disabled={!inputText.trim() || sending}
+            disabled={!canSave}
             activeOpacity={0.85}
           >
             {sending ? (
               <ActivityIndicator size="small" color={CHAT_BG} />
             ) : (
               <Ionicons
-                name="send"
+                name={editingMessage ? 'checkmark' : 'send'}
                 size={14}
-                color={inputText.trim() ? CHAT_BG : 'rgba(255,255,255,0.3)'}
+                color={canSave ? CHAT_BG : 'rgba(255,255,255,0.3)'}
               />
             )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
-      {/* Delete Confirmation */}
+      {/* Message options sheet */}
       <Modal
         visible={showDeleteSheet}
         transparent
@@ -691,16 +795,19 @@ export default function ConversationScreen() {
       >
         <Pressable style={styles.sheetBackdrop} onPress={closeDeleteSheet}>
           <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.sheetTitle}>Unsend this message?</Text>
+            <Text style={styles.sheetTitle}>Message options</Text>
+
             <View style={styles.sheetBtnRow}>
               <TouchableOpacity
-                style={[styles.sheetBtn, styles.sheetBtnCancel]}
-                onPress={closeDeleteSheet}
+                style={[styles.sheetBtn, styles.sheetBtnEdit]}
+                onPress={openEditFromSheet}
                 disabled={deleting}
                 activeOpacity={0.85}
               >
-                <Text style={styles.sheetBtnCancelText}>Cancel</Text>
+                <Ionicons name="create-outline" size={14} color={TEXT_PRIMARY} />
+                <Text style={styles.sheetBtnEditText}>Edit</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.sheetBtn, styles.sheetBtnDelete]}
                 onPress={confirmDeleteMessage}
@@ -710,10 +817,22 @@ export default function ConversationScreen() {
                 {deleting ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.sheetBtnDeleteText}>Unsend</Text>
+                  <>
+                    <Ionicons name="trash-outline" size={14} color="#fff" />
+                    <Text style={styles.sheetBtnDeleteText}>Unsend</Text>
+                  </>
                 )}
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.sheetCancelBtn}
+              onPress={closeDeleteSheet}
+              disabled={deleting}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -840,6 +959,40 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
 
+  // Editing banner above input
+  editingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: CHAT_BORDER,
+    backgroundColor: 'rgba(201,169,110,0.06)',
+  },
+  editingBarText: { flex: 1, minWidth: 0 },
+  editingBarLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+    color: ACCENT_GOLD,
+  },
+  editingBarPreview: {
+    fontSize: 11,
+    color: TEXT_MUTED,
+    marginTop: 1,
+  },
+  editingBarClose: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -890,12 +1043,12 @@ const styles = StyleSheet.create({
   },
   sheetCard: {
     width: '100%',
-    maxWidth: 300,
+    maxWidth: 320,
     backgroundColor: CHAT_BG,
     borderRadius: CHAT_RADIUS_MODAL,
     paddingTop: 16,
     paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingBottom: 12,
     borderWidth: 1,
     borderColor: CHAT_BORDER,
   },
@@ -909,17 +1062,31 @@ const styles = StyleSheet.create({
   sheetBtnRow: { flexDirection: 'row', gap: 8 },
   sheetBtn: {
     flex: 1,
-    height: 36,
+    height: 38,
     borderRadius: CHAT_RADIUS_BTN,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
-  sheetBtnCancel: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+  sheetBtnEdit: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.10)',
   },
-  sheetBtnCancelText: { color: TEXT_MUTED, fontSize: 12, fontWeight: '600' },
+  sheetBtnEditText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
   sheetBtnDelete: { backgroundColor: CHAT_DANGER },
   sheetBtnDeleteText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  sheetCancelBtn: {
+    marginTop: 8,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: CHAT_RADIUS_BTN,
+  },
+  sheetCancelText: {
+    color: TEXT_MUTED,
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });

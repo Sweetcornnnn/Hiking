@@ -129,8 +129,7 @@ export default function WorldChatScreen() {
       setTimeout(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
       }, 300);
-    } catch (err) {
-      console.error('WorldChat load error:', err);
+    } catch {
       setError('Failed to load messages');
     } finally {
       setLoading(false);
@@ -148,8 +147,8 @@ export default function WorldChatScreen() {
         .eq('is_online', true);
 
       if (!error && count !== null) setOnlineCount(count);
-    } catch (err) {
-      console.warn('Failed to fetch online count:', err);
+    } catch {
+      return;
     }
   }, []);
 
@@ -233,8 +232,7 @@ export default function WorldChatScreen() {
         .insert({ user_id: user.id, content: text });
 
       if (error) throw error;
-    } catch (err) {
-      console.warn('Send failed:', err);
+    } catch {
       const pids = pendingMessagesRef.current.get(pendingKey) || [];
       const idx = pids.indexOf(tempId);
       if (idx !== -1) pids.splice(idx, 1);
@@ -265,9 +263,7 @@ export default function WorldChatScreen() {
         { event: 'INSERT', schema: 'public', table: 'chat_messages' },
         handleNewMessage
       )
-      .subscribe((status) => {
-        console.log('Realtime subscription status:', status);
-      });
+      .subscribe();
 
     subscriptionRef.current = channel;
 
@@ -391,8 +387,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
+    paddingVertical: 5,
+    borderBottomWidth: 0.8,
     borderBottomColor: CHAT_BORDER,
   },
   sectionLeft: {
@@ -406,13 +402,14 @@ const styles = StyleSheet.create({
     color: TEXT_PRIMARY,
     letterSpacing: 0.9,
     textTransform: 'uppercase',
+    paddingTop: -8,
   },
   onlinePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 2,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: -1,
     borderRadius: 999,
     backgroundColor: CHAT_SUBTLE,
     borderWidth: 1,

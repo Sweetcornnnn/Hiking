@@ -16,9 +16,8 @@ export function usePresence() {
     if (!user?.id) return;
     try {
       await supabase.rpc('mark_user_online', { user_id_param: user.id });
-      console.log('🟢 User marked online');
-    } catch (err) {
-      console.warn('Failed to mark online:', err);
+    } catch {
+      return;
     }
   };
 
@@ -29,9 +28,8 @@ export function usePresence() {
     if (!user?.id) return;
     try {
       await supabase.rpc('mark_user_offline', { user_id_param: user.id });
-      console.log('⚪ User marked offline');
-    } catch (err) {
-      console.warn('Failed to mark offline:', err);
+    } catch {
+      return;
     }
   };
 
@@ -50,8 +48,8 @@ export function usePresence() {
             last_seen: new Date().toISOString(),
           })
           .eq('id', user.id);
-      } catch (err) {
-        console.warn('Heartbeat failed:', err);
+      } catch {
+        return;
       }
     }, 30000);
   };
@@ -69,8 +67,6 @@ export function usePresence() {
   useEffect(() => {
     if (!user?.id) return;
 
-    console.log('🔌 Initializing presence for user:', user.id);
-
     // 1. Mark online when component mounts
     goOnline();
     startHeartbeat();
@@ -83,11 +79,9 @@ export function usePresence() {
         appStateRef.current = nextState;
 
         if (nextState === 'active' && prevState !== 'active') {
-          console.log('📱 App came to foreground');
           goOnline();
           startHeartbeat();
         } else if (nextState === 'background' || nextState === 'inactive') {
-          console.log('📱 App went to background');
           goOffline();
           stopHeartbeat();
         }
