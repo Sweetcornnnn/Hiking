@@ -13,6 +13,7 @@ import {
   FlatList,
   Alert,
   KeyboardAvoidingView,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -568,6 +569,7 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
   const user = useAuthStore((state) => state.user);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
 
   const addMember = (member: any) => {
     if (!members.find((existingMember) => existingMember.id === member.id)) {
@@ -686,7 +688,12 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
           style={styles.createKeyboardWrap}
           pointerEvents="box-none"
         >
-          <View style={styles.createCard}>
+          <View
+            style={[
+              styles.createCard,
+              { minHeight: Math.min(520, windowHeight * 0.68) },
+            ]}
+          >
             <View style={styles.createHeader}>
               <TouchableOpacity
                 onPress={onClose}
@@ -941,16 +948,22 @@ const styles = StyleSheet.create({
   // Create Group Modal
   createBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
   },
-  createKeyboardWrap: { width: '100%', maxHeight: '90%', justifyContent: 'center' },
+  createKeyboardWrap: {
+    width: '100%',
+    maxHeight: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   createCard: {
     width: '100%',
-    maxWidth: 480,
-    maxHeight: '90%',
+    maxWidth: 560,
+    maxHeight: '95%',
+    alignSelf: 'center',
     backgroundColor: CHAT_PANEL,
     borderRadius: CHAT_RADIUS_MODAL,
     borderWidth: 1,

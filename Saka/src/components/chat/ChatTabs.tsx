@@ -70,6 +70,7 @@ const styles = StyleSheet.create({
     borderColor: CHAT_BORDER,
     padding: 3,
     gap: 3,
+    paddingVertical: -5,
   },
   tab: {
     flex: 1,
@@ -77,8 +78,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    paddingVertical: 8,
-    borderRadius: CHAT_RADIUS_BTN - 2,
+    paddingVertical: 5,
+    borderRadius: CHAT_RADIUS_BTN - 0.5,
   },
   tabActive: { backgroundColor: ACCENT_GOLD },
   tabLabel: {

@@ -255,12 +255,12 @@ export default function ProfileCard({
 
 const styles = StyleSheet.create({
   backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
+  flex: 1,
+  backgroundColor: 'transparent',
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingHorizontal: 16,
+},
   card: {
     width: '100%',
     maxWidth: 460,
