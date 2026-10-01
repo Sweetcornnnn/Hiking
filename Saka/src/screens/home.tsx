@@ -81,12 +81,10 @@ function VideoViewPlayer({ source }: { source: number }) {
     return () => sub.remove();
   }, [player]);
 
-  // Play immediately on mount so the video is warm and looping before the
-  // user ever scrolls to it. Pause on unmount so a disposed player stops
-  // consuming CPU.
+  // Start immediately so the video is already playing before the user scrolls
+  // to it. useVideoPlayer releases the player when this component unmounts.
   useEffect(() => {
     player.play();
-    return () => player.pause();
   }, [player]);
 
   return (
