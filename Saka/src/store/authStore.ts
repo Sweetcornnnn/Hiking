@@ -10,6 +10,10 @@ interface Profile {
   full_name: string;
   contact_number: string | null;
   is_admin: boolean;
+  role: 'hiker' | 'organization' | 'admin' | null;
+  organization_id: string | null;
+  is_verified: boolean;
+  avatar_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -113,6 +117,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           data: {
             full_name: fullName,
             contact_number: contactNumber || null,
+            role: 'hiker',
           },
         },
       });
@@ -139,6 +144,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             full_name: fullName,
             contact_number: contactNumber || null,
             is_admin: false,
+            role: 'hiker',
+            organization_id: null,
+            is_verified: false,
+            avatar_url: null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'id' }

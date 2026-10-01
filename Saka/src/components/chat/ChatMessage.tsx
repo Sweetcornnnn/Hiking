@@ -1,17 +1,36 @@
 // components/chat/ChatMessage.tsx
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { ACCENT_GOLD, TEXT_PRIMARY, TEXT_MUTED } from '../../theme/designTokens';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  useWindowDimensions,
+} from 'react-native';
+import {
+  ACCENT_GOLD,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  CHAT_BG,
+  CHAT_SUBTLE,
+  CHAT_BORDER,
+  CHAT_RADIUS_BUBBLE,
+  CHAT_FS_BODY,
+  CHAT_FS_META,
+} from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 
 export default function ChatMessage({
   message,
   currentUserId,
+  onAvatarPress,
 }: {
   message: any;
   currentUserId?: string | null;
+  onAvatarPress?: (userId: string) => void;
 }) {
   const isMe = currentUserId && message.user_id === currentUserId;
+  const { width: windowWidth } = useWindowDimensions();
 
   const profile = message.profiles || message.users || {};
   const name = profile.full_name || profile.username || 'Anonymous';
@@ -23,10 +42,24 @@ export default function ChatMessage({
       })
     : '';
 
+  const bubbleWidth = Math.min(
+    Math.max(48, String(message.content || '').length * 7.2 + 24),
+    windowWidth * 0.75
+  );
+
+  const handlePress = () => {
+    if (onAvatarPress && message.user_id) onAvatarPress(message.user_id);
+  };
+
   return (
     <View style={[styles.row, isMe ? styles.me : styles.other]}>
       {!isMe && (
-        <View style={styles.headerRow}>
+        <TouchableOpacity
+          style={styles.senderRow}
+          onPress={handlePress}
+          activeOpacity={0.7}
+          disabled={!onAvatarPress}
+        >
           <View
             style={[
               styles.avatar,
@@ -35,87 +68,123 @@ export default function ChatMessage({
           >
             <Text style={styles.avatarText}>{getInitials(name)}</Text>
           </View>
-          <Text style={styles.name} numberOfLines={1}>
+          <Text style={styles.senderName} numberOfLines={1}>
             {name}
           </Text>
-        </View>
+        </TouchableOpacity>
       )}
 
-      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
-        <Text style={[styles.text, { color: isMe ? '#fff' : TEXT_PRIMARY }]}>
-          {message.content}
-        </Text>
-        <Text
-          style={[
-            styles.time,
-            { color: isMe ? 'rgba(255,255,255,0.72)' : TEXT_MUTED },
-          ]}
+      <View
+        style={[
+          styles.column,
+          isMe ? styles.columnMe : styles.columnOther,
+          { maxWidth: bubbleWidth },
+        ]}
+      >
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={handlePress}
+          disabled={!onAvatarPress}
         >
-          {time}
-        </Text>
+          <View
+            style={[
+              styles.bubble,
+              isMe ? styles.bubbleMe : styles.bubbleOther,
+            ]}
+          >
+            <Text
+              style={[
+                styles.text,
+                { color: isMe ? CHAT_BG : TEXT_PRIMARY },
+                isMe && styles.textMe,
+              ]}
+            >
+              {message.content}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        <View
+          style={[styles.meta, isMe ? styles.metaMe : styles.metaOther]}
+        >
+          <Text style={styles.time}>{time}</Text>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    marginVertical: 4,
-    paddingHorizontal: 2,
-  },
+  row: { marginVertical: 3, paddingHorizontal: 2, alignSelf: 'stretch' },
   me: { alignItems: 'flex-end' },
   other: { alignItems: 'flex-start' },
-  headerRow: {
+
+  senderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
+    gap: 6,
+    marginBottom: 4,
     marginLeft: 2,
   },
   avatar: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: '#fff',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
   },
-  name: {
-    fontSize: 11.5,
+  senderName: {
+    fontSize: 10,
     fontWeight: '600',
     color: TEXT_MUTED,
-    letterSpacing: 0.1,
-    maxWidth: 200,
+    letterSpacing: 0.3,
+    maxWidth: 180,
   },
+
+  column: { flexShrink: 0 },
+  columnMe: { alignItems: 'flex-end' },
+  columnOther: { alignItems: 'flex-start' },
+
   bubble: {
-    maxWidth: '80%',
-    paddingVertical: 9,
-    paddingHorizontal: 13,
-    borderRadius: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: CHAT_RADIUS_BUBBLE,
+    alignSelf: 'stretch',
   },
   bubbleMe: {
     backgroundColor: ACCENT_GOLD,
-    borderBottomRightRadius: 6,
+    borderBottomRightRadius: 4,
+    alignSelf: 'flex-end',
   },
   bubbleOther: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderBottomLeftRadius: 6,
+    backgroundColor: CHAT_SUBTLE,
+    borderBottomLeftRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderColor: CHAT_BORDER,
+    alignSelf: 'flex-start',
   },
   text: {
-    fontSize: 14.5,
-    lineHeight: 20,
+    fontSize: CHAT_FS_BODY,
+    lineHeight: 17,
     letterSpacing: 0.1,
+    flexShrink: 1,
+    includeFontPadding: false,
   },
+  textMe: { fontWeight: '600' },
+
+  meta: { flexDirection: 'row', marginTop: 3 },
+  metaMe: { alignSelf: 'flex-end', justifyContent: 'flex-end' },
+  metaOther: { alignSelf: 'flex-start', justifyContent: 'flex-start' },
   time: {
-    fontSize: 10,
-    marginTop: 4,
-    alignSelf: 'flex-end',
-    opacity: 0.7,
+    fontSize: CHAT_FS_META,
+    color: TEXT_MUTED,
+    opacity: 0.75,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.2,
   },
 });

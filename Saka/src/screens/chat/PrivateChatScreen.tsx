@@ -1,4 +1,4 @@
-// screens/chat/PrivateChatScreen.tsx - WITH FIXED CREATE GROUP MODAL
+// screens/PrivateChatScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -17,13 +17,17 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  BG_CARD,
-  BG_PANEL,
-  BG_SUBTLE,
   ACCENT_GOLD,
   TEXT_PRIMARY,
   TEXT_MUTED,
-  BORDER_DEFAULT,
+  CHAT_BG,
+  CHAT_PANEL,
+  CHAT_SUBTLE,
+  CHAT_BORDER,
+  CHAT_ONLINE,
+  CHAT_RADIUS_BTN,
+  CHAT_RADIUS_CARD,
+  CHAT_RADIUS_MODAL,
 } from '../../theme/designTokens';
 import UserSearch from '../../components/chat/UserSearch';
 import SelectedMembers from '../../components/chat/SelectedMembers';
@@ -31,10 +35,6 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { getAvatarColor, getInitials } from '../../utils/colors';
-
-// ============================================
-// TYPES
-// ============================================
 
 type Conversation = {
   id: string;
@@ -50,19 +50,11 @@ type Conversation = {
   is_online?: boolean;
 };
 
-// ============================================
-// HELPER
-// ============================================
-
 const rowColorKey = (c: Conversation): string => {
   if (c.type === 'private' && c.user_id) return c.user_id;
   if (c.type === 'group' && c.group_id) return c.group_id;
   return c.id;
 };
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function PrivateChatScreen() {
   const router = useRouter();
@@ -80,44 +72,26 @@ export default function PrivateChatScreen() {
     const date = new Date(timestamp);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
-
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-    return date.toLocaleDateString();
+    if (diff < 60000) return 'now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
+    if (diff < 604800000) return `${Math.floor(diff / 86400000)}d`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
-
-  // ============================================
-  // LOAD CONVERSATIONS
-  // ============================================
 
   const loadConversations = useCallback(async (refresh = false) => {
     if (!user) {
       setLoading(false);
       return;
     }
-
     try {
       setError(null);
       if (!refresh) setLoading(true);
-
       const conversationsList: Conversation[] = [];
 
       const { data: privateData, error: privateError } = await supabase
         .from('conversations')
-        .select(`
-          id,
-          participant1_id,
-          participant2_id,
-          last_message_at,
-          private_messages!last_message_id (
-            id,
-            content,
-            sender_id,
-            created_at
-          )
-        `)
+        .select('id, participant1_id, participant2_id, last_message_at')
         .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
         .order('last_message_at', { ascending: false });
 
@@ -126,15 +100,24 @@ export default function PrivateChatScreen() {
       if (privateData && privateData.length > 0) {
         for (const conv of privateData as any[]) {
           const otherUserId =
-            conv.participant1_id === user.id
-              ? conv.participant2_id
-              : conv.participant1_id;
+            conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
 
           const { data: profileData } = await supabase
             .from('profiles')
             .select('id, full_name, username, email, avatar_url, is_online, last_seen')
             .eq('id', otherUserId)
             .single();
+
+          const { data: latestMessage } = await supabase
+            .from('private_messages')
+            .select('id, content, sender_id, created_at')
+            .or(
+              `and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),` +
+                `and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`
+            )
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
           const { count: unreadCount } = await supabase
             .from('private_messages')
@@ -143,25 +126,21 @@ export default function PrivateChatScreen() {
             .eq('recipient_id', user.id)
             .eq('is_read', false);
 
-          const name =
-            profileData?.full_name || profileData?.username || 'Unknown User';
-          const preview = conv.private_messages?.content || 'No messages yet';
-          const time = conv.last_message_at
-            ? formatTime(conv.last_message_at)
-            : '';
+          const name = profileData?.full_name || profileData?.username || 'Unknown User';
+          const preview = latestMessage?.content || 'No messages yet';
+          const effectiveTimestamp = latestMessage?.created_at || conv.last_message_at;
+          const time = effectiveTimestamp ? formatTime(effectiveTimestamp) : '';
 
           conversationsList.push({
             id: `private_${conv.id}`,
             title: name,
-            preview: preview,
+            preview,
             type: 'private',
-            time: time,
+            time,
             unread: unreadCount || 0,
             user_id: otherUserId,
             conversation_id: String(conv.id),
-            sortTimestamp: conv.last_message_at
-              ? new Date(conv.last_message_at).getTime()
-              : 0,
+            sortTimestamp: effectiveTimestamp ? new Date(effectiveTimestamp).getTime() : 0,
             is_online: profileData?.is_online || false,
           });
         }
@@ -195,8 +174,7 @@ export default function PrivateChatScreen() {
 
           const sortedMessages = (group.group_messages || []).sort(
             (a: any, b: any) =>
-              new Date(b.created_at).getTime() -
-              new Date(a.created_at).getTime()
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
           const latestMessage = sortedMessages[0];
 
@@ -239,10 +217,7 @@ export default function PrivateChatScreen() {
         }
       }
 
-      conversationsList.sort(
-        (a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0)
-      );
-
+      conversationsList.sort((a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0));
       setConversations(conversationsList);
     } catch (err) {
       console.error('Load conversations error:', err);
@@ -261,33 +236,16 @@ export default function PrivateChatScreen() {
 
   useEffect(() => {
     if (!user) return;
-
     const channelName = `conversation-updates-${user.id}-${Date.now()}`;
-
     const channel = supabase
       .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'private_messages' },
-        () => loadConversations(true)
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'group_messages' },
-        () => loadConversations(true)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'group_read_receipts' },
-        () => loadConversations(true)
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        () => loadConversations(true)
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, () => loadConversations(true))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'private_messages' }, () => loadConversations(true))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, () => loadConversations(true))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'group_messages' }, () => loadConversations(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_read_receipts' }, () => loadConversations(true))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => loadConversations(true))
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -298,28 +256,20 @@ export default function PrivateChatScreen() {
     loadConversations(true);
   }, [loadConversations]);
 
-  // ============================================
-  // DELETE / LEAVE
-  // ============================================
-
   const handleDeleteOrLeave = async () => {
     if (!selectedConversation || !user) return;
-
     const isGroup = selectedConversation.type === 'group';
     setDeleting(true);
-
     try {
       if (!isGroup && selectedConversation.conversation_id) {
         const otherUserId = selectedConversation.user_id;
-
         await supabase
           .from('private_messages')
           .delete()
           .or(
             `and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),` +
-            `and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`
+              `and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`
           );
-
         await supabase
           .from('conversations')
           .delete()
@@ -330,7 +280,6 @@ export default function PrivateChatScreen() {
           .delete()
           .eq('group_id', selectedConversation.group_id)
           .eq('user_id', user.id);
-
         if (leaveError) throw leaveError;
       }
 
@@ -338,7 +287,6 @@ export default function PrivateChatScreen() {
       setShowActionSheet(false);
       const wasGroup = isGroup;
       setSelectedConversation(null);
-
       Alert.alert(
         'Success',
         wasGroup ? 'You have left the group' : 'Conversation deleted'
@@ -350,10 +298,6 @@ export default function PrivateChatScreen() {
       setDeleting(false);
     }
   };
-
-  // ============================================
-  // NAVIGATION
-  // ============================================
 
   const handleConversationPress = async (conversation: Conversation) => {
     setConversations((prev) =>
@@ -375,16 +319,14 @@ export default function PrivateChatScreen() {
 
     if (conversation.type === 'group' && conversation.group_id && user) {
       try {
-        await supabase
-          .from('group_read_receipts')
-          .upsert(
-            {
-              group_id: conversation.group_id,
-              user_id: user.id,
-              last_read_at: new Date().toISOString(),
-            },
-            { onConflict: 'group_id,user_id' }
-          );
+        await supabase.from('group_read_receipts').upsert(
+          {
+            group_id: conversation.group_id,
+            user_id: user.id,
+            last_read_at: new Date().toISOString(),
+          },
+          { onConflict: 'group_id,user_id' }
+        );
       } catch (err) {
         console.warn('Group safety net failed:', err);
       }
@@ -415,10 +357,6 @@ export default function PrivateChatScreen() {
     setShowActionSheet(true);
   };
 
-  // ============================================
-  // RENDER CONVERSATION ITEM
-  // ============================================
-
   const renderConversation = ({ item }: { item: Conversation }) => {
     const isGroup = item.type === 'group';
     const hasUnread = (item.unread || 0) > 0;
@@ -427,32 +365,20 @@ export default function PrivateChatScreen() {
 
     return (
       <TouchableOpacity
-        style={[
-          styles.conversationItem,
-          hasUnread && styles.conversationItemUnread,
-        ]}
+        style={[styles.conversationItem, hasUnread && styles.conversationItemUnread]}
         onPress={() => handleConversationPress(item)}
         onLongPress={() => handleLongPress(item)}
         delayLongPress={400}
         activeOpacity={0.7}
       >
         <View style={styles.avatarWrap}>
-          <View
-            style={[
-              styles.avatarRing,
-              { backgroundColor: color + '22', borderColor: color + '55' },
-            ]}
-          >
-            <View style={[styles.avatar, { backgroundColor: color }]}>
-              <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
-            </View>
+          <View style={[styles.avatar, { backgroundColor: color }]}>
+            <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
           </View>
-
           {isOnline && <View style={styles.onlineIndicator} />}
-
           {isGroup && (
             <View style={styles.groupBadgeSmall}>
-              <Ionicons name="people" size={10} color="#fff" />
+              <Ionicons name="people" size={9} color={CHAT_BG} />
             </View>
           )}
         </View>
@@ -460,31 +386,20 @@ export default function PrivateChatScreen() {
         <View style={styles.conversationContent}>
           <View style={styles.conversationHeader}>
             <Text
-              style={[
-                styles.conversationTitle,
-                hasUnread && styles.conversationTitleUnread,
-              ]}
+              style={[styles.conversationTitle, hasUnread && styles.conversationTitleUnread]}
               numberOfLines={1}
             >
               {item.title}
             </Text>
             {item.time && (
-              <Text
-                style={[
-                  styles.conversationTime,
-                  hasUnread && styles.conversationTimeUnread,
-                ]}
-              >
+              <Text style={[styles.conversationTime, hasUnread && styles.conversationTimeUnread]}>
                 {item.time}
               </Text>
             )}
           </View>
           <View style={styles.previewRow}>
             <Text
-              style={[
-                styles.conversationPreview,
-                hasUnread && styles.conversationPreviewUnread,
-              ]}
+              style={[styles.conversationPreview, hasUnread && styles.conversationPreviewUnread]}
               numberOfLines={1}
             >
               {item.preview}
@@ -505,7 +420,7 @@ export default function PrivateChatScreen() {
   if (loading && conversations.length === 0) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={ACCENT_GOLD} />
+        <ActivityIndicator size="small" color={ACCENT_GOLD} />
         <Text style={styles.loadingText}>Loading conversations…</Text>
       </View>
     );
@@ -531,13 +446,13 @@ export default function PrivateChatScreen() {
                 onPress={() => setShowCreate(true)}
                 activeOpacity={0.85}
               >
-                <Ionicons name="add" size={18} color="#fff" />
+                <Ionicons name="add" size={13} color={CHAT_BG} />
                 <Text style={styles.createButtonText}>New Group</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.searchWrapper}>
-              <UserSearch onSelect={handleUserSelect} />
+              <UserSearch onSelect={handleUserSelect} buttonLabel="Message" />
             </View>
 
             {error && (
@@ -551,14 +466,12 @@ export default function PrivateChatScreen() {
           <View style={styles.emptyContainer}>
             <Ionicons
               name="chatbubbles-outline"
-              size={56}
+              size={32}
               color={TEXT_MUTED}
-              style={{ opacity: 0.25 }}
+              style={{ opacity: 0.35 }}
             />
             <Text style={styles.emptyText}>No conversations yet</Text>
-            <Text style={styles.emptySubtext}>
-              Start a new chat or create a group
-            </Text>
+            <Text style={styles.emptySubtext}>Start a new chat or create a group</Text>
           </View>
         }
         contentContainerStyle={styles.listContent}
@@ -578,7 +491,6 @@ export default function PrivateChatScreen() {
 
       {showCreate && <CreateGroupModal onClose={() => setShowCreate(false)} />}
 
-      {/* Action Sheet Modal */}
       <Modal
         visible={showActionSheet}
         transparent
@@ -594,33 +506,17 @@ export default function PrivateChatScreen() {
             <View style={styles.actionHeader}>
               <View
                 style={[
-                  styles.actionAvatarRing,
-                  (() => {
-                    const c = getAvatarColor(
-                      selectedConversation
-                        ? rowColorKey(selectedConversation)
-                        : ''
-                    );
-                    return { backgroundColor: c + '22', borderColor: c + '55' };
-                  })(),
+                  styles.actionAvatar,
+                  {
+                    backgroundColor: getAvatarColor(
+                      selectedConversation ? rowColorKey(selectedConversation) : ''
+                    ),
+                  },
                 ]}
               >
-                <View
-                  style={[
-                    styles.actionAvatar,
-                    {
-                      backgroundColor: getAvatarColor(
-                        selectedConversation
-                          ? rowColorKey(selectedConversation)
-                          : ''
-                      ),
-                    },
-                  ]}
-                >
-                  <Text style={styles.actionAvatarText}>
-                    {getInitials(selectedConversation?.title || '?')}
-                  </Text>
-                </View>
+                <Text style={styles.actionAvatarText}>
+                  {getInitials(selectedConversation?.title || '?')}
+                </Text>
               </View>
               <View style={styles.actionHeaderInfo}>
                 <Text style={styles.actionTitle} numberOfLines={1}>
@@ -638,15 +534,15 @@ export default function PrivateChatScreen() {
               disabled={deleting}
             >
               {deleting ? (
-                <ActivityIndicator size="small" color="#EF6B6B" />
+                <ActivityIndicator size="small" color="#E07070" />
               ) : (
                 <Ionicons
                   name={isSelectedGroup ? 'exit-outline' : 'trash-outline'}
-                  size={21}
-                  color="#EF6B6B"
+                  size={16}
+                  color="#E07070"
                 />
               )}
-              <Text style={[styles.actionOptionText, { color: '#EF6B6B' }]}>
+              <Text style={[styles.actionOptionText, { color: '#E07070' }]}>
                 {isSelectedGroup ? 'Leave Group' : 'Delete Conversation'}
               </Text>
             </TouchableOpacity>
@@ -655,9 +551,7 @@ export default function PrivateChatScreen() {
               style={[styles.actionOption, styles.actionCancel]}
               onPress={() => setShowActionSheet(false)}
             >
-              <Text style={[styles.actionOptionText, { color: TEXT_PRIMARY }]}>
-                Cancel
-              </Text>
+              <Text style={[styles.actionOptionText, { color: TEXT_PRIMARY }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -665,10 +559,6 @@ export default function PrivateChatScreen() {
     </View>
   );
 }
-
-// ============================================
-// CREATE GROUP MODAL — fixed footer visibility
-// ============================================
 
 function CreateGroupModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
@@ -686,16 +576,12 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
   };
 
   const removeMember = (id: string) =>
-    setMembers((currentMembers) =>
-      currentMembers.filter((member) => member.id !== id)
-    );
+    setMembers((currentMembers) => currentMembers.filter((member) => member.id !== id));
 
   const createGroup = async () => {
     if (!user || !name.trim() || members.length === 0) return;
-
     setCreating(true);
     setError(null);
-
     try {
       const { data: group, error: groupError } = await supabase
         .from('groups')
@@ -717,22 +603,16 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
       const { error: memberError } = await supabase
         .from('group_members')
         .insert(memberRows);
-
       if (memberError) throw memberError;
 
       const receiptRows = [
-        {
-          group_id: group.id,
-          user_id: user.id,
-          last_read_at: new Date().toISOString(),
-        },
+        { group_id: group.id, user_id: user.id, last_read_at: new Date().toISOString() },
         ...members.map((member) => ({
           group_id: group.id,
           user_id: member.id,
           last_read_at: '1970-01-01T00:00:00Z',
         })),
       ];
-
       await supabase
         .from('group_read_receipts')
         .upsert(receiptRows, { onConflict: 'group_id,user_id' });
@@ -758,13 +638,13 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
       <View style={styles.createInputRow}>
         <Ionicons
           name="people-outline"
-          size={17}
+          size={13}
           color={TEXT_MUTED}
           style={styles.createInputIcon}
         />
         <TextInput
           placeholder="e.g. Design Team"
-          placeholderTextColor="rgba(255,255,255,0.3)"
+          placeholderTextColor="rgba(255,255,255,0.28)"
           value={name}
           onChangeText={setName}
           maxLength={50}
@@ -786,45 +666,39 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
 
       {error && (
         <View style={styles.createErrorBanner}>
-          <Ionicons name="alert-circle-outline" size={14} color="#EF6B6B" />
+          <Ionicons name="alert-circle-outline" size={12} color="#E07070" />
           <Text style={styles.createErrorText}>{error}</Text>
         </View>
       )}
-
-      <View style={{ height: 4 }} />
     </View>
   );
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.createBackdrop}>
-        {/* Tap outside to close */}
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
           activeOpacity={1}
           onPress={onClose}
         />
-
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.createKeyboardWrap}
           pointerEvents="box-none"
         >
           <View style={styles.createCard}>
-            {/* Fixed header */}
             <View style={styles.createHeader}>
               <TouchableOpacity
                 onPress={onClose}
                 style={styles.createHeaderBtn}
                 hitSlop={6}
               >
-                <Ionicons name="close" size={20} color={TEXT_PRIMARY} />
+                <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
               </TouchableOpacity>
               <Text style={styles.createTitle}>New Group</Text>
               <View style={styles.createHeaderBtn} />
             </View>
 
-            {/* Scrollable body */}
             <FlatList
               data={[]}
               keyExtractor={() => 'x'}
@@ -836,18 +710,17 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
               showsVerticalScrollIndicator={false}
             />
 
-            {/* Fixed footer — always visible, respects safe area */}
             <View
               style={[
                 styles.createFooter,
-                { paddingBottom: Math.max(insets.bottom, 14) },
+                { paddingBottom: Math.max(insets.bottom, 12) },
               ]}
             >
               <TouchableOpacity
                 onPress={onClose}
                 style={[styles.createFooterBtn, styles.createFooterCancel]}
                 disabled={creating}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
               >
                 <Text style={styles.createFooterCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -868,8 +741,8 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
                   <>
                     <Ionicons
                       name="checkmark"
-                      size={16}
-                      color={canCreate ? '#fff' : 'rgba(255,255,255,0.4)'}
+                      size={13}
+                      color={canCreate ? CHAT_BG : 'rgba(255,255,255,0.4)'}
                     />
                     <Text
                       style={[
@@ -890,24 +763,19 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ============================================
-// STYLES
-// ============================================
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG_PANEL },
+  container: { flex: 1, backgroundColor: CHAT_BG },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { marginTop: 10, fontSize: 13.5, color: TEXT_MUTED },
+  loadingText: { marginTop: 6, fontSize: 11, color: TEXT_MUTED },
 
   headerContainer: {
-    paddingTop: Platform.OS === 'ios' ? 4 : 8,
+    paddingTop: Platform.OS === 'ios' ? 4 : 6,
     paddingBottom: 4,
-    backgroundColor: BG_PANEL,
   },
   headerRow: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -915,90 +783,81 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flex: 1, minWidth: 0 },
   title: {
-    fontSize: 22,
+    fontSize: 17,
     fontWeight: '800',
     color: TEXT_PRIMARY,
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
     marginBottom: 2,
   },
-  hint: { fontSize: 12.5, color: TEXT_MUTED, opacity: 0.7 },
+  hint: { fontSize: 10, color: TEXT_MUTED, opacity: 0.75 },
   createButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: CHAT_RADIUS_BTN,
     backgroundColor: ACCENT_GOLD,
   },
-  createButtonText: { fontWeight: '700', fontSize: 13, color: '#fff' },
+  createButtonText: { fontWeight: '700', fontSize: 11, color: CHAT_BG },
 
-  searchWrapper: { paddingHorizontal: 16, marginBottom: 6 },
+  searchWrapper: { paddingHorizontal: 14, marginBottom: 6 },
 
-  listContent: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 100 },
+  listContent: { paddingHorizontal: 10, paddingTop: 4, paddingBottom: 100 },
 
   conversationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     marginHorizontal: 4,
     marginVertical: 3,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   conversationItemUnread: {
-    backgroundColor: 'rgba(201,169,110,0.10)',
-    borderColor: 'rgba(201,169,110,0.28)',
+    backgroundColor: 'rgba(201,169,110,0.08)',
+    borderColor: 'rgba(201,169,110,0.22)',
   },
-  avatarWrap: { position: 'relative', marginRight: 12 },
-  avatarRing: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    padding: 3,
-  },
+  avatarWrap: { position: 'relative', marginRight: 10 },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   onlineIndicator: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#4ADE80',
-    borderWidth: 2.5,
-    borderColor: BG_PANEL,
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: CHAT_ONLINE,
+    borderWidth: 2,
+    borderColor: CHAT_BG,
   },
   groupBadgeSmall: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    bottom: -1,
+    right: -1,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: ACCENT_GOLD,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: BG_PANEL,
+    borderColor: CHAT_BG,
   },
 
   conversationContent: { flex: 1, minWidth: 0, gap: 3 },
@@ -1010,22 +869,20 @@ const styles = StyleSheet.create({
   },
   conversationTitle: {
     flex: 1,
-    fontSize: 15.5,
+    fontSize: 12.5,
     fontWeight: '600',
     color: TEXT_PRIMARY,
   },
   conversationTitleUnread: { fontWeight: '700' },
   conversationTime: {
-    fontSize: 11,
+    fontSize: 10,
     color: TEXT_MUTED,
-    opacity: 0.6,
+    opacity: 0.7,
     fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.2,
   },
-  conversationTimeUnread: {
-    color: ACCENT_GOLD,
-    opacity: 1,
-    fontWeight: '700',
-  },
+  conversationTimeUnread: { color: ACCENT_GOLD, opacity: 1, fontWeight: '700' },
   previewRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1034,9 +891,9 @@ const styles = StyleSheet.create({
   },
   conversationPreview: {
     flex: 1,
-    fontSize: 13.5,
+    fontSize: 11,
     color: TEXT_MUTED,
-    opacity: 0.85,
+    opacity: 0.8,
   },
   conversationPreviewUnread: {
     color: 'rgba(255,255,255,0.85)',
@@ -1044,217 +901,153 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   unreadBadge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EF6B6B',
-    paddingHorizontal: 6,
+    backgroundColor: ACCENT_GOLD,
+    paddingHorizontal: 5,
   },
-  unreadText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  unreadText: {
+    color: CHAT_BG,
+    fontSize: 10,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
 
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingTop: 60,
-    gap: 8,
+    gap: 6,
   },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: TEXT_MUTED,
-    marginTop: 8,
-  },
-  emptySubtext: { fontSize: 13, color: TEXT_MUTED, opacity: 0.6 },
+  emptyText: { fontSize: 13, fontWeight: '600', color: TEXT_MUTED, marginTop: 6 },
+  emptySubtext: { fontSize: 11, color: TEXT_MUTED, opacity: 0.6 },
 
   errorBanner: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,107,107,0.10)',
+    marginHorizontal: 14,
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: 'rgba(224,112,112,0.10)',
     borderWidth: 1,
-    borderColor: 'rgba(239,107,107,0.25)',
+    borderColor: 'rgba(224,112,112,0.22)',
   },
-  errorText: { color: '#EF6B6B', fontSize: 12.5, textAlign: 'center' },
+  errorText: { color: '#E07070', fontSize: 11, textAlign: 'center' },
 
-  // ─────────────────────────────────────────────────────────────
-  // CREATE GROUP MODAL
-  // ─────────────────────────────────────────────────────────────
+  // Create Group Modal
   createBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingTop: 60,
+    paddingHorizontal: 16,
   },
-  createKeyboardWrap: {
-    width: '100%',
-    maxHeight: '100%',
-    justifyContent: 'flex-end',
-  },
+  createKeyboardWrap: { width: '100%', maxHeight: '90%', justifyContent: 'center' },
   createCard: {
     width: '100%',
-    maxWidth: 620,
-    maxHeight: '92%',
-    backgroundColor: BG_CARD,
-    borderRadius: 24,
+    maxWidth: 480,
+    maxHeight: '90%',
+    backgroundColor: CHAT_PANEL,
+    borderRadius: CHAT_RADIUS_MODAL,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
+    borderColor: CHAT_BORDER,
     overflow: 'hidden',
-    flexDirection: 'column',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 12,
   },
-
   createHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: CHAT_BORDER,
   },
   createHeaderBtn: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
+    borderRadius: 11,
     backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  createTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.2,
-  },
-
-  createBody: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minHeight: 140,
-  },
-  createBodyScrollContent: {
-    flexGrow: 0,
-  },
-  createBodyContent: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 18,
-  },
-
+  createTitle: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
+  createBody: { flexGrow: 1, flexShrink: 1, minHeight: 120 },
+  createBodyScrollContent: { flexGrow: 0 },
+  createBodyContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14 },
   createFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    gap: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.07)',
-    backgroundColor: BG_CARD,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: CHAT_BORDER,
+    backgroundColor: CHAT_PANEL,
   },
   createFooterBtn: {
-    minWidth: 100,
-    height: 42,
+    minWidth: 88,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 18,
-    borderRadius: 12,
+    gap: 5,
+    paddingHorizontal: 14,
+    borderRadius: CHAT_RADIUS_BTN,
   },
   createFooterCancel: {
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
-  createFooterCancelText: {
-    color: TEXT_MUTED,
-    fontWeight: '600',
-    fontSize: 13.5,
-  },
-  createFooterPrimary: {
-    backgroundColor: ACCENT_GOLD,
-    shadowColor: ACCENT_GOLD,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  createFooterPrimaryDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  createFooterPrimaryText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 13.5,
-  },
-  createFooterPrimaryTextDisabled: {
-    color: 'rgba(255,255,255,0.4)',
-  },
+  createFooterCancelText: { color: TEXT_MUTED, fontWeight: '600', fontSize: 12 },
+  createFooterPrimary: { backgroundColor: ACCENT_GOLD },
+  createFooterPrimaryDisabled: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  createFooterPrimaryText: { color: CHAT_BG, fontWeight: '700', fontSize: 12 },
+  createFooterPrimaryTextDisabled: { color: 'rgba(255,255,255,0.4)' },
 
   createLabel: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
     color: TEXT_MUTED,
     opacity: 0.75,
-    marginBottom: 8,
+    marginBottom: 6,
+    textTransform: 'uppercase',
   },
   createInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 50,
-    borderRadius: 12,
+    height: 36,
+    borderRadius: CHAT_RADIUS_BTN,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
-    backgroundColor: BG_SUBTLE,
-    paddingLeft: 40,
-    paddingRight: 14,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingLeft: 34,
+    paddingRight: 12,
   },
-  createInputIcon: {
-    position: 'absolute',
-    left: 14,
-  },
-  createInput: {
-    flex: 1,
-    fontSize: 15,
-    color: TEXT_PRIMARY,
-    paddingVertical: 0,
-  },
-
-  createSection: {
-    marginTop: 22,
-  },
-
+  createInputIcon: { position: 'absolute', left: 11 },
+  createInput: { flex: 1, fontSize: 12, color: TEXT_PRIMARY, paddingVertical: 0 },
+  createSection: { marginTop: 16 },
   createErrorBanner: {
-    marginTop: 16,
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,107,107,0.10)',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: 'rgba(224,112,112,0.10)',
     borderWidth: 1,
-    borderColor: 'rgba(239,107,107,0.25)',
+    borderColor: 'rgba(224,112,112,0.22)',
   },
-  createErrorText: {
-    color: '#EF6B6B',
-    fontSize: 12.5,
-    flex: 1,
-  },
+  createErrorText: { color: '#E07070', fontSize: 11, flex: 1 },
 
   // Action sheet
   actionBackdrop: {
@@ -1263,64 +1056,45 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   actionSheet: {
-    backgroundColor: BG_CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-    paddingTop: 8,
+    backgroundColor: CHAT_PANEL,
+    borderTopLeftRadius: CHAT_RADIUS_MODAL,
+    borderTopRightRadius: CHAT_RADIUS_MODAL,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 18,
+    paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: BORDER_DEFAULT,
+    borderTopColor: CHAT_BORDER,
   },
   actionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
-    gap: 12,
-  },
-  actionAvatarRing: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    padding: 3,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: CHAT_BORDER,
+    gap: 10,
   },
   actionAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionAvatarText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
+  actionAvatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   actionHeaderInfo: { flex: 1, minWidth: 0 },
-  actionTitle: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
-  actionSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-    color: TEXT_MUTED,
-    opacity: 0.7,
-  },
+  actionTitle: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
+  actionSubtitle: { fontSize: 10, marginTop: 1, color: TEXT_MUTED, opacity: 0.75 },
   actionOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    gap: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+    gap: 12,
   },
-  actionOptionText: { fontSize: 15, fontWeight: '600' },
+  actionOptionText: { fontSize: 13, fontWeight: '600' },
   actionCancel: {
-    marginTop: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.06)',
+    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: CHAT_BORDER,
   },
 });

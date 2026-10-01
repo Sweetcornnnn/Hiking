@@ -222,7 +222,7 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
       { icon: 'alert-circle-outline', text: 'Loose rock hazard', safe: false },
       { icon: 'trending-up-outline', text: 'Very steep incline', safe: false },
       { icon: 'eye-outline', text: 'Sunrise views possible', safe: true },
-      { icon: 'wind-outline', text: 'Strong winds at ridge', safe: false },
+      { icon: 'cloudy-outline', text: 'Strong winds at ridge', safe: false },
     ],
   },
 
@@ -284,7 +284,7 @@ export const VIEWPOINTS_DATA: ViewpointsDataType = {
       { icon: 'alert-circle-outline', text: 'Dangerous rock scramble', safe: false },
       { icon: 'camera-outline', text: 'Photo opportunity at feature', safe: true },
       { icon: 'trending-up-outline', text: 'Extreme exposure', safe: false },
-      { icon: 'wind-outline', text: 'Strong winds at wall', safe: false },
+      { icon: 'cloudy-outline', text: 'Strong winds at wall', safe: false },
     ],
   },
   v14: {

@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 
 export default function IntroScreen() {
   const router = useRouter();
+  const isMounted = useRef(true);
 
   const logoFade   = useRef(new Animated.Value(0)).current;
   const logoScale  = useRef(new Animated.Value(0.85)).current;
@@ -13,6 +14,8 @@ export default function IntroScreen() {
   const barWidth   = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    isMounted.current = true;
+
     Animated.sequence([
       Animated.parallel([
         Animated.timing(logoFade,  { toValue: 1, duration: 700, easing: Easing.out(Easing.ease), useNativeDriver: true }),
@@ -32,9 +35,16 @@ export default function IntroScreen() {
       useNativeDriver: false,
     }).start();
 
-    const timer = setTimeout(() => router.push('/Login'), 6000);
-    return () => clearTimeout(timer);
-  }, []);
+    const timer = setTimeout(() => {
+      if (!isMounted.current) return;
+      router.replace('/Login');
+    }, 6000);
+
+    return () => {
+      isMounted.current = false;
+      clearTimeout(timer);
+    };
+  }, [router]);
 
   return (
     <View style={styles.root}>

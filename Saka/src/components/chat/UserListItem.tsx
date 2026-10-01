@@ -1,8 +1,14 @@
-// UserListItem.tsx
+// components/chat/UserListItem.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { TEXT_PRIMARY, TEXT_MUTED, ACCENT_GOLD } from '../../theme/designTokens';
+import {
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  ACCENT_GOLD,
+  CHAT_BG,
+} from '../../theme/designTokens';
+import { getAvatarColor, getInitials } from '../../utils/colors';
 
 export default function UserListItem({
   user,
@@ -13,18 +19,8 @@ export default function UserListItem({
   onPress?: (u: any) => void;
   showAdd?: boolean;
 }) {
-  const initials = (user.name || '')
-    .split(' ')
-    .map((p: string) => p[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-
-  const getRandomColor = (id: string) => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF8C94'];
-    const index = parseInt(id) % colors.length;
-    return colors[index];
-  };
+  const initials = getInitials(user.name || '');
+  const color = getAvatarColor(user.id);
 
   return (
     <TouchableOpacity
@@ -32,16 +28,20 @@ export default function UserListItem({
       onPress={() => onPress?.(user)}
       activeOpacity={0.7}
     >
-      <View style={[styles.avatar, { backgroundColor: getRandomColor(user.id) }]}>
+      <View style={[styles.avatar, { backgroundColor: color }]}>
         <Text style={styles.initials}>{initials}</Text>
       </View>
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>{user.name}</Text>
-        <Text style={styles.email} numberOfLines={1}>{user.email}</Text>
+        <Text style={styles.name} numberOfLines={1}>
+          {user.name}
+        </Text>
+        <Text style={styles.email} numberOfLines={1}>
+          {user.email}
+        </Text>
       </View>
       {showAdd && (
         <View style={styles.addBadge}>
-          <Ionicons name="add" size={17} color="#fff" />
+          <Ionicons name="add" size={14} color={CHAT_BG} />
         </View>
       )}
     </TouchableOpacity>
@@ -52,29 +52,29 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
     marginVertical: 2,
     backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  initials: { fontWeight: '700', color: '#fff', fontSize: 15 },
-  info: { marginLeft: 12, flex: 1, minWidth: 0 },
-  name: { fontWeight: '600', fontSize: 14.5, color: TEXT_PRIMARY },
-  email: { fontSize: 12, color: TEXT_MUTED, opacity: 0.75, marginTop: 1 },
+  initials: { fontWeight: '700', color: '#fff', fontSize: 13 },
+  info: { marginLeft: 10, flex: 1, minWidth: 0 },
+  name: { fontWeight: '600', fontSize: 12.5, color: TEXT_PRIMARY },
+  email: { fontSize: 10, color: TEXT_MUTED, opacity: 0.75, marginTop: 1 },
   addBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     backgroundColor: ACCENT_GOLD,
     alignItems: 'center',
     justifyContent: 'center',

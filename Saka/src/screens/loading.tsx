@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { mountainService } from '../services/mountainService';
+import { preloadHomeVideoPosters } from '../services/homeVideoAssets';
 import {
   BG_PANEL,
   BG_CARD,
@@ -47,15 +48,21 @@ export default function LoadingScreen({
   useEffect(() => {
     mountedRef.current = true;
 
+    const role = profile?.role ?? 'hiker';
+    const targetRoute: Href = nextRoute
+      ? (nextRoute as Href)
+      : profile?.is_admin
+        ? '/admin/Admin'
+        : role === 'organization'
+          ? '/organizations/Dashboard'
+          : '/Home';
+    const shouldPreloadHomeVideos = !onComplete && targetRoute === '/Home';
+
     const navigate = () => {
       if (onComplete) {
         onComplete();
         return;
       }
-
-      const targetRoute: Href = nextRoute
-        ? (nextRoute as Href)
-        : (profile?.is_admin ? '/admin/Admin' : '/Home');
       router.replace(targetRoute);
     };
 
@@ -111,8 +118,14 @@ export default function LoadingScreen({
     const preloadData = async () => {
       try {
         safeSetStatusText('Loading mountain data...');
-        const mountains = await mountainService.fetchMountains();
+        const mountains = await mountainService.fetchMountains(true);
         mountainService.setCachedMountains(mountains);
+        if (shouldPreloadHomeVideos) {
+          safeSetStatusText('Preparing mountain videos...');
+          await preloadHomeVideoPosters((completed, total) => {
+            safeSetStatusText(`Preparing mountain videos (${completed}/${total})...`);
+          });
+        }
         safeSetStatusText('Opening your adventure...');
       } catch (error) {
         console.warn('[Loading] mountain preloading failed:', error);
@@ -126,16 +139,18 @@ export default function LoadingScreen({
 
     preloadData();
 
-    const navigationTimer = setTimeout(() => {
-      if (mountedRef.current) {
-        goNext();
-      }
-    }, loadingDuration + 300);
+    const navigationTimer = shouldPreloadHomeVideos
+      ? null
+      : setTimeout(() => {
+          if (mountedRef.current) {
+            goNext();
+          }
+        }, loadingDuration + 300);
 
     return () => {
       mountedRef.current = false;
       didNavigate = true;
-      clearTimeout(navigationTimer);
+      if (navigationTimer) clearTimeout(navigationTimer);
       pulseAnimation.stop();
       fadeAnim.setValue(0);
       progressAnim.setValue(0);

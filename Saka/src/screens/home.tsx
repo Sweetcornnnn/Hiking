@@ -9,15 +9,22 @@ import {
   Image,
   TouchableOpacity,
   BackHandler,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { Image as ExpoImage } from 'expo-image';
+import { useVideoPlayer, VideoView, type VideoPlayer, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
+import { getHomeVideoPosters, MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
+import { MOUNTAIN_TIPS, MountainTips } from '../data/mountainTips';
+import TipsAndTricks from '../components/mountainInfo/TipsAndTricks';
+import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
@@ -28,66 +35,72 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-// Video player component (unchanged, but now accepts a URI source)
-function VideoViewPlayer({ source, isActive }: { source: { uri: string }; isActive: boolean }) {
-  const player = useVideoPlayer(source, (p) => {
-    p.loop = true;
-    p.muted = true;
-  });
-
-  useEffect(() => {
-    if (isActive) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [isActive, player]);
-
-  useEffect(() => {
-    const sub = player.addListener('playToEnd', () => {
-      player.replay();
-    });
-    return () => sub.remove();
-  }, [player]);
-
+/** Renders Home's single native player over the slide's frozen poster frame. */
+function VideoViewPlayer({ player }: { player: VideoPlayer }) {
   return (
-    <VideoView
-      style={[styles.fullScreenVideo, !isActive && styles.hiddenVideo]}
-      player={player}
-      nativeControls={false}
-      contentFit="cover"
-    />
+    <View style={styles.videoOverlay} pointerEvents="none">
+      <VideoView
+        style={StyleSheet.absoluteFill}
+        player={player}
+        nativeControls={false}
+        contentFit="cover"
+        surfaceType="textureView"
+      />
+    </View>
   );
 }
 
-// Memoized slide component – now dynamic and no lock logic
+// Memoized slide component.
+//
+// Note: no `isActive` prop. Because the slide doesn't care about the active
+// index anymore, `memo` can short-circuit every carousel swipe — no slide
+// re-renders when `activeIndex` changes.
 const MountainSlide = memo(function MountainSlide({
   mountain,
-  index,
   isActive,
+  poster,
+  videoPlayer,
+  videoReady,
   width,
   height,
   isPortrait,
+  onOpenTips,
+  onEventsPress,
 }: {
   mountain: Mountain;
-  index: number;
   isActive: boolean;
+  poster: VideoThumbnail | undefined;
+  videoPlayer: VideoPlayer;
+  videoReady: boolean;
   width: number;
   height: number;
   isPortrait: boolean;
+  onOpenTips: (mountain: Mountain) => void;
+  onEventsPress: (mountainId: string) => void;
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
+
+  // Bundled local video for this mountain (if one is registered for its ID).
+  // Home is video-only: no `image_url` is ever read or fetched here.
+  const localVideo = MOUNTAIN_VIDEOS[mountain.id];
 
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
-        {mountain.video_url && isActive ? (
-          <VideoViewPlayer source={{ uri: mountain.video_url }} isActive={isActive} />
-        ) : mountain.image_url ? (
-          <Image source={{ uri: mountain.image_url }} style={styles.fullScreenImage} resizeMode="cover" />
+        {localVideo ? (
+          <>
+            {poster ? (
+              <ExpoImage source={poster} style={StyleSheet.absoluteFill} contentFit="cover" />
+            ) : (
+              <View style={styles.fullScreenVideoPlaceholder}>
+                <Ionicons name="videocam-outline" size={80} color="#8B7355" />
+              </View>
+            )}
+            {isActive && videoReady && <VideoViewPlayer player={videoPlayer} />}
+          </>
         ) : (
-          <View style={styles.fullScreenImagePlaceholder}>
-            <Ionicons name="image-outline" size={80} color="#8B7355" />
+          <View style={styles.fullScreenVideoPlaceholder}>
+            <Ionicons name="videocam-outline" size={80} color="#8B7355" />
           </View>
         )}
       </View>
@@ -98,19 +111,46 @@ const MountainSlide = memo(function MountainSlide({
         {mountain.funny_warning && (
           <Text style={styles.funnyWarningText}>{mountain.funny_warning}</Text>
         )}
+
+        {/* Meta row: difficulty + elevation + events button */}
         <View style={styles.infoMetaRow}>
           <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
             <View style={[styles.difficultyDot, { backgroundColor: diffColor }]} />
             <Text style={[styles.difficultyText, { color: diffColor }]}>{mountain.difficulty}</Text>
           </View>
+
           <View style={styles.elevationPill}>
             <Ionicons name="trending-up-outline" size={11} color="rgba(255,255,255,0.7)" />
             <Text style={styles.elevationText}>{mountain.elevationDisplay}</Text>
           </View>
+
+          <TouchableOpacity
+            style={styles.eventsPill}
+            onPress={() => onEventsPress(mountain.id)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="calendar-outline" size={11} color="#C9A96E" />
+            <Text style={styles.eventsPillText}>Events</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]} numberOfLines={1}>
-          {mountain.name}
-        </Text>
+        <View style={styles.mountainNameRow}>
+          <Text
+            style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}
+            numberOfLines={1}
+          >
+            {mountain.name}
+          </Text>
+          <TouchableOpacity
+            style={styles.guideButton}
+            onPress={() => onOpenTips(mountain)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${mountain.name} tips and guide`}
+          >
+            <Ionicons name="information-circle-outline" size={22} color={ACCENT_GOLD} />
+          </TouchableOpacity>
+        </View>
+
         <Text style={styles.mountainDescription} numberOfLines={2}>
           {mountain.description}
         </Text>
@@ -121,25 +161,122 @@ const MountainSlide = memo(function MountainSlide({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, signOut } = useAuthStore();
+  const { user, profile, signOut } = useAuthStore();
   const { setSelectedMountainId } = useWildTrackStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(false);
+  const [tipsMountain, setTipsMountain] = useState<MountainTips | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
+  const initialVideoMountainId = mountains[0] && MOUNTAIN_VIDEOS[mountains[0].id]
+    ? mountains[0].id
+    : null;
+  const initialVideoSource = initialVideoMountainId
+    ? MOUNTAIN_VIDEOS[initialVideoMountainId]
+    : Object.values(MOUNTAIN_VIDEOS)[0];
+  const videoPlayer = useVideoPlayer(initialVideoSource, (player) => {
+    player.loop = true;
+    player.muted = true;
+  });
+  const [videoPosters, setVideoPosters] = useState<Record<string, VideoThumbnail>>(
+    () => getHomeVideoPosters()
+  );
+  const [videoReady, setVideoReady] = useState(false);
+  const activeMountainId = useRef<string | null>(mountains[0]?.id ?? null);
+  const loadedMountainId = useRef<string | null>(initialVideoMountainId);
+  const videoPositions = useRef<Record<string, number>>({});
+  const switchRequest = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
 
+  const capturePoster = useCallback(async (mountainId: string, time: number) => {
+    try {
+      const [poster] = await videoPlayer.generateThumbnailsAsync(time, {
+        maxWidth: 640,
+        maxHeight: 360,
+      });
+      if (poster) {
+        setVideoPosters((current) => ({ ...current, [mountainId]: poster }));
+      }
+    } catch (posterError) {
+      console.warn(`[Home] Could not create video poster for ${mountainId}:`, posterError);
+    }
+  }, [videoPlayer]);
+
+  useEffect(() => {
+    const mountain = mountains[activeIndex];
+    const mountainId = mountain?.id ?? null;
+    const source = mountainId ? MOUNTAIN_VIDEOS[mountainId] : undefined;
+    const currentLoadedId = loadedMountainId.current;
+    const requestId = ++switchRequest.current;
+    activeMountainId.current = mountainId;
+
+    if (!mountainId || !source) {
+      videoPlayer.pause();
+      setVideoReady(false);
+      return;
+    }
+
+    if (currentLoadedId === mountainId) {
+      setVideoReady(videoPlayer.status === 'readyToPlay');
+      videoPlayer.play();
+      if (!videoPosters[mountainId]) {
+        void capturePoster(mountainId, 0);
+      }
+      return;
+    }
+
+    if (currentLoadedId) {
+      videoPositions.current[currentLoadedId] = videoPlayer.currentTime;
+    }
+
+    videoPlayer.pause();
+    setVideoReady(false);
+    let cancelled = false;
+
+    videoPlayer.replaceAsync(source).then(() => {
+      if (cancelled || requestId !== switchRequest.current) return;
+
+      const savedPosition = videoPositions.current[mountainId] ?? 0;
+      if (savedPosition > 0 && savedPosition < videoPlayer.duration) {
+        videoPlayer.currentTime = savedPosition;
+      }
+
+      loadedMountainId.current = mountainId;
+      setVideoReady(videoPlayer.status === 'readyToPlay');
+      videoPlayer.play();
+      if (!videoPosters[mountainId]) {
+        void capturePoster(mountainId, 0);
+      }
+    }).catch((loadError) => {
+      if (!cancelled && requestId === switchRequest.current) {
+        console.warn('[Home] Failed to load mountain video:', loadError);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeIndex, capturePoster, mountains, videoPlayer, videoPosters]);
+
+  useEffect(() => {
+    const subscription = videoPlayer.addListener('statusChange', ({ status }) => {
+      setVideoReady(
+        status === 'readyToPlay' && loadedMountainId.current === activeMountainId.current
+      );
+    });
+    return () => subscription.remove();
+  }, [videoPlayer]);
+
   useEffect(() => {
     if (mountains.length === 0) {
       setError('Mountain feed was not loaded yet.');
       return;
     }
-
     setError(null);
   }, [mountains]);
 
@@ -163,6 +300,31 @@ export default function HomeScreen() {
 
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
+
+  const handleOpenTips = useCallback((mountain: Mountain) => {
+    const normalizedName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const mountainTips = MOUNTAIN_TIPS.find((tips) =>
+      tips.id === mountain.id ||
+      tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedName
+    );
+
+    if (!mountainTips) {
+      Alert.alert('Guide not available', `Tips for ${mountain.name} are not available yet.`);
+      return;
+    }
+
+    setTipsMountain(mountainTips);
+  }, []);
+  // Stable handler for the per-slide Events button (keeps MountainSlide memoized)
+  const handleEventsPress = useCallback(
+    (mountainId: string) => {
+      router.push({
+        pathname: '/events/Events',
+        params: { mountainId },
+      } as any);
+    },
+    [router]
+  );
 
   // Logout toast state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -247,6 +409,14 @@ export default function HomeScreen() {
         )}
         onMomentumScrollEnd={(event) => {
           const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
+          const outgoingMountain = mountains[activeIndex];
+          if (outgoingMountain && loadedMountainId.current === outgoingMountain.id) {
+            const time = videoPlayer.currentTime;
+            videoPositions.current[outgoingMountain.id] = time;
+            void capturePoster(outgoingMountain.id, time);
+          }
+
+          activeMountainId.current = mountains[newIndex]?.id ?? null;
           setActiveIndex(newIndex);
 
           if (mountains[newIndex]) {
@@ -259,16 +429,20 @@ export default function HomeScreen() {
           <MountainSlide
             key={mountain.id}
             mountain={mountain}
-            index={index}
             isActive={index === activeIndex}
+            poster={videoPosters[mountain.id]}
+            videoPlayer={videoPlayer}
+            videoReady={videoReady}
             width={dimensions.width}
             height={dimensions.height}
             isPortrait={isPortrait}
+            onOpenTips={handleOpenTips}
+            onEventsPress={handleEventsPress}
           />
         ))}
       </Animated.ScrollView>
 
-      {/* Floating Header (only show if user is logged in) */}
+      {/* Floating Header */}
       <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
         <TouchableOpacity
           onPress={openProfileCard}
@@ -300,8 +474,19 @@ export default function HomeScreen() {
             <Ionicons name="chevron-down" size={11} color="#C9A96E" />
           </View>
         </TouchableOpacity>
-        {/* Chat button on the right side of the header */}
+
+        {/* Header actions on the right */}
         <View style={styles.headerRightButtons}>
+          {profile?.role === 'organization' && (
+            <TouchableOpacity
+              onPress={() => router.push('/organizations/Dashboard')}
+              style={styles.chatButton}
+              activeOpacity={0.8}
+              accessibilityLabel="Back to organizer dashboard"
+            >
+              <Ionicons name="business-outline" size={20} color="#3FD69D" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             onPress={() => router.push('/chat/Chat' as any)}
             style={styles.chatButton}
@@ -323,7 +508,22 @@ export default function HomeScreen() {
         onProfileImageSelect={setProfileImage}
       />
 
+      <Modal
+        visible={tipsMountain !== null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setTipsMountain(null)}
+      >
+        {tipsMountain ? (
+          <TipsAndTricks
+            mountainTips={tipsMountain}
+            onBack={() => setTipsMountain(null)}
+          />
+        ) : null}
+      </Modal>
+
       {/* CTA button – shown on every slide */}
+      {/* CTA button */}
       {mountains[activeIndex] && (
         <TouchableOpacity
           style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
@@ -342,7 +542,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Pagination – simple dots, no locks */}
+      {/* Pagination */}
       <View style={styles.paginationFixed}>
         <View style={styles.paginationStack}>
           {mountains.map((_, index) => (
@@ -357,7 +557,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Logout Toast (unchanged) */}
+      {/* Logout Toast */}
       {showLogoutConfirm && (
         <Animated.View style={[styles.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
           <View style={styles.logoutToastBar} />
@@ -379,7 +579,6 @@ export default function HomeScreen() {
   );
 }
 
-// Styles (unchanged, keep exactly as before – no edits needed)
 const styles = StyleSheet.create({
   immersiveContainer: {
     flex: 1,
@@ -397,33 +596,27 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // Solid "poster" surface. Deliberately not pure black so a slide that is
+    // waiting on its video (or has no bundled video) still reads as a themed
+    // surface rather than a void.
     backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fullScreenVideo: {
+  videoOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
   },
-  hiddenVideo: {
-    opacity: 0,
-  },
-  fullScreenImage: {
-    width: '100%',
-    height: '100%',
-    maxWidth: '100%',
-    maxHeight: '100%',
-  },
-  fullScreenImagePlaceholder: {
+  fullScreenVideoPlaceholder: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#2C3E50',
+    backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -500,6 +693,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 8,
+    flexWrap: 'wrap',
   },
   difficultyBadge: {
     flexDirection: 'row',
@@ -521,6 +715,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
+  guideButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
   elevationPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -537,6 +741,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  eventsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: 'rgba(201,169,110,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.55)',
+  },
+  eventsPillText: {
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   mountainDescription: {
     color: 'rgba(255,255,255,0.65)',
     fontSize: 12,
@@ -544,6 +765,7 @@ const styles = StyleSheet.create({
     maxWidth: '65%',
   },
   floatingMountainName: {
+    flexShrink: 1,
     fontSize: 42,
     fontWeight: '900',
     color: '#FFF',
@@ -552,6 +774,13 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
+    marginBottom: 6,
+  },
+  mountainNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.gap,
+    maxWidth: '68%',
     marginBottom: 6,
   },
   floatingMountainNamePortrait: {
@@ -601,12 +830,11 @@ const styles = StyleSheet.create({
   profileAvatarRing: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: '#C9A96E',
-    justifyContent: 'center',
+    backgroundColor: BG_SUBTLE,
     alignItems: 'center',
-    shadowColor: '#C9A96E',
+    borderColor: BORDER_SUBTLE,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 6,
@@ -676,34 +904,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   paginationFixed: {
-  position: 'absolute',
-  bottom: 8,               // <-- "At the edge, but not touching" (adjust between 8–16)
-  left: 0,
-  right: 0,
-  justifyContent: 'center',
-  alignItems: 'center',
-  zIndex: 100,
-},
-paginationStack: {
-  flexDirection: 'row',     // Horizontal layout
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,                  // Spacing between dots
-},
-paginationDot: {
-  width: 6,
-  height: 6,
-  borderRadius: 3,
-},
-paginationDotActive: {
-  backgroundColor: '#C9A96E',
-  width: 26,               // Wider active indicator for horizontal scroll
-  height: 6,
-  borderRadius: 3,
-},
-paginationDotInactive: {
-  backgroundColor: 'rgba(255,255,255,0.3)',
-},
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  paginationStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  paginationDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  paginationDotActive: {
+    backgroundColor: '#C9A96E',
+    width: 26,
+    height: 6,
+    borderRadius: 3,
+  },
+  paginationDotInactive: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
   logoutToast: {
     position: 'absolute',
     bottom: 32,
