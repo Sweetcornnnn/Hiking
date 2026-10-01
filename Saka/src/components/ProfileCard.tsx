@@ -359,11 +359,7 @@ export default function ProfileCard({
             </View>
 
             {view === 'home' && (
-              <ScrollView
-                style={styles.paneScroll}
-                contentContainerStyle={styles.homeContent}
-                showsVerticalScrollIndicator={false}
-              >
+              <View style={styles.homeContent}>
                 {/* Primary: Schedule + WildTrack */}
                 <View style={styles.primaryRow}>
                   {quickActions.map((action) => (
@@ -376,11 +372,11 @@ export default function ProfileCard({
                       accessibilityLabel={`Show ${action.label}`}
                     >
                       <View style={styles.quickIconWrap}>
-                        <Ionicons name={action.icon as any} size={18} color="#C9A96E" />
+                        <Ionicons name={action.icon as any} size={22} color="#C9A96E" />
                       </View>
-                      <View style={styles.quickTextWrap}>
+                      <View style={styles.quickTextStack}>
                         <Text
-                          style={styles.quickLabel}
+                          style={styles.quickLabelLg}
                           maxFontSizeMultiplier={TIGHT_FONT_CAP}
                           numberOfLines={1}
                           adjustsFontSizeToFit
@@ -388,7 +384,7 @@ export default function ProfileCard({
                         >
                           {action.label}
                         </Text>
-                        <Text style={styles.quickCaption} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={2}>
+                        <Text style={styles.quickCaptionLg} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={2}>
                           {action.caption}
                         </Text>
                       </View>
@@ -405,12 +401,12 @@ export default function ProfileCard({
                     accessibilityRole="button"
                     accessibilityLabel="Open Journal"
                   >
-                    <Ionicons name="book-outline" size={18} color="#C9A96E" />
+                    <Ionicons name="book-outline" size={20} color="#C9A96E" />
                     <View style={styles.quickTextWrap}>
-                      <Text style={styles.quickLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>
+                      <Text style={styles.journalLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>
                         Journal
                       </Text>
-                      <Text style={styles.quickCaption} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={2}>
+                      <Text style={styles.journalCaption} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={2}>
                         {journalCaption}
                       </Text>
                     </View>
@@ -425,12 +421,12 @@ export default function ProfileCard({
                     accessibilityRole="button"
                     accessibilityLabel="Open Showcase"
                   >
-                    <Ionicons name="images-outline" size={18} color="#C9A96E" />
+                    <Ionicons name="images-outline" size={20} color="#C9A96E" />
                     <View style={styles.quickTextWrap}>
-                      <Text style={styles.quickLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>
+                      <Text style={styles.journalLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>
                         Showcase
                       </Text>
-                      <Text style={styles.quickCaption} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={2}>
+                      <Text style={styles.journalCaption} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={2}>
                         Your best memories
                       </Text>
                     </View>
@@ -446,7 +442,7 @@ export default function ProfileCard({
                     accessibilityRole="button"
                     accessibilityLabel="Open Weather"
                   >
-                    <Ionicons name="cloud-outline" size={14} color="rgba(201,169,110,0.8)" />
+                    <Ionicons name="cloud-outline" size={16} color="rgba(201,169,110,0.8)" />
                     <View style={styles.quickTextWrap}>
                       <Text style={styles.miniLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>Weather</Text>
                       <Text style={styles.miniStatus} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{weatherStatus}</Text>
@@ -460,7 +456,7 @@ export default function ProfileCard({
                     accessibilityRole="button"
                     accessibilityLabel="Open Location"
                   >
-                    <Ionicons name="location-outline" size={14} color="rgba(201,169,110,0.8)" />
+                    <Ionicons name="location-outline" size={16} color="rgba(201,169,110,0.8)" />
                     <View style={styles.quickTextWrap}>
                       <Text style={styles.miniLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>Location</Text>
                       <Text style={styles.miniStatus} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{locationStatus}</Text>
@@ -474,14 +470,14 @@ export default function ProfileCard({
                     accessibilityRole="button"
                     accessibilityLabel="Open Emergency Contact"
                   >
-                    <Ionicons name="alert-circle-outline" size={14} color="#E07070" />
+                    <Ionicons name="alert-circle-outline" size={16} color="#E07070" />
                     <View style={styles.quickTextWrap}>
                       <Text style={styles.miniLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>Emergency</Text>
                       <Text style={styles.miniStatus} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>Safety plan</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
-              </ScrollView>
+              </View>
             )}
 
             {view === 'showcase' && (
@@ -809,32 +805,39 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   homeContent: {
-    flexGrow: 1,
+    flex: 1,
+    minHeight: 0,
     paddingHorizontal: 14,
     paddingBottom: 2,
     gap: 8,
   },
+  // Quick access fills the panel: Schedule/WildTrack get the most height,
+  // Journal/Showcase a medium share, Weather/Location/Emergency the least.
   primaryRow: {
+    flexGrow: 3,
+    flexBasis: 0,
+    minHeight: 0,
     flexDirection: 'row',
     gap: 8,
   },
   quickBtn: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    minHeight: 48,
-    paddingHorizontal: 10,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    gap: 4,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: 'rgba(201,169,110,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.25)',
   },
   quickIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(201,169,110,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -851,7 +854,32 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     fontSize: 9,
   },
+  quickTextStack: {
+    alignSelf: 'stretch',
+  },
+  quickLabelLg: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  quickCaptionLg: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 10,
+    marginTop: 1,
+  },
+  journalLabel: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  journalCaption: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 9.5,
+  },
   journalCard: {
+    flexGrow: 2,
+    flexBasis: 0,
+    minHeight: 0,
     flexDirection: 'row',
     alignItems: 'stretch',
     borderRadius: 12,
@@ -864,10 +892,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    minHeight: 56,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
   journalDivider: {
     width: 1,
@@ -953,6 +980,9 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   secondaryRow: {
+    flexGrow: 1.3,
+    flexBasis: 0,
+    minHeight: 0,
     flexDirection: 'row',
     gap: 6,
   },
@@ -961,10 +991,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 36,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
