@@ -67,8 +67,7 @@ export default function ProfileCard({
           .single();
         if (error) throw error;
         if (!cancelled) setProfile(data);
-      } catch (err) {
-        console.warn('ProfileCard load error:', err);
+      } catch {
         if (!cancelled) setError('Failed to load profile');
       } finally {
         if (!cancelled) setLoading(false);

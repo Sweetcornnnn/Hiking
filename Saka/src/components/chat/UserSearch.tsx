@@ -60,8 +60,8 @@ export default function UserSearch({
       }));
 
       setResults(formattedData);
-    } catch (error) {
-      console.warn('user search', error);
+    } catch {
+      setResults([]);
     } finally {
       setLoading(false);
     }

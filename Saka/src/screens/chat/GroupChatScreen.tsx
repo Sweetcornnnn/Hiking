@@ -185,8 +185,8 @@ export default function GroupChatScreen() {
           },
           { onConflict: 'group_id,user_id' }
         );
-    } catch (err) {
-      console.warn('Mark group as read failed:', err);
+    } catch {
+      return;
     }
   }, [user, groupId]);
 
@@ -200,8 +200,7 @@ export default function GroupChatScreen() {
         .single();
       if (error) throw error;
       setGroup(data);
-    } catch (err) {
-      console.error('Load group error:', err);
+    } catch {
       setError('Failed to load group');
     }
   }, [groupId]);
@@ -234,8 +233,8 @@ export default function GroupChatScreen() {
       }));
 
       setMembers(normalizedMembers);
-    } catch (err) {
-      console.error('Load members error:', err);
+    } catch {
+      return;
     }
   }, [groupId]);
 
@@ -309,8 +308,7 @@ export default function GroupChatScreen() {
           }
         }, 300);
         await markGroupAsRead();
-      } catch (err) {
-        console.error('Load messages error:', err);
+      } catch {
         setError('Failed to load messages');
       } finally {
         setLoading(false);
@@ -385,8 +383,7 @@ export default function GroupChatScreen() {
         prev.map((msg) => (msg.id === tempId ? normalizedMessage : msg))
       );
       await markGroupAsRead();
-    } catch (err) {
-      console.error('Send message error:', err);
+    } catch {
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
@@ -419,8 +416,7 @@ export default function GroupChatScreen() {
     try {
       const { error } = await supabase.from('group_messages').delete().eq('id', msgId);
       if (error) throw error;
-    } catch (err) {
-      console.error('Delete message error:', err);
+    } catch {
       setMessages(backup);
       Alert.alert('Error', 'Failed to delete message. Please try again.');
     } finally {
@@ -527,9 +523,7 @@ export default function GroupChatScreen() {
           { event: 'DELETE', schema: 'public', table: 'group_messages' },
           handleDeletedMessage
         )
-        .subscribe((status) => {
-          console.log('Group chat subscription status:', status);
-        });
+        .subscribe();
 
       subscriptionRef.current = channel;
 
@@ -572,17 +566,13 @@ export default function GroupChatScreen() {
       const userName =
         user.user_metadata?.full_name || user.user_metadata?.username || 'Someone';
 
-      const { error: msgError } = await supabase
-        .from('group_messages')
-        .insert({
+      await supabase.from('group_messages').insert({
           group_id: Number(groupId),
           sender_id: user.id,
           content: `${userName} left the group`,
           type: 'system',
           metadata: { action: 'member_left', actor_id: user.id, actor_name: userName },
         });
-
-      if (msgError) console.error('Failed to insert leave message:', msgError);
 
       const { error: leaveError } = await supabase
         .from('group_members')
@@ -600,8 +590,7 @@ export default function GroupChatScreen() {
       setShowMenu(false);
       setLeaving(false);
       router.replace('/chat/Chat' as any);
-    } catch (err) {
-      console.error('Leave group error:', err);
+    } catch {
       setLeaving(false);
       Alert.alert('Error', 'Failed to leave group. Please try again.');
     }
@@ -651,7 +640,7 @@ export default function GroupChatScreen() {
         selectedUser.name ||
         'a new member';
 
-      const { error: msgError } = await supabase.from('group_messages').insert({
+      await supabase.from('group_messages').insert({
         group_id: Number(groupId),
         sender_id: user.id,
         content: `${adderName} added ${addedName}`,
@@ -664,12 +653,9 @@ export default function GroupChatScreen() {
           target_name: addedName,
         },
       });
-      if (msgError) console.error('System message insert failed:', msgError);
-
       setShowAddMembers(false);
       Alert.alert('Success', `${addedName} has been added to the group`);
-    } catch (err) {
-      console.error('Add member error:', err);
+    } catch {
       Alert.alert('Error', 'Failed to add member. Please try again.');
     }
   };

@@ -220,8 +220,7 @@ export default function PrivateChatScreen() {
 
       conversationsList.sort((a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0));
       setConversations(conversationsList);
-    } catch (err) {
-      console.error('Load conversations error:', err);
+    } catch {
       setError('Failed to load conversations');
     } finally {
       setLoading(false);
@@ -292,8 +291,7 @@ export default function PrivateChatScreen() {
         'Success',
         wasGroup ? 'You have left the group' : 'Conversation deleted'
       );
-    } catch (err) {
-      console.error('Delete/Leave error:', err);
+    } catch {
       Alert.alert('Error', 'Action failed. Please try again.');
     } finally {
       setDeleting(false);
@@ -313,9 +311,7 @@ export default function PrivateChatScreen() {
           .eq('sender_id', conversation.user_id)
           .eq('recipient_id', user.id)
           .eq('is_read', false);
-      } catch (err) {
-        console.warn('Private safety net failed:', err);
-      }
+      } catch {}
     }
 
     if (conversation.type === 'group' && conversation.group_id && user) {
@@ -328,9 +324,7 @@ export default function PrivateChatScreen() {
           },
           { onConflict: 'group_id,user_id' }
         );
-      } catch (err) {
-        console.warn('Group safety net failed:', err);
-      }
+      } catch {}
     }
 
     if (conversation.type === 'private' && conversation.user_id) {
@@ -624,8 +618,7 @@ function CreateGroupModal({ onClose }: { onClose: () => void }) {
         pathname: '/chat/GroupChat',
         params: { groupId: String(group.id) },
       } as any);
-    } catch (err) {
-      console.error('Create group error:', err);
+    } catch {
       setError('Failed to create group. Please try again.');
     } finally {
       setCreating(false);

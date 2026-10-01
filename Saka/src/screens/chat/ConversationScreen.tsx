@@ -155,8 +155,8 @@ export default function ConversationScreen() {
         .eq('sender_id', userId)
         .eq('recipient_id', user.id)
         .eq('is_read', false);
-    } catch (err) {
-      console.warn('Mark as read failed:', err);
+    } catch {
+      return;
     }
   }, [user, userId]);
 
@@ -170,8 +170,8 @@ export default function ConversationScreen() {
         .single();
       if (error) throw error;
       setOtherUser(data);
-    } catch (err) {
-      console.error('Load user profile error:', err);
+    } catch {
+      return;
     }
   }, [userId]);
 
@@ -228,8 +228,7 @@ export default function ConversationScreen() {
             listRef.current?.scrollToEnd({ animated: false });
           }
         }, 300);
-      } catch (err) {
-        console.error('Load messages error:', err);
+      } catch {
         setError('Failed to load messages');
       } finally {
         setLoading(false);
@@ -278,8 +277,7 @@ export default function ConversationScreen() {
       if (error) throw error;
 
       setMessages((prev) => prev.map((msg) => (msg.id === tempId ? data : msg)));
-    } catch (err) {
-      console.error('Send message error:', err);
+    } catch {
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
@@ -311,8 +309,7 @@ export default function ConversationScreen() {
     try {
       const { error } = await supabase.from('private_messages').delete().eq('id', msgId);
       if (error) throw error;
-    } catch (err) {
-      console.error('Delete message error:', err);
+    } catch {
       setMessages(backup);
       Alert.alert('Error', 'Failed to delete message. Please try again.');
     } finally {
@@ -438,9 +435,7 @@ export default function ConversationScreen() {
           }
         }
       )
-      .subscribe((status) => {
-        console.log('Private chat subscription status:', status);
-      });
+      .subscribe();
 
     subscriptionRef.current = channel;
 
