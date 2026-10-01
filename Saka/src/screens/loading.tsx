@@ -116,7 +116,7 @@ export default function LoadingScreen({
     const preloadData = async () => {
       try {
         safeSetStatusText('Loading mountain data...');
-        const mountains = await mountainService.fetchMountains();
+        const mountains = await mountainService.fetchMountains(true);
         mountainService.setCachedMountains(mountains);
         safeSetStatusText('Opening your adventure...');
       } catch (error) {
