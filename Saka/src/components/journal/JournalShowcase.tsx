@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   group: { gap: 7, width: '100%' },
   mountainName: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  image: { width: 67, height: 55, borderRadius: 6, backgroundColor: BG_AVATAR, borderWidth: 1, borderColor: BORDER_SUBTLE },
+  image: { width: 110, height: 85, borderRadius: 6, backgroundColor: BG_AVATAR, borderWidth: 1, borderColor: BORDER_SUBTLE },
   empty: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
   emptySection: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
   detailScreen: { flex: 1, flexDirection: 'row', backgroundColor: BG_PANEL },
