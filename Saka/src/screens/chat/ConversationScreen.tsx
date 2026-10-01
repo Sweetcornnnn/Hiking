@@ -1,4 +1,4 @@
-// screens/chat/ConversationScreen.tsx - WITH REALTIME STATUS
+// screens/chat/ConversationScreen.tsx - WITH REALTIME STATUS + SCROLL-TO-LATEST FIX
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -12,6 +12,7 @@ import {
   RefreshControl,
   Alert,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -62,11 +63,77 @@ export default function ConversationScreen() {
   const [error, setError] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   const [otherUser, setOtherUser] = useState<Profile | null>(null);
+  const { width: windowWidth } = useWindowDimensions();
 
   const listRef = useRef<FlatList>(null);
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
+
+  // ✅ Track scroll position to avoid forced auto-scroll
+  const isNearBottomRef = useRef(true);
+  const initialScrollIndexRef = useRef<number | null>(null);
+  const initialPositionPendingRef = useRef(false);
+  const initialPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ============================================
+  // SCROLL HELPERS
+  // ============================================
+
+  const scrollToEnd = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
+  const handleScroll = useCallback((event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 80;
+    isNearBottomRef.current =
+      layoutMeasurement.height + contentOffset.y >=
+      contentSize.height - paddingToBottom;
+  }, []);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (initialPositionPendingRef.current && messages.length > 0) {
+      const index = initialScrollIndexRef.current;
+      if (index !== null && index < messages.length) {
+        listRef.current?.scrollToIndex({
+          index,
+          animated: false,
+          viewPosition: 0.85,
+        });
+        initialScrollIndexRef.current = null;
+      } else {
+        listRef.current?.scrollToEnd({ animated: false });
+      }
+      if (initialPositionTimerRef.current) {
+        clearTimeout(initialPositionTimerRef.current);
+      }
+      initialPositionTimerRef.current = setTimeout(() => {
+        initialPositionPendingRef.current = false;
+        initialScrollIndexRef.current = null;
+      }, 750);
+    }
+  }, [messages.length]);
+
+  const handleLayout = useCallback(() => {
+    if (initialPositionPendingRef.current && messages.length > 0) {
+      requestAnimationFrame(() => {
+        const index = initialScrollIndexRef.current;
+        if (index !== null && index < messages.length) {
+          listRef.current?.scrollToIndex({
+            index,
+            animated: false,
+            viewPosition: 0.85,
+          });
+          initialScrollIndexRef.current = null;
+        } else {
+          listRef.current?.scrollToEnd({ animated: false });
+        }
+      });
+    }
+  }, [messages.length]);
 
   // ============================================
   // MARK ALL AS READ
@@ -117,8 +184,6 @@ export default function ConversationScreen() {
         setError(null);
         if (!refresh) setLoading(true);
 
-        await markAllAsRead();
-
         const { data, error: queryError } = await supabase
           .from('private_messages')
           .select(`
@@ -141,7 +206,31 @@ export default function ConversationScreen() {
           .limit(200);
 
         if (queryError) throw queryError;
-        setMessages(data || []);
+
+        const newMessages = data || [];
+        const firstUnreadIndex = newMessages.findIndex(
+          (message) => message.sender_id === userId && !message.is_read
+        );
+        initialScrollIndexRef.current =
+          firstUnreadIndex >= 0 ? firstUnreadIndex : null;
+
+        await markAllAsRead();
+
+        // Recalculate the initial position whenever the screen is opened or refreshed.
+        initialPositionPendingRef.current = true;
+
+        setMessages(newMessages);
+        setTimeout(() => {
+          if (firstUnreadIndex >= 0) {
+            listRef.current?.scrollToIndex({
+              index: firstUnreadIndex,
+              animated: false,
+              viewPosition: 0.85,
+            });
+          } else {
+            listRef.current?.scrollToEnd({ animated: false });
+          }
+        }, 300);
       } catch (err) {
         console.error('Load messages error:', err);
         setError('Failed to load messages');
@@ -179,7 +268,8 @@ export default function ConversationScreen() {
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    // Sending always scrolls to bottom
+    setTimeout(() => scrollToEnd(true), 100);
 
     try {
       const { data, error } = await supabase
@@ -244,7 +334,11 @@ export default function ConversationScreen() {
             if (prev.some((m) => m.id === data.id)) return prev;
             return [...prev, data];
           });
-          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+          // ✅ Only auto-scroll if user is already near the bottom
+          if (isNearBottomRef.current) {
+            setTimeout(() => scrollToEnd(true), 100);
+          }
 
           if (data.recipient_id === user?.id && !data.is_read) {
             await supabase
@@ -263,7 +357,7 @@ export default function ConversationScreen() {
         }
       }
     },
-    [user, userId]
+    [user, userId, scrollToEnd]
   );
 
   // ============================================
@@ -274,8 +368,6 @@ export default function ConversationScreen() {
     mountedRef.current = true;
 
     loadUserProfile();
-    loadMessages(true);
-
     const statusInterval = setInterval(loadUserProfile, 15000);
     const channelName = `private-messages-${user?.id}-${userId}-${Date.now()}`;
 
@@ -311,7 +403,6 @@ export default function ConversationScreen() {
         },
         (payload) => {
           if (mountedRef.current) {
-            console.log('🟢 Profile updated:', payload.new.is_online);
             setOtherUser((prev) =>
               prev
                 ? {
@@ -347,8 +438,8 @@ export default function ConversationScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      markAllAsRead();
-    }, [markAllAsRead])
+      loadMessages(true);
+    }, [loadMessages])
   );
 
   // ============================================
@@ -366,6 +457,10 @@ export default function ConversationScreen() {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender_id === user?.id;
+    const bubbleWidth = Math.min(
+      Math.max(58, item.content.length * 8.5 + 32),
+      windowWidth * 0.8
+    );
     const time = item.created_at
       ? new Date(item.created_at).toLocaleTimeString([], {
           hour: '2-digit',
@@ -384,6 +479,7 @@ export default function ConversationScreen() {
           style={[
             styles.messageBubble,
             isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
+            { width: bubbleWidth },
           ]}
         >
           <Text
@@ -394,24 +490,24 @@ export default function ConversationScreen() {
           >
             {item.content}
           </Text>
-          <View style={styles.messageFooter}>
-            <Text
-              style={[
-                styles.messageTime,
-                { color: isMe ? 'rgba(255,255,255,0.72)' : TEXT_MUTED },
-              ]}
-            >
-              {time}
-            </Text>
-            {isMe && (
-              <Ionicons
-                name={item.is_read ? 'checkmark-done' : 'checkmark'}
-                size={14}
-                color={item.is_read ? '#4CAF50' : 'rgba(255,255,255,0.4)'}
-                style={styles.readReceipt}
-              />
-            )}
-          </View>
+        </View>
+        <View style={styles.messageFooter} pointerEvents="none">
+          <Text
+            style={[
+              styles.messageTime,
+              { color: isMe ? 'rgba(255,255,255,0.72)' : TEXT_MUTED },
+            ]}
+          >
+            {time}
+          </Text>
+          {isMe && (
+            <Ionicons
+              name={item.is_read ? 'checkmark-done' : 'checkmark'}
+              size={14}
+              color={item.is_read ? '#4CAF50' : 'rgba(255,255,255,0.4)'}
+              style={styles.readReceipt}
+            />
+          )}
         </View>
       </View>
     );
@@ -468,7 +564,7 @@ export default function ConversationScreen() {
                 ]}
               />
               <Text style={styles.headerStatus}>
-                {otherUser?.is_online ? 'Onlinee' : 'Offlinee'}
+                {otherUser?.is_online ? 'Online' : 'Offline'}
               </Text>
             </View>
           </View>
@@ -497,6 +593,8 @@ export default function ConversationScreen() {
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -509,12 +607,27 @@ export default function ConversationScreen() {
               colors={[ACCENT_GOLD]}
             />
           }
-          onContentSizeChange={() => {
-            listRef.current?.scrollToEnd({ animated: false });
+          // ✅ Scroll to newest ONCE after the list has measured content
+          onContentSizeChange={handleContentSizeChange}
+          // ✅ Safety net in case content size change hasn't fired yet
+          onLayout={handleLayout}
+          onScrollToIndexFailed={({ index }) => {
+            setTimeout(() => {
+              listRef.current?.scrollToIndex({
+                index,
+                animated: false,
+                viewPosition: 0.85,
+              });
+            }, 100);
           }}
           initialNumToRender={20}
           maxToRenderPerBatch={10}
           windowSize={10}
+          // ✅ Only on iOS: keeps position stable when keyboard toggles.
+          // Android's implementation can swallow scrollToEnd on first load.
+          maintainVisibleContentPosition={
+            Platform.OS === 'ios' ? { minIndexForVisible: 0 } : undefined
+          }
         />
 
         <View style={styles.inputContainer}>
@@ -623,7 +736,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  headerStatus: { fontSize: 11.5, color: TEXT_MUTED, opacity: 0.8 },
+  headerStatus: { fontSize: 11.5, color: TEXT_MUTED, opacity: 0.8, flex: 1 },
 
   errorBanner: {
     backgroundColor: 'rgba(239,107,107,0.10)',
@@ -641,33 +754,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 8,
+    flexGrow: 1,
   },
-  messageRow: { marginVertical: 2 },
+  messageRow: { alignSelf: 'stretch', marginVertical: 2 },
   messageLeft: { alignItems: 'flex-start' },
   messageRight: { alignItems: 'flex-end' },
   messageBubble: {
-    maxWidth: '80%',
-    paddingVertical: 9,
-    paddingHorizontal: 13,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
     borderRadius: 18,
     marginVertical: 1,
+    maxWidth: '80%',
   },
   messageBubbleMe: {
     backgroundColor: ACCENT_GOLD,
     borderBottomRightRadius: 6,
+    alignSelf: 'flex-end',
   },
   messageBubbleOther: {
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderBottomLeftRadius: 6,
-    borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.04)',
+    alignSelf: 'flex-start',
   },
-  messageText: { fontSize: 14.5, lineHeight: 20 },
+  messageText: { fontSize: 14.5, lineHeight: 20, flexShrink: 1 },
   messageFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: 3,
+    marginTop: 2,
     gap: 4,
   },
   messageTime: { fontSize: 10, opacity: 0.7 },

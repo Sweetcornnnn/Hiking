@@ -1,4 +1,4 @@
-// screens/chat/GroupChatScreen.tsx - WITH PERSONALIZED SYSTEM MESSAGES
+// screens/chat/GroupChatScreen.tsx - WITH PERSONALIZED SYSTEM MESSAGES + SCROLL-TO-LATEST FIX
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -13,6 +13,7 @@ import {
   Alert,
   TextInput,
   Modal,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -86,7 +87,6 @@ const normalizeProfile = (profiles: any): ProfileData | null => {
  * Format a system message based on the current user's POV
  */
 const formatSystemMessage = (item: Message, currentUserId: string): string => {
-  // Fallback to raw content if no metadata
   if (!item.metadata) {
     return item.content;
   }
@@ -94,28 +94,22 @@ const formatSystemMessage = (item: Message, currentUserId: string): string => {
   const { action, actor_id, actor_name, target_id, target_name } = item.metadata;
 
   if (action === 'member_added') {
-    // The person who added someone
     if (actor_id === currentUserId) {
       return `You added ${target_name} to the group.`;
     }
-    // The person who was added
     if (target_id === currentUserId) {
       return `${actor_name} added you to the group.`;
     }
-    // Everyone else
     return `${actor_name} added ${target_name} to the group.`;
   }
 
   if (action === 'member_left') {
-    // The person who left
     if (actor_id === currentUserId) {
       return 'You left the group';
     }
-    // Everyone else
     return `${actor_name} left the group`;
   }
 
-  // Fallback
   return item.content;
 };
 
@@ -145,6 +139,58 @@ export default function GroupChatScreen() {
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
+  const { width: windowWidth } = useWindowDimensions();
+
+  // ✅ Scroll tracking
+  const isNearBottomRef = useRef(true);
+  const initialScrollIndexRef = useRef<number | null>(null);
+  const initialPositionPendingRef = useRef(false);
+  const initialPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ============================================
+  // SCROLL HELPERS
+  // ============================================
+
+  const handleScroll = useCallback((event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 80;
+    isNearBottomRef.current =
+      layoutMeasurement.height + contentOffset.y >=
+      contentSize.height - paddingToBottom;
+  }, []);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (initialPositionPendingRef.current && messages.length > 0) {
+      const index = initialScrollIndexRef.current;
+      if (index !== null && index < messages.length) {
+        listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.85 });
+        initialScrollIndexRef.current = null;
+      } else {
+        listRef.current?.scrollToEnd({ animated: false });
+      }
+      if (initialPositionTimerRef.current) {
+        clearTimeout(initialPositionTimerRef.current);
+      }
+      initialPositionTimerRef.current = setTimeout(() => {
+        initialPositionPendingRef.current = false;
+        initialScrollIndexRef.current = null;
+      }, 750);
+    }
+  }, [messages.length]);
+
+  const handleLayout = useCallback(() => {
+    if (initialPositionPendingRef.current && messages.length > 0) {
+      requestAnimationFrame(() => {
+        const index = initialScrollIndexRef.current;
+        if (index !== null && index < messages.length) {
+          listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.85 });
+          initialScrollIndexRef.current = null;
+        } else {
+          listRef.current?.scrollToEnd({ animated: false });
+        }
+      });
+    }
+  }, [messages.length]);
 
   // ============================================
   // MARK GROUP AS READ
@@ -237,6 +283,17 @@ export default function GroupChatScreen() {
         setError(null);
         if (!refresh) setLoading(true);
 
+        const { data: receipt } = await supabase
+          .from('group_read_receipts')
+          .select('last_read_at')
+          .eq('group_id', groupId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        const lastReadAt = receipt?.last_read_at
+          ? new Date(receipt.last_read_at).getTime()
+          : 0;
+
         const { data, error: queryError } = await supabase
           .from('group_messages')
           .select(`
@@ -266,7 +323,29 @@ export default function GroupChatScreen() {
           profiles: normalizeProfile(msg.profiles),
         }));
 
+        const firstUnreadIndex = normalizedMessages.findIndex(
+          (message) =>
+            message.sender_id !== user.id &&
+            new Date(message.created_at).getTime() > lastReadAt
+        );
+        initialScrollIndexRef.current =
+          firstUnreadIndex >= 0 ? firstUnreadIndex : null;
+
+        // Recalculate the initial position whenever the screen is opened or refreshed.
+        initialPositionPendingRef.current = true;
+
         setMessages(normalizedMessages);
+        setTimeout(() => {
+          if (firstUnreadIndex >= 0) {
+            listRef.current?.scrollToIndex({
+              index: firstUnreadIndex,
+              animated: false,
+              viewPosition: 0.85,
+            });
+          } else {
+            listRef.current?.scrollToEnd({ animated: false });
+          }
+        }, 300);
         await markGroupAsRead();
       } catch (err) {
         console.error('Load messages error:', err);
@@ -399,7 +478,12 @@ export default function GroupChatScreen() {
           if (prev.some((m) => m.id === normalizedMessage.id)) return prev;
           return [...prev, normalizedMessage];
         });
-        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+        // ✅ Only auto-scroll if user is already near the bottom
+        if (isNearBottomRef.current) {
+          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+
         await markGroupAsRead();
       }
     },
@@ -443,8 +527,6 @@ export default function GroupChatScreen() {
 
     loadGroup();
     loadMembers();
-    loadMessages(true);
-
     if (groupId) {
       const channelName = `group-messages-${groupId}-${Date.now()}`;
 
@@ -482,8 +564,8 @@ export default function GroupChatScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      markGroupAsRead();
-    }, [markGroupAsRead])
+      loadMessages(true);
+    }, [loadMessages])
   );
 
   // ============================================
@@ -515,7 +597,6 @@ export default function GroupChatScreen() {
         user.user_metadata?.username ||
         'Someone';
 
-      // Insert system message with metadata BEFORE leaving
       const { error: msgError } = await supabase
         .from('group_messages')
         .insert({
@@ -534,7 +615,6 @@ export default function GroupChatScreen() {
         console.error('Failed to insert leave message:', msgError);
       }
 
-      // Delete membership
       const { error: leaveError } = await supabase
         .from('group_members')
         .delete()
@@ -543,7 +623,6 @@ export default function GroupChatScreen() {
 
       if (leaveError) throw leaveError;
 
-      // Delete read receipt
       await supabase
         .from('group_read_receipts')
         .delete()
@@ -649,7 +728,6 @@ export default function GroupChatScreen() {
   // ============================================
 
   const renderMessage = ({ item }: { item: Message }) => {
-    // SYSTEM MESSAGE - personalized per viewer
     if (item.type === 'system') {
       const displayText = formatSystemMessage(item, user?.id || '');
       return (
@@ -662,6 +740,10 @@ export default function GroupChatScreen() {
     const isMe = item.sender_id === user?.id;
     const profile = normalizeProfile(item.profiles);
     const senderName = profile?.full_name || profile?.username || 'Anonymous';
+    const bubbleWidth = Math.min(
+      Math.max(58, item.content.length * 8.5 + 32),
+      windowWidth * 0.8
+    );
 
     const time = item.created_at
       ? new Date(item.created_at).toLocaleTimeString([], {
@@ -698,6 +780,7 @@ export default function GroupChatScreen() {
           style={[
             styles.messageBubble,
             isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
+            { width: bubbleWidth },
           ]}
         >
           <Text
@@ -708,6 +791,14 @@ export default function GroupChatScreen() {
           >
             {item.content}
           </Text>
+        </View>
+        <View
+          style={[
+            styles.messageMeta,
+            { width: bubbleWidth },
+            isMe ? styles.messageMetaMe : styles.messageMetaOther,
+          ]}
+        >
           <Text
             style={[
               styles.messageTime,
@@ -847,6 +938,8 @@ export default function GroupChatScreen() {
             renderItem={renderMessage}
             contentContainerStyle={styles.messageList}
             showsVerticalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -855,9 +948,22 @@ export default function GroupChatScreen() {
                 colors={[ACCENT_GOLD]}
               />
             }
-            onContentSizeChange={() => {
-              listRef.current?.scrollToEnd({ animated: false });
+            // ✅ Scroll to newest ONCE after the list has measured content
+            onContentSizeChange={handleContentSizeChange}
+            // ✅ Safety net in case content size change hasn't fired yet
+            onLayout={handleLayout}
+            onScrollToIndexFailed={({ index }) => {
+              setTimeout(() => {
+                listRef.current?.scrollToIndex({
+                  index,
+                  animated: false,
+                  viewPosition: 0.85,
+                });
+              }, 100);
             }}
+            initialNumToRender={20}
+            maxToRenderPerBatch={10}
+            windowSize={10}
           />
         )}
 
@@ -1156,8 +1262,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingBottom: 8,
+    flexGrow: 1,
   },
-  messageRow: { marginVertical: 2 },
+  messageRow: { alignSelf: 'stretch', marginVertical: 2 },
   messageLeft: { alignItems: 'flex-start' },
   messageRight: { alignItems: 'flex-end' },
   messageSenderRow: {
@@ -1177,7 +1284,6 @@ const styles = StyleSheet.create({
   smallAvatarText: { color: '#fff', fontSize: 9, fontWeight: '700' },
   senderName: { fontSize: 11, fontWeight: '600', opacity: 0.7 },
   messageBubble: {
-    maxWidth: '80%',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 16,
@@ -1193,13 +1299,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.03)',
   },
-  messageText: { fontSize: 14, lineHeight: 18 },
+  messageText: { fontSize: 14, lineHeight: 18, flexShrink: 1 },
   messageTime: {
     fontSize: 9,
     marginTop: 4,
-    alignSelf: 'flex-end',
     opacity: 0.5,
   },
+  messageMeta: { flexDirection: 'row' },
+  messageMetaMe: { alignSelf: 'flex-end', justifyContent: 'flex-end' },
+  messageMetaOther: { alignSelf: 'flex-start', justifyContent: 'flex-start' },
   systemMessageContainer: {
     alignItems: 'center',
     marginVertical: 12,

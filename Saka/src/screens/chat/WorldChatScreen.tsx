@@ -1,4 +1,4 @@
-// screens/WorldChatScreen.tsx - WITH UNIQUE CHANNEL
+// screens/WorldChatScreen.tsx - WITH UNIQUE CHANNEL + SCROLL-TO-LATEST FIX
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -21,6 +21,7 @@ import {
   ACCENT_GOLD,
 } from '../../theme/designTokens';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 
 export default function WorldChatScreen() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -34,6 +35,45 @@ export default function WorldChatScreen() {
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
   const pendingMessagesRef = useRef(new Map<string, number[]>());
+
+  // ✅ Scroll tracking
+  const isNearBottomRef = useRef(true);
+  const initialPositionPendingRef = useRef(false);
+  const initialPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ============================================
+  // SCROLL HELPERS
+  // ============================================
+
+  const handleScroll = useCallback((event: any) => {
+    const { contentOffset } = event.nativeEvent;
+    const paddingToBottom = 80;
+    isNearBottomRef.current = contentOffset.y <= paddingToBottom;
+  }, []);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (initialPositionPendingRef.current && messages.length > 0) {
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      if (initialPositionTimerRef.current) {
+        clearTimeout(initialPositionTimerRef.current);
+      }
+      initialPositionTimerRef.current = setTimeout(() => {
+        initialPositionPendingRef.current = false;
+      }, 750);
+    }
+  }, [messages.length]);
+
+  const handleLayout = useCallback(() => {
+    if (initialPositionPendingRef.current && messages.length > 0) {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      });
+    }
+  }, [messages.length]);
+
+  // ============================================
+  // LOAD MESSAGES
+  // ============================================
 
   const loadMessages = useCallback(async (refresh = false) => {
     try {
@@ -61,7 +101,13 @@ export default function WorldChatScreen() {
 
       if (queryError) throw queryError;
 
+      // Recalculate the initial position whenever the screen is opened or refreshed.
+      initialPositionPendingRef.current = true;
+
       setMessages(data || []);
+      setTimeout(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      }, 300);
     } catch (err) {
       console.error('WorldChat load error:', err);
       setError('Failed to load messages');
@@ -87,6 +133,10 @@ export default function WorldChatScreen() {
       console.warn('Failed to fetch online count:', err);
     }
   }, []);
+
+  // ============================================
+  // HANDLE NEW MESSAGE (REALTIME)
+  // ============================================
 
   const handleNewMessage = useCallback(async (payload: any) => {
     if (!mountedRef.current) return;
@@ -129,9 +179,19 @@ export default function WorldChatScreen() {
 
         return [...prev, data];
       });
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+      // ✅ Only auto-scroll if user is already near the bottom
+      if (isNearBottomRef.current) {
+        setTimeout(() => {
+          listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        }, 100);
+      }
     }
   }, []);
+
+  // ============================================
+  // SEND MESSAGE
+  // ============================================
 
   const handleSend = async (text: string) => {
     if (!user) return;
@@ -157,7 +217,9 @@ export default function WorldChatScreen() {
     pendingIds.push(tempId);
     pendingMessagesRef.current.set(pendingKey, pendingIds);
     setMessages((prev) => [...prev, optimisticMessage]);
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+    setTimeout(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    }, 50);
 
     try {
       const { error } = await supabase
@@ -186,6 +248,10 @@ export default function WorldChatScreen() {
     await loadMessages(true);
     await fetchOnlineCount();
   }, [loadMessages, fetchOnlineCount]);
+
+  // ============================================
+  // EFFECT: INITIAL LOAD + REALTIME
+  // ============================================
 
   useEffect(() => {
     mountedRef.current = true;
@@ -224,6 +290,16 @@ export default function WorldChatScreen() {
     };
   }, [user]);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadMessages(true);
+    }, [loadMessages])
+  );
+
+  // ============================================
+  // LOADING / EMPTY
+  // ============================================
+
   if (loading && messages.length === 0) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -244,6 +320,10 @@ export default function WorldChatScreen() {
       </View>
     );
   }
+
+  // ============================================
+  // MAIN RENDER
+  // ============================================
 
   return (
     <KeyboardAvoidingView
@@ -267,13 +347,16 @@ export default function WorldChatScreen() {
 
       <FlatList
         ref={listRef}
-        data={messages}
+        data={[...messages].reverse()}
+        inverted
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
           <ChatMessage message={item} currentUserId={user?.id} />
         )}
         contentContainerStyle={styles.messageList}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -282,6 +365,13 @@ export default function WorldChatScreen() {
             colors={[ACCENT_GOLD]}
           />
         }
+        // ✅ Scroll to newest ONCE after the list has measured content
+        onContentSizeChange={handleContentSizeChange}
+        // ✅ Safety net in case content size change hasn't fired yet
+        onLayout={handleLayout}
+        onScrollToIndexFailed={() => {
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
+        }}
         initialNumToRender={20}
         maxToRenderPerBatch={10}
         windowSize={10}
@@ -293,6 +383,10 @@ export default function WorldChatScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+// ============================================
+// STYLES
+// ============================================
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG_PANEL },
@@ -348,6 +442,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 10,
     paddingBottom: 8,
+    flexGrow: 1,
   },
   inputWrapper: {
     paddingHorizontal: 12,
