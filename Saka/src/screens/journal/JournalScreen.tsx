@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import JournalImageGrid from '../../components/journal/JournalImageGrid';
@@ -11,16 +11,29 @@ import { ACCENT_GOLD, BG_CARD, BG_DANGER_SUBTLE, BG_PANEL, BG_SUBTLE, BORDER_DEF
 
 export default function JournalScreen() {
   const router = useRouter();
+  const { viewpointId, mountainId } = useLocalSearchParams<{
+    viewpointId?: string | string[];
+    mountainId?: string | string[];
+  }>();
+  const preselectedViewpointId = typeof viewpointId === 'string' ? viewpointId : null;
+  const preselectedMountainId = typeof mountainId === 'string' ? mountainId : null;
   const { entries, fetchEntries, saveEntry, deleteEntry, isLoading, error, clearError } = useJournalStore();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [images, setImages] = useState<JournalImage[]>([]);
   const [rating, setRating] = useState(0);
+  const [isPublic, setIsPublic] = useState(false);
   const [mountains, setMountains] = useState<Mountain[]>([]);
-  const [selectedMountainId, setSelectedMountainId] = useState<string | null>(null);
+  const [selectedMountainId, setSelectedMountainId] = useState<string | null>(preselectedMountainId);
   const [mountainsLoading, setMountainsLoading] = useState(true);
   const [mountainsError, setMountainsError] = useState<string | null>(null);
   const saveInProgress = useRef(false);
+
+  useEffect(() => {
+    if (preselectedMountainId) {
+      setSelectedMountainId(preselectedMountainId);
+    }
+  }, [preselectedMountainId]);
 
   const normalizeLocalUri = (uri: string): string => {
     let normalized = uri;
@@ -69,11 +82,8 @@ export default function JournalScreen() {
       quality: 0.8,
     });
     if (!result.canceled) {
-      console.log('[Journal] Selected assets:', result.assets);
       const selectedImages = result.assets.map((asset) => {
         const uri = normalizeLocalUri(asset.uri);
-        console.log('[Journal] Original URI:', asset.uri);
-        console.log('[Journal] Normalized URI:', uri);
         return { uri, mimeType: asset.mimeType };
       });
 
@@ -90,7 +100,7 @@ export default function JournalScreen() {
       Alert.alert('Complete your entry', 'Add a title and describe your experience.');
       return;
     }
-    if (!selectedMountainId) {
+    if (!selectedMountainId && !preselectedViewpointId) {
       Alert.alert('Choose a mountain', 'Select the mountain these journal photos belong to.');
       return;
     }
@@ -102,6 +112,8 @@ export default function JournalScreen() {
         content,
         images,
         mountainId: selectedMountainId,
+        viewpointId: preselectedViewpointId,
+        isPublic,
         rating: rating || undefined,
       });
 
@@ -115,7 +127,8 @@ export default function JournalScreen() {
       setContent('');
       setImages([]);
       setRating(0);
-      setSelectedMountainId(null);
+      setIsPublic(false);
+      setSelectedMountainId(preselectedMountainId);
     } finally {
       saveInProgress.current = false;
     }
@@ -141,7 +154,7 @@ export default function JournalScreen() {
         <Text style={styles.label}>Your experience</Text>
         <TextInput value={content} onChangeText={setContent} placeholder="What did you notice, feel, or learn on the trail?" placeholderTextColor={TEXT_FAINT} multiline textAlignVertical="top" style={[styles.input, styles.textArea]} />
 
-        <Text style={styles.label}>Mountain *</Text>
+        <Text style={styles.label}>{preselectedViewpointId ? 'Mountain' : 'Mountain *'}</Text>
         {mountainsLoading ? (
           <Text style={styles.helper}>Loading mountains...</Text>
         ) : mountainsError ? (
@@ -163,7 +176,16 @@ export default function JournalScreen() {
             ))}
           </ScrollView>
         )}
-        <Text style={styles.helper}>All photos in this entry will be shown under the selected mountain.</Text>
+        <Text style={styles.helper}>
+          {preselectedViewpointId
+            ? 'Mountain is optional for an entry from this viewpoint.'
+            : 'All photos in this entry will be shown under the selected mountain.'}
+        </Text>
+        {preselectedViewpointId && (
+          <Text style={styles.viewpointBanner}>
+            This entry will appear on Sakagram for the selected viewpoint.
+          </Text>
+        )}
 
         <View style={styles.rowHeader}>
           <Text style={styles.label}>Photos</Text>
@@ -178,6 +200,30 @@ export default function JournalScreen() {
         <View style={styles.ratingRow}>
           {[1, 2, 3, 4, 5].map((value) => <TouchableOpacity key={value} onPress={() => setRating(value)}><Ionicons name={value <= rating ? 'star' : 'star-outline'} size={25} color={ACCENT_GOLD} /></TouchableOpacity>)}
         </View>
+
+        <Text style={styles.label}>Visibility</Text>
+        <TouchableOpacity
+          onPress={() => setIsPublic((value) => !value)}
+          style={styles.visibilityRow}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: isPublic }}
+        >
+          <Ionicons
+            name={isPublic ? 'earth-outline' : 'lock-closed-outline'}
+            size={16}
+            color={isPublic ? ACCENT_GOLD : TEXT_MUTED}
+          />
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={styles.visibilityTitle}>
+              {isPublic ? 'Public' : 'Private'}
+            </Text>
+            <Text style={styles.helper}>
+              {isPublic
+                ? 'Shared on Sakagram for this viewpoint.'
+                : 'Only visible to you on your profile.'}
+            </Text>
+          </View>
+        </TouchableOpacity>
 
         {error && <Text style={styles.error}>{error}</Text>}
         <TouchableOpacity onPress={save} disabled={isLoading} style={[styles.saveButton, isLoading && styles.disabled]}>
@@ -235,6 +281,7 @@ const styles = StyleSheet.create({
   input: { color: TEXT_PRIMARY, backgroundColor: BG_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
   textArea: { minHeight: 125 },
   rowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  viewpointBanner: { color: ACCENT_GOLD, fontSize: 10, lineHeight: 15, marginTop: 6 },
   mountainOptions: { gap: 8, paddingRight: 4 },
   mountainOption: { borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: BG_CARD },
   mountainOptionSelected: { borderColor: BORDER_GOLD, backgroundColor: BG_SUBTLE },
@@ -243,6 +290,8 @@ const styles = StyleSheet.create({
   addButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: BORDER_GOLD, borderRadius: RADIUS_BTN, paddingHorizontal: 10, paddingVertical: 7 },
   addButtonText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '700' },
   helper: { color: TEXT_FAINT, fontSize: 10, lineHeight: 15 },
+  visibilityRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: BG_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 12, paddingVertical: 10 },
+  visibilityTitle: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
   ratingRow: { flexDirection: 'row', gap: 8 },
   error: { color: '#E07070', fontSize: 11, marginTop: 16 },
   saveButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: ACCENT_GOLD, borderRadius: RADIUS_CARD, paddingVertical: 14, marginTop: 28 },

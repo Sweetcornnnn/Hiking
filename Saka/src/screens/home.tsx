@@ -20,6 +20,7 @@ import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
+import { uploadProfileAvatar } from '../services/profileAvatarService';
 import { getHomeVideoPosters, MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
 import { MOUNTAIN_TIPS, MountainTips } from '../data/mountainTips';
 import TipsAndTricks from '../components/mountainInfo/TipsAndTricks';
@@ -160,13 +161,13 @@ const MountainSlide = memo(function MountainSlide({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, profile, signOut } = useAuthStore();
+  const { user, profile, signOut, updateProfile } = useAuthStore();
   const { setSelectedMountainId } = useWildTrackStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(false);
   const [tipsMountain, setTipsMountain] = useState<MountainTips | null>(null);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const profileImage = profile?.avatar_url ?? null;
   const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
   const initialVideoMountainId = mountains[0] && MOUNTAIN_VIDEOS[mountains[0].id]
     ? mountains[0].id
@@ -178,6 +179,25 @@ export default function HomeScreen() {
     player.loop = true;
     player.muted = true;
   });
+  const handleProfileImageSelect = async (uri: string) => {
+    if (!user) {
+      Alert.alert('Sign in required', 'Sign in to save a profile photo.');
+      return;
+    }
+
+    try {
+      const avatarUrl = await uploadProfileAvatar(user.id, uri);
+      const result = await updateProfile({ avatar_url: avatarUrl });
+      if (!result.success) {
+        throw new Error(result.error || 'Unable to save your profile photo.');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to save your profile photo.';
+      console.error('[Profile] Avatar update failed:', error);
+      Alert.alert('Profile photo not saved', message);
+    }
+  };
+
   const [videoPosters, setVideoPosters] = useState<Record<string, VideoThumbnail>>(
     () => getHomeVideoPosters()
   );
@@ -503,7 +523,7 @@ export default function HomeScreen() {
           openLogoutConfirm();
         }}
         profileImage={profileImage}
-        onProfileImageSelect={setProfileImage}
+        onProfileImageSelect={handleProfileImageSelect}
       />
 
       <Modal

@@ -32,7 +32,7 @@ interface ProfileCardProps {
   onRequestLogout: () => void;
   profileImage?: string | null;
   onAvatarPress?: () => void;
-  onProfileImageSelect?: (uri: string) => void;
+  onProfileImageSelect?: (uri: string) => void | Promise<void>;
 }
 
 // Font-scale caps. Tight UI (buttons, labels, header) stops growing sooner than
@@ -256,7 +256,7 @@ export default function ProfileCard({
       quality: 0.8,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
-      onProfileImageSelect?.(result.assets[0].uri);
+      await onProfileImageSelect?.(result.assets[0].uri);
     }
   };
 
