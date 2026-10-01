@@ -885,12 +885,17 @@ export default function GroupChatScreen() {
     const edited = isEdited(item);
     const hasReply = !!item.reply_to_id;
 
-    const replierLabel = isMe ? 'You' : senderName;
-    const repliedToLabel = item.reply_to_sender || 'a message';
-    const replyCaption = `${replierLabel} replied to ${repliedToLabel}`;
     const repliedMessage = hasReply
       ? messages.find((message) => message.id === item.reply_to_id)
       : null;
+    const repliedToLabel = repliedMessage
+      ? getSenderLabel(repliedMessage)
+      : item.reply_to_sender || 'a message';
+    const replyCaption = isMe
+      ? `You replied to ${repliedToLabel}`
+      : repliedMessage?.sender_id === user?.id
+        ? `${senderName} replied to you`
+        : `${senderName} replied to ${repliedToLabel}`;
     const replyPreview =
       repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
     const bubbleTextLength = Math.max(
