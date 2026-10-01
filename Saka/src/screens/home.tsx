@@ -115,21 +115,15 @@ const MountainSlide = memo(function MountainSlide({
   width,
   height,
   isPortrait,
-<<<<<<< HEAD
   onOpenTips,
-=======
   onEventsPress,
->>>>>>> 2a3cc031a72a3582b6c1a4e838528d34040a6a56
 }: {
   mountain: Mountain;
   width: number;
   height: number;
   isPortrait: boolean;
-<<<<<<< HEAD
   onOpenTips: (mountain: Mountain) => void;
-=======
   onEventsPress: (mountainId: string) => void;
->>>>>>> 2a3cc031a72a3582b6c1a4e838528d34040a6a56
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
 
@@ -177,7 +171,6 @@ const MountainSlide = memo(function MountainSlide({
             <Text style={styles.eventsPillText}>Events</Text>
           </TouchableOpacity>
         </View>
-<<<<<<< HEAD
         <View style={styles.mountainNameRow}>
           <Text
             style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}
@@ -195,12 +188,10 @@ const MountainSlide = memo(function MountainSlide({
             <Ionicons name="information-circle-outline" size={22} color={ACCENT_GOLD} />
           </TouchableOpacity>
         </View>
-=======
 
         <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]} numberOfLines={1}>
           {mountain.name}
         </Text>
->>>>>>> 2a3cc031a72a3582b6c1a4e838528d34040a6a56
         <Text style={styles.mountainDescription} numberOfLines={2}>
           {mountain.description}
         </Text>
@@ -254,7 +245,6 @@ export default function HomeScreen() {
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
 
-<<<<<<< HEAD
   const handleOpenTips = useCallback((mountain: Mountain) => {
     const normalizedName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
     const mountainTips = MOUNTAIN_TIPS.find((tips) =>
@@ -269,7 +259,6 @@ export default function HomeScreen() {
 
     setTipsMountain(mountainTips);
   }, []);
-=======
   // Stable handler for the per-slide Events button (keeps MountainSlide memoized)
   const handleEventsPress = useCallback(
     (mountainId: string) => {
@@ -280,7 +269,6 @@ export default function HomeScreen() {
     },
     [router]
   );
->>>>>>> 2a3cc031a72a3582b6c1a4e838528d34040a6a56
 
   // Logout toast state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -380,11 +368,8 @@ export default function HomeScreen() {
             width={dimensions.width}
             height={dimensions.height}
             isPortrait={isPortrait}
-<<<<<<< HEAD
             onOpenTips={handleOpenTips}
-=======
             onEventsPress={handleEventsPress}
->>>>>>> 2a3cc031a72a3582b6c1a4e838528d34040a6a56
           />
         ))}
       </Animated.ScrollView>
@@ -462,7 +447,6 @@ export default function HomeScreen() {
         onProfileImageSelect={setProfileImage}
       />
 
-<<<<<<< HEAD
       <Modal
         visible={tipsMountain !== null}
         animationType="slide"
@@ -478,9 +462,7 @@ export default function HomeScreen() {
       </Modal>
 
       {/* CTA button – shown on every slide */}
-=======
       {/* CTA button */}
->>>>>>> 2a3cc031a72a3582b6c1a4e838528d34040a6a56
       {mountains[activeIndex] && (
         <TouchableOpacity
           style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
