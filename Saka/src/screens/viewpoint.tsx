@@ -19,6 +19,9 @@ import {
   Modal,
   ScrollView,
   Animated,
+  Easing,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   StyleSheet,
   Dimensions,
   StatusBar,
@@ -35,6 +38,18 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const LEFT_COLUMN_WIDTH = SCREEN_WIDTH * 0.35;
 const RIGHT_COLUMN_WIDTH = SCREEN_WIDTH - LEFT_COLUMN_WIDTH;
+
+// ── Sakagram focus mode ───────────────────────────────────────────────────
+// When the Sakagram section scrolls into view, the media rail slides out to the
+// left, the info panel widens to the full screen, and the feed grows into a
+// centered, larger column so it's the only thing to focus on.
+const FOCUS_MS = 700;                      // slide / widen duration (slow + gentle)
+const FOCUS_EASING = Easing.inOut(Easing.cubic); // soft start, soft landing
+const FOCUS_COOLDOWN_MS = FOCUS_MS + 500;   // ignore focus toggles while settling
+const FOCUS_ENTER_VISIBLE = .01;           // fraction of viewport showing Sakagram to enter
+const FOCUS_EXIT_VISIBLE = 0;             // scrolling up past this leaves focus mode
+const SAKAGRAM_FOCUSED_WIDTH = Math.min(SCREEN_WIDTH - 32, 560); // Instagram-like centered feed
+const SAKAGRAM_CONTENT_FADE_MS = 600;
 
 // ── ProfileCard design tokens ─────────────────────────────────────────────
 const PC = {
@@ -95,6 +110,90 @@ export default function ViewpointScreen() {
   const [loading, setLoading] = React.useState(true);
   const [imageModalVisible, setImageModalVisible] = React.useState(false);
   const [modalMedia, setModalMedia] = React.useState<MediaItem | null>(null);
+
+  // Sakagram focus mode (0 = normal split layout, 1 = Sakagram fills the screen)
+  const [sakagramFocused, setSakagramFocused] = React.useState(false);
+  // Type size inside Sakagram swaps mid-transition, hidden by a brief fade dip.
+  const [sakagramSized, setSakagramSized] = React.useState(false);
+  const contentFade = React.useRef(new Animated.Value(1)).current;
+  const focusAnim = React.useRef(new Animated.Value(0)).current;
+  const sakagramY = React.useRef(0);
+  const lastScrollY = React.useRef(0);
+  const focusedRef = React.useRef(false);
+  const lastToggleAt = React.useRef(0);
+
+  React.useEffect(() => {
+    return () => {
+      focusAnim.stopAnimation();
+      contentFade.stopAnimation();
+    };
+  }, [focusAnim, contentFade]);
+
+  const setFocus = React.useCallback((next: boolean) => {
+    if (focusedRef.current === next) {
+      return;
+    }
+    focusedRef.current = next;
+    lastToggleAt.current = Date.now();
+    setSakagramFocused(next);
+
+    // Hide Sakagram before changing its layout, then reveal it after the resize.
+    Animated.timing(contentFade, {
+      toValue: 0,
+      duration: SAKAGRAM_CONTENT_FADE_MS,
+      easing: Easing.inOut(Easing.quad),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) {
+        return;
+      }
+      setSakagramSized(next);
+
+      Animated.timing(focusAnim, {
+        toValue: next ? 1 : 0,
+        duration: FOCUS_MS,
+        easing: FOCUS_EASING,
+        useNativeDriver: false,
+      }).start(({ finished: layoutFinished }) => {
+        if (!layoutFinished) {
+          return;
+        }
+        Animated.timing(contentFade, {
+          toValue: 1,
+          duration: SAKAGRAM_CONTENT_FADE_MS,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+      });
+    });
+  }, [focusAnim, contentFade]);
+
+  const handleRightScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const viewportH = e.nativeEvent.layoutMeasurement.height;
+    const goingDown = y > lastScrollY.current;
+    lastScrollY.current = y;
+
+    if (sakagramY.current <= 0) {
+      return;
+    }
+    // Layout changes while animating shift the offsets; wait until it settles.
+    if (Date.now() - lastToggleAt.current < FOCUS_COOLDOWN_MS) {
+      return;
+    }
+
+    // How much of the viewport Sakagram currently occupies (0..1+).
+    const visible = (y + viewportH - sakagramY.current) / viewportH;
+    if (!focusedRef.current && goingDown && visible > FOCUS_ENTER_VISIBLE) {
+      setFocus(true);
+    } else if (focusedRef.current && !goingDown && visible < FOCUS_EXIT_VISIBLE) {
+      setFocus(false);
+    }
+  };
+
+  const exitFocus = () => {
+    setFocus(false);
+  };
 
   React.useEffect(() => {
     let active = true;
@@ -183,7 +282,24 @@ export default function ViewpointScreen() {
 
       <View style={styles.bodyRow}>
         {/* ── LEFT: card-stack media carousel (~35%) ──────────────────── */}
-        <View style={styles.leftColumn}>
+        <Animated.View
+          pointerEvents={sakagramFocused ? 'none' : 'auto'}
+          style={[
+            styles.leftColumn,
+            {
+              opacity: focusAnim.interpolate({
+                inputRange: [0, 0.7, 1],
+                outputRange: [1, 0.55, 0],
+              }),
+              transform: [{
+                translateX: focusAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, -LEFT_COLUMN_WIDTH],
+                }),
+              }],
+            },
+          ]}
+        >
           <VerticalMediaCarousel
             media={mediaList}
             height={SCREEN_HEIGHT}
@@ -194,13 +310,26 @@ export default function ViewpointScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.mapBackBtn}>
             <Ionicons name="map-outline" size={17} color={PC.textSecondary} />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         {/* ── RIGHT: compact info panel (~65%), own scroll ────────────── */}
+        <Animated.View
+          style={[
+            styles.rightWrap,
+            {
+              marginLeft: focusAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [LEFT_COLUMN_WIDTH, 0],
+              }),
+            },
+          ]}
+        >
         <ScrollView
           style={styles.rightColumn}
           contentContainerStyle={styles.rightColumnContent}
           showsVerticalScrollIndicator={false}
+          onScroll={handleRightScroll}
+          scrollEventThrottle={16}
         >
           {/* Header card — title, elevation, stats, tags all in one place */}
           <View style={styles.headerCard}>
@@ -352,12 +481,60 @@ export default function ViewpointScreen() {
             </TouchableOpacity>
           </View>
 
-          <SakagramSection
-            viewpointId={data.id}
-            viewpointName={data.name}
-            mountainId={mountainId}
-          />
+          {/* Sakagram grows into a larger, centered column in focus mode */}
+          <Animated.View
+            onLayout={(e) => { sakagramY.current = e.nativeEvent.layout.y; }}
+            style={{
+              alignSelf: 'center',
+              width: focusAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [RIGHT_COLUMN_WIDTH, SAKAGRAM_FOCUSED_WIDTH],
+              }),
+            }}
+          >
+            <Animated.View style={{ opacity: contentFade }}>
+              <SakagramSection
+                viewpointId={data.id}
+                viewpointName={data.name}
+                mountainId={mountainId}
+                focused={sakagramSized}
+              />
+            </Animated.View>
+          </Animated.View>
         </ScrollView>
+
+        {/* Floating controls: the media rail (and its map button) are gone in focus mode */}
+        <Animated.View
+          pointerEvents={sakagramFocused ? 'box-none' : 'none'}
+          style={[
+            styles.focusBar,
+            {
+              opacity: focusAnim,
+              transform: [{
+                translateY: focusAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }),
+              }],
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.focusBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Back to map"
+          >
+            <Ionicons name="map-outline" size={16} color={PC.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={exitFocus}
+            style={styles.focusBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Back to viewpoint details"
+          >
+            <Ionicons name="chevron-up" size={15} color={PC.textSecondary} />
+            <Text style={styles.focusBtnText}>Details</Text>
+          </TouchableOpacity>
+        </Animated.View>
+        </Animated.View>
       </View>
 
       {/* ── Full-screen media modal (images + videos) ───────────────────── */}
@@ -432,13 +609,9 @@ const CARD_HEIGHT_RATIO = 0.5; // each card is ~half the column height
 const CARD_GAP = -10;            // vertical gap between cards
 const CARD_INSET = 10;          // horizontal margin so cards don't touch the column edges
 
-// The carousel loops by repeating the media list many times and starting the
-// scroll position in the middle repeat. As the user nears either end, we jump
-// back to the equivalent position in the middle repeat with animated:false,
-// which is imperceptible since the underlying image at that position is the
-// same. This is a "long enough to feel infinite" loop rather than a true
-// infinite list, which keeps things simple without a native infinite-scroll lib.
-const LOOP_REPEATS = 25;
+// Keep one copy on each side of the starting copy. When scrolling reaches an
+// outer copy, recenter on the matching item in the middle copy without animation.
+const LOOP_REPEATS = 3;
 
 function VerticalMediaCarousel({
   media,
@@ -466,7 +639,7 @@ function VerticalMediaCarousel({
     return Array.from({ length: media.length * LOOP_REPEATS }, (_, i) => media[i % media.length]);
   }, [media]);
   const middleRepeatStart = media.length * Math.floor(LOOP_REPEATS / 2);
-  const edgeBuffer = media.length * 2;
+  const edgeBuffer = media.length;
 
   const viewabilityConfig = React.useRef({ itemVisiblePercentThreshold: 60 }).current;
   const onViewableItemsChanged = React.useRef(
@@ -481,7 +654,7 @@ function VerticalMediaCarousel({
     if (media.length === 0) return;
     const offsetY = e.nativeEvent.contentOffset.y;
     const index = Math.round(offsetY / ITEM_HEIGHT);
-    if (index < edgeBuffer || index > loopedMedia.length - edgeBuffer) {
+    if (index < edgeBuffer || index >= loopedMedia.length - edgeBuffer) {
       const positionInLoop = ((index % media.length) + media.length) % media.length;
       const recenteredIndex = middleRepeatStart + positionInLoop;
       listRef.current?.scrollToOffset({ offset: recenteredIndex * ITEM_HEIGHT, animated: false });
@@ -678,13 +851,20 @@ const styles = StyleSheet.create({
   bodyRow: {
     flex: 1,
     flexDirection: 'row',
+    position: 'relative',
   },
 
   // LEFT — card-stack carousel column (~35%)
   leftColumn: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
     width: LEFT_COLUMN_WIDTH,
     height: '100%',
     backgroundColor: PC.bgCard,
+    zIndex: 2,
+    elevation: 2,
   },
   mapBackBtn: {
     position: 'absolute',
@@ -760,8 +940,40 @@ const styles = StyleSheet.create({
   },
 
   // RIGHT — compact info column (~65%)
+  rightWrap: {
+    flex: 1,
+    zIndex: 1,
+  },
   rightColumn: {
-    width: RIGHT_COLUMN_WIDTH,
+    flex: 1,
+  },
+  focusBar: {
+    position: 'absolute',
+    top: 22,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  focusBtn: {
+    height: 32,
+    minWidth: 32,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderRadius: PC.radiusBtn,
+    backgroundColor: 'rgba(14,21,32,0.85)',
+    borderWidth: 1,
+    borderColor: PC.border,
+  },
+  focusBtnText: {
+    color: PC.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
   },
   rightColumnContent: {
     paddingTop: 20,
