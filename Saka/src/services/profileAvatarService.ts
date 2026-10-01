@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { supabase } from '../lib/supabase';
 
 const AVATAR_BUCKET = 'avatars';
@@ -7,12 +8,13 @@ export async function uploadProfileAvatar(userId: string, uri: string): Promise<
     throw new Error('You must be signed in to upload a profile photo.');
   }
 
-  const response = await fetch(uri);
-  if (!response.ok && response.status !== 0) {
-    throw new Error('Unable to read the selected profile photo.');
+  let image: ArrayBuffer;
+  try {
+    image = await new File(uri).arrayBuffer();
+  } catch (error) {
+    const reason = error instanceof Error ? ` ${error.message}` : '';
+    throw new Error(`Unable to read the selected profile photo.${reason}`);
   }
-
-  const image = await response.arrayBuffer();
   if (image.byteLength === 0) {
     throw new Error('The selected profile photo is empty or unavailable.');
   }
