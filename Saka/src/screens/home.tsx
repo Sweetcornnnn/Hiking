@@ -9,6 +9,8 @@ import {
   Image,
   TouchableOpacity,
   BackHandler,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +20,9 @@ import { useWildTrackStore } from '../store/wildtrackStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
+import { MOUNTAIN_TIPS, MountainTips } from '../data/mountainTips';
+import TipsAndTricks from '../components/mountainInfo/TipsAndTricks';
+import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
@@ -68,6 +73,7 @@ const MountainSlide = memo(function MountainSlide({
   width,
   height,
   isPortrait,
+  onOpenTips,
 }: {
   mountain: Mountain;
   index: number;
@@ -75,6 +81,7 @@ const MountainSlide = memo(function MountainSlide({
   width: number;
   height: number;
   isPortrait: boolean;
+  onOpenTips: (mountain: Mountain) => void;
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
 
@@ -108,9 +115,23 @@ const MountainSlide = memo(function MountainSlide({
             <Text style={styles.elevationText}>{mountain.elevationDisplay}</Text>
           </View>
         </View>
-        <Text style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]} numberOfLines={1}>
-          {mountain.name}
-        </Text>
+        <View style={styles.mountainNameRow}>
+          <Text
+            style={[styles.floatingMountainName, isPortrait && styles.floatingMountainNamePortrait]}
+            numberOfLines={1}
+          >
+            {mountain.name}
+          </Text>
+          <TouchableOpacity
+            style={styles.guideButton}
+            onPress={() => onOpenTips(mountain)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${mountain.name} tips and guide`}
+          >
+            <Ionicons name="information-circle-outline" size={22} color={ACCENT_GOLD} />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.mountainDescription} numberOfLines={2}>
           {mountain.description}
         </Text>
@@ -126,6 +147,7 @@ export default function HomeScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(false);
+  const [tipsMountain, setTipsMountain] = useState<MountainTips | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +185,21 @@ export default function HomeScreen() {
 
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
+
+  const handleOpenTips = useCallback((mountain: Mountain) => {
+    const normalizedName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const mountainTips = MOUNTAIN_TIPS.find((tips) =>
+      tips.id === mountain.id ||
+      tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedName
+    );
+
+    if (!mountainTips) {
+      Alert.alert('Guide not available', `Tips for ${mountain.name} are not available yet.`);
+      return;
+    }
+
+    setTipsMountain(mountainTips);
+  }, []);
 
   // Logout toast state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -264,6 +301,7 @@ export default function HomeScreen() {
             width={dimensions.width}
             height={dimensions.height}
             isPortrait={isPortrait}
+            onOpenTips={handleOpenTips}
           />
         ))}
       </Animated.ScrollView>
@@ -322,6 +360,20 @@ export default function HomeScreen() {
         profileImage={profileImage}
         onProfileImageSelect={setProfileImage}
       />
+
+      <Modal
+        visible={tipsMountain !== null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setTipsMountain(null)}
+      >
+        {tipsMountain ? (
+          <TipsAndTricks
+            mountainTips={tipsMountain}
+            onBack={() => setTipsMountain(null)}
+          />
+        ) : null}
+      </Modal>
 
       {/* CTA button – shown on every slide */}
       {mountains[activeIndex] && (
@@ -521,6 +573,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
+  guideButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
   elevationPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -544,6 +606,7 @@ const styles = StyleSheet.create({
     maxWidth: '65%',
   },
   floatingMountainName: {
+    flexShrink: 1,
     fontSize: 42,
     fontWeight: '900',
     color: '#FFF',
@@ -552,6 +615,13 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
+    marginBottom: 6,
+  },
+  mountainNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.gap,
+    maxWidth: '68%',
     marginBottom: 6,
   },
   floatingMountainNamePortrait: {
@@ -601,12 +671,12 @@ const styles = StyleSheet.create({
   profileAvatarRing: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 11,
     borderWidth: 1.5,
     borderColor: '#C9A96E',
-    justifyContent: 'center',
+    backgroundColor: BG_SUBTLE,
     alignItems: 'center',
-    shadowColor: '#C9A96E',
+    borderColor: BORDER_SUBTLE,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 6,
