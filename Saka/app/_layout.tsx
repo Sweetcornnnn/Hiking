@@ -1,7 +1,6 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useLandscapeOnly } from '../src/hooks/useLandscapeOnly';
 import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 
 type LandscapeStackOptions = NativeStackNavigationOptions & {
@@ -20,7 +19,6 @@ const screenOptionsNoHeader: LandscapeStackOptions = {
 };
 
 export default function RootLayout() {
-  useLandscapeOnly();
   return (
     <SafeAreaProvider>
       <StatusBar hidden={true} />

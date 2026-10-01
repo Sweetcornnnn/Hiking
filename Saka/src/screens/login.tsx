@@ -12,7 +12,6 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
-import * as ScreenOrientation from 'expo-screen-orientation';
 
 // ─── Toast types ────────────────────────────────────────────────────────────
 type ToastType = 'error' | 'denied' | 'success';
@@ -153,13 +152,6 @@ export default function LoginScreen() {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
-
-  // Lock landscape
-  useEffect(() => {
-    ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE
-    );
-  }, []);
 
   useEffect(() => {
     Animated.parallel([

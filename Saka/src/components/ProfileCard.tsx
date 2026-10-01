@@ -37,8 +37,15 @@ interface ProfileCardProps {
 
 const screenDimensions = Dimensions.get('screen');
 
-type TabId = 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location' | 'emergency';
-type TabId = 'showcase' | 'journal' | 'stats' | 'calendar' | 'wildtrack' | 'weather' | 'location';
+type TabId =
+  | 'showcase'
+  | 'journal'
+  | 'stats'
+  | 'calendar'
+  | 'wildtrack'
+  | 'weather'
+  | 'location'
+  | 'emergency';
 
 export default function ProfileCard({
   visible,
@@ -140,6 +147,8 @@ export default function ProfileCard({
       'Emergency plan saved',
       'This is saved in app memory for now. Account storage and overdue alerts are not connected yet.'
     );
+  };
+
   const handleBecomeOrganizer = () => {
     onClose();
     router.push('/organizations/BecomeOrganizer');
@@ -455,6 +464,8 @@ export default function ProfileCard({
             <View style={styles.tabStrip}>
               <View style={styles.tabStripInner}>
                 {([
+                  { id: 'showcase', icon: 'images-outline', label: 'Showcase' },
+                  { id: 'journal', icon: 'book-outline', label: 'Journal' },
                   { id: 'stats', icon: 'stats-chart', label: 'Mountains' },
                   { id: 'calendar', icon: 'calendar-outline', label: 'Schedule' },
                   { id: 'wildtrack', icon: 'book-outline', label: 'WildTrack' },
@@ -462,14 +473,6 @@ export default function ProfileCard({
                   { id: 'location', icon: 'location-outline', label: 'Location' },
                   { id: 'emergency', icon: 'alert-circle-outline', label: 'Emergency Contact' },
                 ] as { id: TabId; icon: string; label: string }[]).map((tab, i, arr) => (
-                  { id: 'showcase', icon: 'images-outline' },
-                  { id: 'journal', icon: 'book-outline' },
-                  { id: 'stats', icon: 'stats-chart' },
-                  { id: 'calendar', icon: 'calendar-outline' },
-                  { id: 'wildtrack', icon: 'book-outline' },
-                  { id: 'weather', icon: 'cloud-outline' },
-                  { id: 'location', icon: 'location-outline' },
-                ] as { id: TabId; icon: string }[]).map((tab, i, arr) => (
                   <TouchableOpacity
                     key={tab.id}
                     accessibilityRole="button"

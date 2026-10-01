@@ -18,7 +18,6 @@ import { Image as ExpoImage } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayer, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
-import * as ScreenOrientation from 'expo-screen-orientation';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
 import { getHomeVideoPosters, MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
@@ -282,7 +281,6 @@ export default function HomeScreen() {
 
   // Force landscape orientation
   useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     const subscription = Dimensions.addEventListener('change', ({ screen }) => {
       setDimensions(screen);
     });
