@@ -1,8 +1,23 @@
-// ConversationList.tsx - Final clean version
+// components/chat/ConversationList.tsx
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BG_PANEL, SPACING, TEXT_PRIMARY, TEXT_MUTED } from '../../theme/designTokens';
+import {
+  ACCENT_GOLD,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  CHAT_BORDER,
+  CHAT_SUBTLE,
+  CHAT_BG,
+} from '../../theme/designTokens';
+import { getAvatarColor, getInitials } from '../../utils/colors';
 
 type Conversation = {
   id: string | number;
@@ -12,7 +27,6 @@ type Conversation = {
   time?: string;
   unread?: number;
 };
-
 
 export default function ConversationList({
   scrollY,
@@ -29,77 +43,80 @@ export default function ConversationList({
     let mounted = true;
     (async () => {
       const mockData: Conversation[] = [
-        { id: '1', title: 'Sarah Johnson', preview: 'Hey! How are you doing?', type: 'private', time: '2 min ago', unread: 3 },
-        { id: '2', title: 'Design Team', preview: 'New project updates available', type: 'group', time: '1 hour ago' },
-        { id: '3', title: 'Mike Chen', preview: '👍 Sounds good!', type: 'private', time: '3 hours ago' },
-        { id: '4', title: 'Product Squad', preview: 'Meeting at 3pm tomorrow', type: 'group', time: 'Yesterday', unread: 5 },
-        { id: '5', title: 'Emily Davis', preview: 'Can you review this?', type: 'private', time: '2 days ago' },
-        { id: '6', title: 'Marketing Team', preview: 'Q3 campaign planning', type: 'group', time: '2 days ago', unread: 2 },
-        { id: '7', title: 'Alex Rivera', preview: 'Thanks for your help!', type: 'private', time: '3 days ago' },
-        { id: '8', title: 'Dev Squad', preview: 'Sprint review tomorrow', type: 'group', time: '4 days ago' },
-        { id: '9', title: 'Jessica Kim', preview: 'Great meeting today', type: 'private', time: '5 days ago' },
-        { id: '10', title: 'HR Team', preview: 'New policy updates', type: 'group', time: '1 week ago' },
+        { id: '1', title: 'Sarah Johnson', preview: 'Hey! How are you doing?', type: 'private', time: '2m', unread: 3 },
+        { id: '2', title: 'Design Team', preview: 'New project updates available', type: 'group', time: '1h' },
+        { id: '3', title: 'Mike Chen', preview: '👍 Sounds good!', type: 'private', time: '3h' },
+        { id: '4', title: 'Product Squad', preview: 'Meeting at 3pm tomorrow', type: 'group', time: 'Yest.', unread: 5 },
+        { id: '5', title: 'Emily Davis', preview: 'Can you review this?', type: 'private', time: '2d' },
       ];
-      
       if (mounted) setConvos(mockData);
     })();
     return () => { mounted = false; };
   }, []);
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
-  };
-
-  const getRandomColor = (id: string) => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF8C94', '#FF9FF3', '#54A0FF', '#5F27CD'];
-    const index = parseInt(id) % colors.length;
-    return colors[index];
-  };
-
   if (convos.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons name="chatbubbles-outline" size={48} color={TEXT_MUTED} style={{ opacity: 0.3 }} />
-        <Text style={[styles.emptyText, { color: TEXT_MUTED }]}>No conversations yet</Text>
-        <Text style={[styles.emptySubtext, { color: TEXT_MUTED }]}>Start a new chat or create a group</Text>
+        <Ionicons name="chatbubbles-outline" size={32} color={TEXT_MUTED} style={{ opacity: 0.35 }} />
+        <Text style={styles.emptyText}>No conversations yet</Text>
+        <Text style={styles.emptySubtext}>Start a new chat or create a group</Text>
       </View>
     );
   }
 
   const renderItem = ({ item }: { item: Conversation }) => {
+    const hasUnread = (item.unread || 0) > 0;
+    const color = getAvatarColor(String(item.id));
+
     return (
-      <View style={styles.rowWrapper}>
-        <TouchableOpacity style={styles.row} activeOpacity={0.7}>
-          <View style={[styles.avatar, { backgroundColor: getRandomColor(String(item.id)) }]}>
-            <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
-          </View>
-          <View style={styles.content}>
-            <View style={styles.header}>
-              <Text style={[styles.name, { color: TEXT_PRIMARY }]} numberOfLines={1}>
-                {item.title}
-              </Text>
-              <Text style={[styles.time, { color: TEXT_MUTED }]}>{item.time}</Text>
+      <TouchableOpacity
+        style={[styles.row, hasUnread && styles.rowUnread]}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.avatar, { backgroundColor: color }]}>
+          <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
+          {item.type === 'group' && (
+            <View style={styles.groupBadge}>
+              <Ionicons name="people" size={8} color={CHAT_BG} />
             </View>
-            <View style={styles.previewRow}>
-              <Text style={[styles.preview, { color: TEXT_MUTED }]} numberOfLines={1}>
-                {item.preview}
-              </Text>
-              {item.unread && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadText}>{item.unread}</Text>
-                </View>
-              )}
-            </View>
+          )}
+        </View>
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text
+              style={[styles.name, hasUnread && styles.nameUnread]}
+              numberOfLines={1}
+            >
+              {item.title}
+            </Text>
+            <Text style={[styles.time, hasUnread && styles.timeUnread]}>
+              {item.time}
+            </Text>
           </View>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.previewRow}>
+            <Text
+              style={[styles.preview, hasUnread && styles.previewUnread]}
+              numberOfLines={1}
+            >
+              {item.preview}
+            </Text>
+            {hasUnread && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadText}>
+                  {item.unread! > 99 ? '99+' : item.unread}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
   return (
-    <Animated.FlatList 
-      data={convos} 
-      keyExtractor={(i) => String(i.id)} 
+    <Animated.FlatList
+      data={convos}
+      keyExtractor={(i) => String(i.id)}
       renderItem={renderItem}
       ListHeaderComponent={header}
       showsVerticalScrollIndicator={false}
@@ -118,94 +135,116 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: SPACING.gap,
-    gap: 8,
+    padding: 24,
+    gap: 6,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    opacity: 0.6,
+    color: TEXT_MUTED,
+    opacity: 0.7,
+    marginTop: 6,
   },
   emptySubtext: {
-    fontSize: 13,
-    opacity: 0.4,
+    fontSize: 11,
+    color: TEXT_MUTED,
+    opacity: 0.5,
   },
-  listContent: {
-    paddingTop: 8,
-    paddingBottom: 20,
-  },
-  rowWrapper: {
-    opacity: 1,
-  },
+  listContent: { paddingTop: 8, paddingBottom: 20 },
   row: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     alignItems: 'center',
-    gap: 14,
+    gap: 10,
     borderRadius: 12,
-    marginHorizontal: 12,
-    marginVertical: 4,
+    marginHorizontal: 10,
+    marginVertical: 3,
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  rowUnread: {
+    backgroundColor: 'rgba(201,169,110,0.08)',
+    borderColor: 'rgba(201,169,110,0.22)',
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
   },
   avatarText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 19,
+    fontSize: 14,
   },
-  content: {
-    flex: 1,
-    gap: 4,
+  groupBadge: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: ACCENT_GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: CHAT_BG,
   },
+  content: { flex: 1, gap: 3, minWidth: 0 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   name: {
-    fontSize: 17,
+    fontSize: 12.5,
     fontWeight: '600',
+    color: TEXT_PRIMARY,
     flex: 1,
   },
+  nameUnread: { fontWeight: '700' },
   time: {
-    fontSize: 11,
-    opacity: 0.5,
+    fontSize: 10,
+    color: TEXT_MUTED,
+    opacity: 0.7,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.2,
   },
+  timeUnread: { color: ACCENT_GOLD, opacity: 1, fontWeight: '700' },
   previewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   preview: {
-    fontSize: 14,
-    opacity: 0.6,
+    fontSize: 11,
+    color: TEXT_MUTED,
+    opacity: 0.8,
     flex: 1,
   },
+  previewUnread: {
+    color: 'rgba(255,255,255,0.8)',
+    opacity: 1,
+    fontWeight: '500',
+  },
   unreadBadge: {
-    backgroundColor: '#4ECDC4',
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    minWidth: 22,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: ACCENT_GOLD,
   },
   unreadText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
+    color: CHAT_BG,
+    fontSize: 10,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
 });

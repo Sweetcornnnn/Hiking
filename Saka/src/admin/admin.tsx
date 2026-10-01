@@ -1,18 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, TextInput, Animated, Easing,
+  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, TextInput, Animated, Easing, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
-import { useNotificationStore } from '../store/notificationStore';
-import { resolveApiBaseUrl } from '../config/api';
+import { supabase } from '../lib/supabase';
+import { organizationService, type Organization, type HikingEvent } from '../services/organizationService';
 import UserLocationModal from './UserLocationModal';
 
 // ---------- User Store (local, using authToken) ----------
 interface AdminUser {
-  id: number;
+  id: string;
   email: string;
   name: string | null;
   contact_number: string | null;
@@ -24,28 +24,118 @@ export default function AdminRoute() {
   const router = useRouter();
   const { user, profile, authToken, signOut } = useAuthStore();
   const { allHikes, adminStats, fetchAllHikes, fetchAdminStats, isLoading: hikesLoading } = useHikesStore();
-  const {
-    passwordChangeRequests,
-    unreadCount,
-    fetchPasswordChangeRequests,
-    approvePasswordChange,
-    rejectPasswordChange,
-  } = useNotificationStore();
-
   // Tab state
-  const [activeTab, setActiveTab] = useState<'hikes' | 'users'>('hikes');
+  const [activeTab, setActiveTab] = useState<'hikes' | 'users' | 'orgs' | 'events'>('hikes');
+
+  // Organization verification state
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [orgsLoading, setOrgsLoading] = useState(false);
+  const [busyOrgId, setBusyOrgId] = useState<string | null>(null);
+  const [orgFilter, setOrgFilter] = useState<'pending' | 'verified' | 'all'>('pending');
+
+  const fetchOrgs = async () => {
+    setOrgsLoading(true);
+    try {
+      const list = await organizationService.adminListOrganizations();
+      setOrgs(list);
+    } finally {
+      setOrgsLoading(false);
+    }
+  };
+
+  const handleVerifyOrg = async (org: Organization, verified: boolean) => {
+    setBusyOrgId(org.id);
+    const { error: e } = await organizationService.adminSetVerified(org.id, verified);
+    setBusyOrgId(null);
+    if (e) {
+      showToast('error', 'Update Failed', e);
+      return;
+    }
+    showToast(
+      'success',
+      verified ? 'Organization Verified' : 'Verification Removed',
+      `${org.name} has been ${verified ? 'verified' : 'unverified'}.`
+    );
+    fetchOrgs();
+  };
+
+  const filteredOrgs = orgs.filter((o) =>
+    orgFilter === 'all' ? true : orgFilter === 'verified' ? o.is_verified : !o.is_verified
+  );
+
+  // Event moderation state
+  const [modEvents, setModEvents] = useState<
+    Array<HikingEvent & { organizations: { name: string } | null }>
+  >([]);
+  const [modEventsLoading, setModEventsLoading] = useState(false);
+  const [busyEventId, setBusyEventId] = useState<string | null>(null);
+  const [eventFilter, setEventFilter] = useState<
+    'all' | 'published' | 'draft' | 'cancelled' | 'completed'
+  >('published');
+
+  const fetchModEvents = async () => {
+    setModEventsLoading(true);
+    try {
+      const list = await organizationService.adminListEvents();
+      setModEvents(list);
+    } finally {
+      setModEventsLoading(false);
+    }
+  };
+
+  const handleAdminCancelEvent = (eventId: string) => {
+    const ev = modEvents.find((e) => e.id === eventId);
+    if (!ev) return;
+    Alert.alert(
+      'Force-cancel event?',
+      `"${ev.title}" will be marked cancelled and hidden from public discovery.`,
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Cancel event',
+          style: 'destructive',
+          onPress: async () => {
+            setBusyEventId(eventId);
+            const { error: e } = await organizationService.adminCancelEvent(eventId);
+            setBusyEventId(null);
+            if (e) {
+              showToast('error', 'Update Failed', e);
+              return;
+            }
+            showToast(
+              'success',
+              'Event Cancelled',
+              'The organizer has been notified by the status change.'
+            );
+            fetchModEvents();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleAdminReinstateEvent = async (eventId: string) => {
+    setBusyEventId(eventId);
+    const { error: e } = await organizationService.adminReinstateEvent(eventId);
+    setBusyEventId(null);
+    if (e) {
+      showToast('error', 'Reinstate Failed', e);
+      return;
+    }
+    showToast('success', 'Event Reinstated', 'The event is visible again.');
+    fetchModEvents();
+  };
+
+  const filteredModEvents = modEvents.filter((e) =>
+    eventFilter === 'all' ? true : e.status === eventFilter
+  );
 
   // User management state
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [resetModalVisible, setResetModalVisible] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
-
-  // Password request modal state
-  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
-  const [processRequests, setProcessingRequests] = useState<Set<string>>(new Set());
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
 
   // User location modal state
   const [locationModalVisible, setLocationModalVisible] = useState(false);
@@ -59,98 +149,69 @@ export default function AdminRoute() {
   const [deleteUserModalVisible, setDeleteUserModalVisible] = useState(false);
   const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUser | null>(null);
 
-  // Password visibility state
-  const [passwordVisible, setPasswordVisible] = useState(false);
-
   // ---------- Fetch users ----------
   const fetchUsers = async () => {
-    if (!authToken) return;
     setUsersLoading(true);
     try {
-      const base = await resolveApiBaseUrl();
-      const res = await fetch(`${base}/api/admin/users`, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setUsers(data.users);
-      } else {
-        showToast('error', 'Fetch Failed', data.error || 'Failed to fetch users');
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, contact_number, is_admin, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
       }
-    } catch (error) {
-      showToast('error', 'Network Error', 'Could not reach the server. Check your connection.');
+
+      setUsers((data ?? []).map((row) => ({
+        id: row.id,
+        email: row.email ?? '',
+        name: row.full_name,
+        contact_number: row.contact_number,
+        is_admin: !!row.is_admin,
+        created_at: row.created_at,
+      })));
+    } catch (error: any) {
+      showToast('error', 'Fetch Failed', error?.message || 'Failed to fetch users');
     } finally {
       setUsersLoading(false);
     }
   };
 
   // ---------- Update user (admin toggle) ----------
-  const updateUserAdmin = async (userId: number, isAdmin: boolean) => {
-    if (!authToken) return;
+  const updateUserAdmin = async (userId: string, isAdmin: boolean) => {
     try {
-      const base = await resolveApiBaseUrl();
-      const res = await fetch(`${base}/api/admin/users/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ is_admin: isAdmin }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast('success', 'Admin Updated', `Privileges have been ${isAdmin ? 'granted' : 'removed'} successfully.`);
-        fetchUsers();
-      } else {
-        showToast('error', 'Update Failed', data.error || 'Failed to update user');
-      }
-    } catch (error) {
-      showToast('error', 'Network Error', 'Could not reach the server.');
-    }
-  };
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_admin: isAdmin,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
 
-  // ---------- Reset password (creates pending request) ----------
-  const resetUserPassword = async (userId: number, password: string) => {
-    if (!authToken) return;
-    try {
-      const base = await resolveApiBaseUrl();
-      const res = await fetch(`${base}/api/admin/users/${userId}/reset-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ newPassword: password }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast('success', 'Request Created', 'Password reset sent. The user will need to approve it.');
-      } else {
-        showToast('error', 'Reset Failed', data.error || 'Failed to reset password');
+      if (error) {
+        throw error;
       }
-    } catch (error) {
-      showToast('error', 'Network Error', 'Could not reach the server.');
+
+      showToast('success', 'Admin Updated', `Privileges have been ${isAdmin ? 'granted' : 'removed'} successfully.`);
+      fetchUsers();
+    } catch (error: any) {
+      showToast('error', 'Update Failed', error?.message || 'Failed to update user');
     }
   };
 
   // ---------- Delete user ----------
-  const deleteUser = async (userId: number) => {
-    if (!authToken) return;
+  const deleteUser = async (userId: string) => {
     try {
-      const base = await resolveApiBaseUrl();
-      const res = await fetch(`${base}/api/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast('success', 'User Deleted', 'The user and all their data have been removed.');
-        fetchUsers();
-      } else {
-        showToast('error', 'Delete Failed', data.error || 'Failed to delete user');
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+
+      if (error) {
+        throw error;
       }
-    } catch (error) {
-      showToast('error', 'Network Error', 'Could not reach the server.');
+
+      showToast('success', 'User Deleted', 'The profile has been removed.');
+      fetchUsers();
+    } catch (error: any) {
+      showToast('error', 'Delete Failed', error?.message || 'User deletion is not allowed from the client.');
     }
   };
 
@@ -164,43 +225,17 @@ export default function AdminRoute() {
     fetchAdminStats();
 
     if (authToken) {
-      fetchPasswordChangeRequests(authToken);
       fetchUsers();
     }
   }, [profile?.is_admin, authToken]);
 
-  // Password request handlers
-  const filteredRequests = passwordChangeRequests.filter(req =>
-    filterStatus === 'all' ? true : req.status === filterStatus
-  );
-
-  const statusStyleMap = {
-    pending: styles.statusPending,
-    approved: styles.statusApproved,
-    rejected: styles.statusRejected,
-  } as const;
-
-  const statusTextMap = {
-    pending: styles.statusText,
-    approved: styles.statusTextApproved,
-    rejected: styles.statusTextRejected,
-  } as const;
-
-  const handleApproveRequest = async (requestId: string) => {
-    setProcessingRequests(prev => new Set(prev).add(requestId));
-    const { error } = await approvePasswordChange(requestId, authToken || '');
-    setProcessingRequests(prev => { const s = new Set(prev); s.delete(requestId); return s; });
-    if (error) showToast('error', 'Approval Failed', error);
-    else showToast('success', 'Request Approved', 'The password change has been approved.');
-  };
-
-  const handleRejectRequest = async (requestId: string) => {
-    setProcessingRequests(prev => new Set(prev).add(requestId));
-    const { error } = await rejectPasswordChange(requestId, authToken || '');
-    setProcessingRequests(prev => { const s = new Set(prev); s.delete(requestId); return s; });
-    if (error) showToast('error', 'Rejection Failed', error);
-    else showToast('warning', 'Request Rejected', 'The password change has been rejected.');
-  };
+  useEffect(() => {
+    if (activeTab === 'orgs') {
+      fetchOrgs();
+    } else if (activeTab === 'events') {
+      fetchModEvents();
+    }
+  }, [activeTab]);
 
   // ── Unified feedback toast ───────────────────────────────────────────────
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'warning'; title: string; msg: string } | null>(null);
@@ -253,22 +288,6 @@ export default function AdminRoute() {
     router.replace('/Login');
   };
 
-  const confirmResetPassword = () => {
-    if (!selectedUserId) return;
-    if (newPassword.length < 6) {
-      Animated.parallel([
-        Animated.timing(toastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(toastY,       { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      ]).start();
-      setToast({ type: 'error', title: 'Error', msg: 'Password must be at least 6 characters' });
-      return;
-    }
-    resetUserPassword(selectedUserId, newPassword);
-    setResetModalVisible(false);
-    setNewPassword('');
-    setSelectedUserId(null);
-  };
-
   // ---------- Render ----------
   return (
     <>
@@ -278,172 +297,6 @@ export default function AdminRoute() {
         user={locationModalUser}
         onClose={() => setLocationModalVisible(false)}
       />
-
-      {/* Password Requests Modal */}
-      <Modal
-        transparent
-        visible={notificationModalVisible}
-        animationType="fade"
-        onRequestClose={() => setNotificationModalVisible(false)}
-        statusBarTranslucent
-        presentationStyle="overFullScreen"
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Password Requests</Text>
-              <TouchableOpacity onPress={() => setNotificationModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.filterTabs}>
-              {(['all', 'pending', 'approved', 'rejected'] as const).map((tab) => (
-                <TouchableOpacity
-                  key={tab}
-                  style={[styles.filterTab, filterStatus === tab && styles.filterTabActive]}
-                  onPress={() => setFilterStatus(tab)}
-                >
-                  <Text style={[styles.filterTabText, filterStatus === tab && styles.filterTabTextActive]}>
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              {filteredRequests.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="checkmark-circle" size={36} color="#6FAF8A" />
-                  <Text style={styles.emptyStateText}>
-                    {filterStatus === 'pending' ? 'No pending requests' : `No ${filterStatus} requests`}
-                  </Text>
-                </View>
-              ) : (
-                filteredRequests.map((request) => (
-                  <View key={request.id} style={[styles.requestCard, request.status === 'pending' && styles.requestCardPending]}>
-                    <View style={styles.requestHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.requestName} numberOfLines={1}>{request.userName}</Text>
-                        <Text style={styles.requestEmail} numberOfLines={1}>{request.userEmail}</Text>
-                      </View>
-                      <View style={[styles.statusBadge, statusStyleMap[request.status]]}>
-                        <Text style={statusTextMap[request.status]}>{request.status}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.requestDate}>
-                      {new Date(request.requestedAt).toLocaleString()}
-                    </Text>
-                    {request.respondedAt && (
-                      <Text style={styles.respondedDate}>
-                        ✓ {request.status === 'approved' ? 'Approved' : 'Rejected'}: {new Date(request.respondedAt).toLocaleString()}
-                      </Text>
-                    )}
-                    {request.status === 'pending' && (
-                      <View style={styles.actionButtonsContainer}>
-                        <TouchableOpacity
-                          style={[styles.actionBtn, styles.approveButton]}
-                          onPress={() => handleApproveRequest(request.id)}
-                          disabled={processRequests.has(request.id)}
-                        >
-                          <Ionicons name="checkmark" size={13} color="#6FAF8A" />
-                          <Text style={styles.approveBtnText}>
-                            {processRequests.has(request.id) ? 'Processing...' : 'Approve'}
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.actionBtn, styles.rejectButton]}
-                          onPress={() => handleRejectRequest(request.id)}
-                          disabled={processRequests.has(request.id)}
-                        >
-                          <Ionicons name="close" size={13} color="#E07070" />
-                          <Text style={styles.rejectBtnText}>
-                            {processRequests.has(request.id) ? 'Processing...' : 'Reject'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Reset Password Modal */}
-      <Modal visible={resetModalVisible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { maxHeight: 320 }]}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <View style={styles.modalIconWrap}>
-                  <Ionicons name="key" size={13} color="#6FAF8A" />
-                </View>
-                <Text style={styles.modalTitle}>Reset Password</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => { setResetModalVisible(false); setNewPassword(''); setPasswordVisible(false); }}
-                style={styles.closeBtn}
-              >
-                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Body */}
-            <View style={styles.modalBody}>
-              <Text style={styles.modalDesc}>
-                Set a new password for this user. They will be prompted to approve the change.
-              </Text>
-
-              {/* Password input */}
-              <View style={styles.inputWrapper}>
-                <Ionicons name="lock-closed-outline" size={14} color="rgba(255,255,255,0.3)" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.inputField}
-                  placeholder="New password (min. 6 chars)"
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  secureTextEntry={!passwordVisible}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity onPress={() => setPasswordVisible(v => !v)} style={styles.inputEye}>
-                  <Ionicons
-                    name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
-                    size={14}
-                    color="rgba(255,255,255,0.3)"
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Strength hint */}
-              {newPassword.length > 0 && newPassword.length < 6 && (
-                <Text style={styles.inputHint}>⚠ At least 6 characters required</Text>
-              )}
-            </View>
-
-            {/* Footer */}
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => { setResetModalVisible(false); setNewPassword(''); setPasswordVisible(false); }}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, styles.modalConfirmGreen, newPassword.length < 6 && styles.modalConfirmDisabled]}
-                onPress={confirmResetPassword}
-                disabled={newPassword.length < 6}
-              >
-                <Ionicons name="checkmark" size={13} color={newPassword.length < 6 ? 'rgba(255,255,255,0.3)' : '#0E1520'} />
-                <Text style={[styles.modalConfirmText, newPassword.length < 6 && styles.modalConfirmTextDisabled]}>Reset Password</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Make Admin / Remove Admin Modal */}
       <Modal visible={makeAdminModalVisible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
@@ -583,16 +436,6 @@ export default function AdminRoute() {
 
             <View style={{ flex: 1 }} />
 
-            <TouchableOpacity style={styles.notifBtn} onPress={() => setNotificationModalVisible(true)}>
-              <Ionicons name="notifications-outline" size={13} color="rgba(255,255,255,0.7)" />
-              <Text style={styles.notifBtnText}>Requests</Text>
-              {unreadCount > 0 && (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>{unreadCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
             <TouchableOpacity style={styles.refreshBtn} onPress={fetchAllHikes}>
               <Ionicons name="refresh" size={13} color="rgba(255,255,255,0.7)" />
               <Text style={styles.refreshBtnText}>Refresh</Text>
@@ -621,6 +464,29 @@ export default function AdminRoute() {
                   onPress={() => setActiveTab('users')}
                 >
                   <Text style={[styles.tabText, activeTab === 'users' && styles.activeTabText]}>Users</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, activeTab === 'orgs' && styles.activeTab]}
+                  onPress={() => setActiveTab('orgs')}
+                >
+                  <Text style={[styles.tabText, activeTab === 'orgs' && styles.activeTabText]}>
+                    Orgs
+                  </Text>
+                  {orgs.filter((o) => !o.is_verified).length > 0 && (
+                    <View style={styles.tabBadge}>
+                      <Text style={styles.tabBadgeText}>
+                        {orgs.filter((o) => !o.is_verified).length}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, activeTab === 'events' && styles.activeTab]}
+                  onPress={() => setActiveTab('events')}
+                >
+                  <Text style={[styles.tabText, activeTab === 'events' && styles.activeTabText]}>
+                    Events
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -675,7 +541,7 @@ export default function AdminRoute() {
               ) : (
                 <FlatList
                   data={users}
-                  keyExtractor={(u) => u.id.toString()}
+                  keyExtractor={(u) => u.id}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.listContent}
                   renderItem={({ item: u }) => (
@@ -703,7 +569,7 @@ export default function AdminRoute() {
                         {/* Admin toggle button */}
                         <TouchableOpacity
                           onPress={() => {
-                            if (u.id === Number(user?.id)) {
+                            if (u.id === user?.id) {
                               showToast('warning', 'Not Allowed', 'You cannot change your own admin status.');
                               return;
                             }
@@ -719,22 +585,10 @@ export default function AdminRoute() {
                           />
                         </TouchableOpacity>
 
-                        {/* Reset password button */}
-                        <TouchableOpacity
-                          onPress={() => {
-                            setSelectedUserId(u.id);
-                            setNewPassword('');
-                            setResetModalVisible(true);
-                          }}
-                          style={styles.actionIcon}
-                        >
-                          <Ionicons name="key-outline" size={16} color="#6FAF8A" />
-                        </TouchableOpacity>
-
                         {/* Delete button */}
                         <TouchableOpacity
                           onPress={() => {
-                            if (u.id === Number(user?.id)) {
+                            if (u.id === user?.id) {
                               showToast('warning', 'Not Allowed', 'You cannot delete your own account from here.');
                               return;
                             }
@@ -750,6 +604,233 @@ export default function AdminRoute() {
                   )}
                 />
               )
+            )}
+
+            {activeTab === 'orgs' && (
+              <>
+                <View style={styles.filterTabs}>
+                  {(['pending', 'verified', 'all'] as const).map((f) => (
+                    <TouchableOpacity
+                      key={f}
+                      style={[styles.filterTab, orgFilter === f && styles.filterTabActive]}
+                      onPress={() => setOrgFilter(f)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterTabText,
+                          orgFilter === f && styles.filterTabTextActive,
+                        ]}
+                      >
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {orgsLoading ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>Loading organizations…</Text>
+                  </View>
+                ) : filteredOrgs.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons
+                      name={orgFilter === 'pending' ? 'checkmark-circle' : 'business-outline'}
+                      size={36}
+                      color={orgFilter === 'pending' ? '#6FAF8A' : 'rgba(255,255,255,0.25)'}
+                    />
+                    <Text style={styles.emptyStateText}>
+                      {orgFilter === 'pending'
+                        ? 'No pending organizations'
+                        : `No ${orgFilter} organizations`}
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={filteredOrgs}
+                    keyExtractor={(o) => o.id}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.listContent}
+                    renderItem={({ item: o }) => (
+                      <View style={styles.requestCard}>
+                        <View style={styles.requestHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.requestName} numberOfLines={1}>
+                              {o.name}
+                            </Text>
+                            <Text style={styles.requestEmail} numberOfLines={1}>
+                              {o.contact_email || o.slug}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              o.is_verified ? styles.statusApproved : styles.statusPending,
+                            ]}
+                          >
+                            <Text
+                              style={
+                                o.is_verified ? styles.statusTextApproved : styles.statusText
+                              }
+                            >
+                              {o.is_verified ? 'verified' : 'pending'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {o.description ? (
+                          <Text style={styles.requestDate} numberOfLines={2}>
+                            {o.description}
+                          </Text>
+                        ) : null}
+
+                        <Text style={styles.requestDate}>
+                          Registered {new Date(o.created_at).toLocaleDateString()}
+                          {o.contact_phone ? ` · ${o.contact_phone}` : ''}
+                        </Text>
+
+                        <View style={styles.actionButtonsContainer}>
+                          {!o.is_verified ? (
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.approveButton]}
+                              onPress={() => handleVerifyOrg(o, true)}
+                              disabled={busyOrgId === o.id}
+                            >
+                              <Ionicons name="shield-checkmark" size={13} color="#6FAF8A" />
+                              <Text style={styles.approveBtnText}>
+                                {busyOrgId === o.id ? 'Verifying…' : 'Verify'}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.rejectButton]}
+                              onPress={() => handleVerifyOrg(o, false)}
+                              disabled={busyOrgId === o.id}
+                            >
+                              <Ionicons name="shield-outline" size={13} color="#E07070" />
+                              <Text style={styles.rejectBtnText}>
+                                {busyOrgId === o.id ? 'Updating…' : 'Remove verification'}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    )}
+                  />
+                )}
+              </>
+            )}
+
+            {activeTab === 'events' && (
+              <>
+                <View style={styles.filterTabs}>
+                  {(['published', 'draft', 'cancelled', 'completed', 'all'] as const).map((f) => (
+                    <TouchableOpacity
+                      key={f}
+                      style={[styles.filterTab, eventFilter === f && styles.filterTabActive]}
+                      onPress={() => setEventFilter(f)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterTabText,
+                          eventFilter === f && styles.filterTabTextActive,
+                        ]}
+                      >
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {modEventsLoading ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>Loading events…</Text>
+                  </View>
+                ) : filteredModEvents.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons
+                      name="calendar-clear-outline"
+                      size={36}
+                      color="rgba(255,255,255,0.25)"
+                    />
+                    <Text style={styles.emptyStateText}>No {eventFilter} events</Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={filteredModEvents}
+                    keyExtractor={(e) => e.id}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.listContent}
+                    renderItem={({ item: e }) => (
+                      <View style={styles.requestCard}>
+                        <View style={styles.requestHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.requestName} numberOfLines={1}>
+                              {e.title}
+                            </Text>
+                            <Text style={styles.requestEmail} numberOfLines={1}>
+                              {e.organizations?.name ?? 'Unknown org'} · {e.event_date}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              e.status === 'published'
+                                ? styles.statusApproved
+                                : e.status === 'cancelled'
+                                ? styles.statusRejected
+                                : styles.statusPending,
+                            ]}
+                          >
+                            <Text
+                              style={
+                                e.status === 'published'
+                                  ? styles.statusTextApproved
+                                  : e.status === 'cancelled'
+                                  ? styles.statusTextRejected
+                                  : styles.statusText
+                              }
+                            >
+                              {e.status}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text style={styles.requestDate} numberOfLines={2}>
+                          {e.difficulty} · {e.start_time}
+                          {e.capacity !== null ? ` · capacity ${e.capacity}` : ''}
+                          {e.is_public ? ' · public' : ' · private'}
+                        </Text>
+
+                        <View style={styles.actionButtonsContainer}>
+                          {e.status === 'published' || e.status === 'draft' ? (
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.rejectButton]}
+                              onPress={() => handleAdminCancelEvent(e.id)}
+                              disabled={busyEventId === e.id}
+                            >
+                              <Ionicons name="close-circle-outline" size={13} color="#E07070" />
+                              <Text style={styles.rejectBtnText}>
+                                {busyEventId === e.id ? 'Cancelling…' : 'Force-cancel'}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : e.status === 'cancelled' ? (
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.approveButton]}
+                              onPress={() => handleAdminReinstateEvent(e.id)}
+                              disabled={busyEventId === e.id}
+                            >
+                              <Ionicons name="refresh" size={13} color="#6FAF8A" />
+                              <Text style={styles.approveBtnText}>
+                                {busyEventId === e.id ? 'Reinstating…' : 'Reinstate'}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
+                      </View>
+                    )}
+                  />
+                )}
+              </>
             )}
           </View>
         </View>
@@ -1214,6 +1295,21 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     fontSize: 12,
     fontWeight: '600',
+  },
+  tabBadge: {
+    marginLeft: 4,
+    backgroundColor: '#E07070',
+    borderRadius: 8,
+    minWidth: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  tabBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
   },
   activeTabText: {
     color: '#C9A96E',

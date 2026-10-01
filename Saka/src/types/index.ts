@@ -1,8 +1,13 @@
+export type UserRole = 'hiker' | 'organization' | 'admin';
+
 export interface User {
   id: string;
   email: string;
   name: string;
   is_admin: boolean;
+  role?: UserRole | null;
+  organization_id?: string | null;
+  is_verified?: boolean;
 }
 
 export interface Hike {

@@ -53,9 +53,14 @@ export default function LoadingScreen({
         return;
       }
 
+      const role = profile?.role ?? 'hiker';
       const targetRoute: Href = nextRoute
         ? (nextRoute as Href)
-        : (profile?.is_admin ? '/admin/Admin' : '/Home');
+        : profile?.is_admin
+          ? '/admin/Admin'
+          : role === 'organization'
+            ? '/organizations/Dashboard'
+            : '/Home';
       router.replace(targetRoute);
     };
 
@@ -111,7 +116,7 @@ export default function LoadingScreen({
     const preloadData = async () => {
       try {
         safeSetStatusText('Loading mountain data...');
-        const mountains = await mountainService.fetchMountains();
+        const mountains = await mountainService.fetchMountains(true);
         mountainService.setCachedMountains(mountains);
         safeSetStatusText('Opening your adventure...');
       } catch (error) {

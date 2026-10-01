@@ -142,6 +142,74 @@ export const getWeatherForecast = async (
   return Array.from(dailyMap.values()).slice(0, 7);
 };
 
+/**
+ * Returns the forecast conditions for the specific event date + start hour.
+ * Uses the same 3-hour forecast endpoint as getWeatherForecast, but returns
+ * a single WeatherCondition (not a daily summary) so callers can reuse
+ * getWeatherSafetyAdvice and the same severity UI.
+ *
+ * Returns null when the target date is outside the ~5-day forecast window.
+ */
+export const getForecastForEvent = async (
+  latitude: number,
+  longitude: number,
+  isoDate: string,
+  startTime: string
+): Promise<WeatherCondition | null> => {
+  if (!apiKey) {
+    handleError(
+      'Weather API key not found. Set EXPO_PUBLIC_WEATHER_API_KEY or add WEATHER_API_KEY to expo.extra.'
+    );
+  }
+
+  const url = `${OPENWEATHER_FORECAST_URL}?lat=${latitude}&lon=${longitude}&units=metric&cnt=40&appid=${apiKey}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(
+      `OpenWeatherMap forecast request failed: ${response.status} ${payload}`
+    );
+  }
+
+  const data = await response.json();
+  const timezoneOffset = Number(data.city?.timezone ?? 0);
+  const targetHour = Number(startTime.split(':')[0]) || 0;
+
+  let best: any = null;
+  let bestDiff = Number.POSITIVE_INFINITY;
+
+  for (const item of data.list ?? []) {
+    const localMs = (item.dt + timezoneOffset) * 1000;
+    const localDate = new Date(localMs).toISOString().split('T')[0];
+    if (localDate !== isoDate) continue;
+
+    const hour = new Date(localMs).getUTCHours();
+    const diff = Math.abs(hour - targetHour);
+
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = item;
+    }
+  }
+
+  if (!best) return null;
+
+  const precipitationMm = Number(
+    best.rain?.['3h'] ?? best.snow?.['3h'] ?? best.rain?.['1h'] ?? 0
+  );
+
+  return {
+    description: best.weather?.[0]?.description || 'Unknown',
+    temperature: Number(best.main?.temp ?? 0),
+    feelsLike: Number(best.main?.feels_like ?? 0),
+    humidity: Number(best.main?.humidity ?? 0),
+    windSpeed: Number(best.wind?.speed ?? 0),
+    precipitationMm,
+    icon: best.weather?.[0]?.icon || '01d',
+  };
+};
+
 export const getWeatherSafetyAdvice = (weather: WeatherCondition): string => {
   if (weather.precipitationMm >= 5) {
     return 'Heavy precipitation expected. Use waterproof gear and avoid slippery trails.';
@@ -168,5 +236,7 @@ export const getWeatherSafetyAdvice = (weather: WeatherCondition): string => {
 
 export default {
   getCurrentWeather,
+  getWeatherForecast,
+  getForecastForEvent,
   getWeatherSafetyAdvice,
 };

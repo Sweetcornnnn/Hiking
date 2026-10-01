@@ -1,107 +1,91 @@
-// ChatTabs.tsx - Fixed with transparent background
+// components/chat/ChatTabs.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { ACCENT_GOLD, TEXT_MUTED, TEXT_PRIMARY, BG_PANEL } from '../../theme/designTokens';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  ACCENT_GOLD,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  CHAT_SUBTLE,
+  CHAT_BORDER,
+  CHAT_BG,
+  CHAT_RADIUS_BTN,
+} from '../../theme/designTokens';
 
-export default function ChatTabs({ active, onChange }: { active: string; onChange: (s: any) => void }) {
+export default function ChatTabs({
+  active,
+  onChange,
+}: {
+  active: string;
+  onChange: (s: any) => void;
+}) {
+  const Tab = ({
+    id,
+    icon,
+    label,
+  }: {
+    id: 'world' | 'private';
+    icon: any;
+    label: string;
+  }) => {
+    const isActive = active === id;
+    return (
+      <TouchableOpacity
+        style={[styles.tab, isActive && styles.tabActive]}
+        onPress={() => onChange(id)}
+        activeOpacity={0.85}
+      >
+        <Ionicons
+          name={icon}
+          size={13}
+          color={isActive ? CHAT_BG : TEXT_MUTED}
+        />
+        <Text
+          style={[styles.tabLabel, isActive && styles.tabLabelActive]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.tabsWrapper}>
-        <TouchableOpacity 
-          style={[styles.tab, active === 'world' && styles.activeTab]} 
-          onPress={() => onChange('world')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.tabContent}>
-            <Ionicons name="globe-outline" size={20} color={TEXT_PRIMARY} />
-            <Text style={[styles.tabLabel, active === 'world' ? styles.activeLabel : styles.inactiveLabel]}>
-              World
-            </Text>
-            {active === 'world' && <View style={styles.activeIndicator} />}
-          </View>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.tab, active === 'private' && styles.activeTab]} 
-          onPress={() => onChange('private')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.tabContent}>
-            <Ionicons name="chatbubbles-outline" size={20} color={TEXT_PRIMARY} />
-            <Text style={[styles.tabLabel, active === 'private' ? styles.activeLabel : styles.inactiveLabel]}>
-              Private
-            </Text>
-            {active === 'private' && <View style={styles.activeIndicator} />}
-          </View>
-        </TouchableOpacity>
+    <View style={styles.wrap}>
+      <View style={styles.bar}>
+        <Tab id="world" icon="globe-outline" label="World" />
+        <Tab id="private" icon="chatbubbles-outline" label="Private" />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: 'transparent', // Changed from BG_PANEL
-  },
-  tabsWrapper: {
+  wrap: { paddingHorizontal: 12, paddingVertical: 8 },
+  bar: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 12,
-    padding: 3,
+    backgroundColor: CHAT_SUBTLE,
+    borderRadius: CHAT_RADIUS_BTN,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
+    borderColor: CHAT_BORDER,
+    padding: 3,
+    gap: 3,
   },
   tab: {
     flex: 1,
-    paddingVertical: 6,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeTab: {
-    backgroundColor: ACCENT_GOLD,
-    shadowColor: ACCENT_GOLD,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  tabContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 4,
+    gap: 5,
+    paddingVertical: 8,
+    borderRadius: CHAT_RADIUS_BTN - 2,
   },
-  tabIcon: {
-    fontSize: 13,
-    opacity: 0.5,
-  },
-  activeIcon: {
-    opacity: 1,
-  },
+  tabActive: { backgroundColor: ACCENT_GOLD },
   tabLabel: {
     fontSize: 12,
     fontWeight: '600',
+    color: TEXT_MUTED,
     letterSpacing: 0.2,
   },
-  activeLabel: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  inactiveLabel: {
-    color: TEXT_MUTED,
-    opacity: 0.6,
-  },
-  activeIndicator: {
-    position: 'absolute',
-    bottom: -6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#FFFFFF',
-  },
+  tabLabelActive: { color: CHAT_BG, fontWeight: '800' },
 });
