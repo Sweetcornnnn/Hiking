@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Animated, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ACCENT_GOLD, BG_AVATAR, BG_PANEL, BG_SUBTLE, BORDER_SUBTLE, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
 import { supabase } from '../../lib/supabase';
@@ -31,6 +31,13 @@ const getImageUrl = (image: string): string => {
 
 export default function JournalShowcase({ entries, mountains, isLoading = false }: JournalShowcaseProps) {
   const [selectedPhoto, setSelectedPhoto] = React.useState<SelectedPhoto | null>(null);
+  const [photoAspectRatio, setPhotoAspectRatio] = React.useState(1);
+  const [detailCardSize, setDetailCardSize] = React.useState({ width: 0, height: 0 });
+  const { width: detailImageWidth, height: detailImageHeight } = getDetailImageSize(
+    detailCardSize.width,
+    detailCardSize.height,
+    photoAspectRatio,
+  );
   const imagesByMountain = new Map<string, ShowcasePhoto[]>();
   entries.forEach((entry) => {
     const mountainKey = entry.mountain_id || '__unassigned__';
@@ -71,7 +78,10 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
             <MountainPhotoCarousel
               mountainName={group.name}
               photos={group.images}
-              onSelect={(photo) => setSelectedPhoto({ ...photo, mountainName: group.name })}
+              onSelect={(photo) => {
+                setPhotoAspectRatio(1);
+                setSelectedPhoto({ ...photo, mountainName: group.name });
+              }}
             />
           ) : (
             <Text style={styles.emptySection}>No photos yet.</Text>
@@ -81,48 +91,95 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
     </ScrollView>
     <Modal
       visible={selectedPhoto !== null}
-      animationType="slide"
-      presentationStyle="fullScreen"
+      transparent
+      animationType="fade"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
       onRequestClose={() => setSelectedPhoto(null)}
     >
       {selectedPhoto && (
-        <View style={styles.detailScreen}>
-          <Image source={{ uri: getImageUrl(selectedPhoto.image) }} style={styles.detailImage} resizeMode="contain" />
-          <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailContent}>
-            <View style={styles.detailHeader}>
-              <View style={styles.detailHeading}>
-                <Text style={styles.detailMountain}>{selectedPhoto.mountainName}</Text>
-                <Text style={styles.detailDate}>{new Date(selectedPhoto.entry.created_at).toLocaleDateString()}</Text>
-              </View>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Close journal entry"
-                onPress={() => setSelectedPhoto(null)}
-                style={styles.closeButton}
-              >
-                <Ionicons name="close" size={20} color={TEXT_PRIMARY} />
-              </TouchableOpacity>
+        <View style={styles.modalBackdrop}>
+          <TouchableWithoutFeedback onPress={() => setSelectedPhoto(null)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <View
+            style={styles.detailCard}
+            onLayout={(event) => setDetailCardSize({
+              width: event.nativeEvent.layout.width,
+              height: event.nativeEvent.layout.height,
+            })}
+          >
+            <View style={[styles.detailImageFrame, { width: detailImageWidth }]}>
+              <Image
+                source={{ uri: getImageUrl(selectedPhoto.image) }}
+                style={{ width: detailImageWidth, height: detailImageHeight }}
+                resizeMode="contain"
+                onLoad={({ nativeEvent }) => {
+                  const { width, height } = nativeEvent.source;
+                  if (width > 0 && height > 0) setPhotoAspectRatio(width / height);
+                }}
+              />
             </View>
-            <Text style={styles.detailTitle}>{selectedPhoto.entry.title || 'Trail memory'}</Text>
-            {selectedPhoto.entry.rating ? (
-              <View style={styles.ratingRow}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Ionicons
-                    key={star}
-                    name={star <= selectedPhoto.entry.rating! ? 'star' : 'star-outline'}
-                    size={16}
-                    color={ACCENT_GOLD}
-                  />
-                ))}
+            <ScrollView style={styles.detailScroll} contentContainerStyle={styles.detailContent}>
+              <View style={styles.detailHeader}>
+                <View style={styles.detailHeading}>
+                  <Text style={styles.detailMountain}>{selectedPhoto.mountainName}</Text>
+                  <Text style={styles.detailDate}>{new Date(selectedPhoto.entry.created_at).toLocaleDateString()}</Text>
+                </View>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Close journal entry"
+                  onPress={() => setSelectedPhoto(null)}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={20} color={TEXT_PRIMARY} />
+                </TouchableOpacity>
               </View>
-            ) : null}
-            <Text style={styles.detailText}>{selectedPhoto.entry.content || 'No experience was written for this entry.'}</Text>
-          </ScrollView>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailLabel}>Title:</Text>
+                <Text style={styles.detailTitle}>{selectedPhoto.entry.title || 'Trail memory'}</Text>
+              </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailLabel}>Ratings:</Text>
+                {selectedPhoto.entry.rating ? (
+                  <View style={styles.ratingRow}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Ionicons
+                        key={star}
+                        name={star <= selectedPhoto.entry.rating! ? 'star' : 'star-outline'}
+                        size={16}
+                        color={ACCENT_GOLD}
+                      />
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.detailText}>Not rated</Text>
+                )}
+              </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailLabel}>Experience:</Text>
+                <Text style={styles.detailText}>{selectedPhoto.entry.content || 'No experience was written for this entry.'}</Text>
+              </View>
+            </ScrollView>
+          </View>
         </View>
       )}
     </Modal>
   </>;
 }
+
+const DETAIL_MIN_TEXT_WIDTH = 240;
+
+const getDetailImageSize = (
+  cardWidth: number,
+  cardHeight: number,
+  aspectRatio: number,
+) => {
+  const textWidth = Math.min(DETAIL_MIN_TEXT_WIDTH, cardWidth * 0.42);
+  const availableWidth = Math.max(1, cardWidth - textWidth);
+  const height = Math.min(cardHeight, availableWidth / aspectRatio);
+  return { width: height * aspectRatio, height };
+};
 
 const CAROUSEL_IMAGE_WIDTH = 180;
 const CAROUSEL_IMAGE_HEIGHT = 125;
@@ -225,15 +282,18 @@ const styles = StyleSheet.create({
   carouselPosition: { alignSelf: 'flex-end', color: TEXT_FAINT, fontSize: 10 },
   empty: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
   emptySection: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
-  detailScreen: { flex: 1, flexDirection: 'row', backgroundColor: BG_PANEL },
-  detailImage: { flex: 1, backgroundColor: '#080B10' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  detailCard: { width: '86%', maxWidth: 800, height: '74%', maxHeight: 560, flexDirection: 'row', backgroundColor: BG_PANEL, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: BORDER_SUBTLE, elevation: 18 },
+  detailImageFrame: { height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: BG_PANEL },
   detailScroll: { flex: 1, backgroundColor: BG_PANEL },
-  detailContent: { padding: 24, gap: 14 },
+  detailContent: { padding: 20, gap: 14 },
   detailHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   detailHeading: { gap: 4 },
   detailMountain: { color: ACCENT_GOLD, fontSize: 12, fontWeight: '700' },
   detailDate: { color: TEXT_FAINT, fontSize: 11 },
   closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: BG_SUBTLE },
+  detailSection: { gap: 5 },
+  detailLabel: { color: TEXT_FAINT, fontSize: 11, fontWeight: '700' },
   detailTitle: { color: TEXT_PRIMARY, fontSize: 22, fontWeight: '700' },
   ratingRow: { flexDirection: 'row', gap: 4 },
   detailText: { color: TEXT_MUTED, fontSize: 15, lineHeight: 23 },
