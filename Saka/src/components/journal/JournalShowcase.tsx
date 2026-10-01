@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ACCENT_GOLD, BG_AVATAR, BG_PANEL, BG_SUBTLE, BORDER_SUBTLE, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
 import { supabase } from '../../lib/supabase';
@@ -68,33 +68,11 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
         <View key={group.id} style={styles.group}>
           <Text style={styles.mountainName}>{group.name}</Text>
           {group.images.length ? (
-            <View style={styles.grid}>
-              {group.images.map(({ entry, image }, index) => {
-                const imageUrl = getImageUrl(image);
-
-                return (
-                  <TouchableOpacity
-                    key={`${entry.id}-${image}-${index}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Read journal entry: ${entry.title || group.name}`}
-                    onPress={() => setSelectedPhoto({ entry, image, mountainName: group.name })}
-                    activeOpacity={0.8}
-                  >
-                    <Image
-                      source={{ uri: imageUrl }}
-                      style={styles.image}
-                      onError={(event) => {
-                        console.error(
-                          '[JournalShowcase] Image failed:',
-                          imageUrl,
-                          event.nativeEvent.error,
-                        );
-                      }}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <MountainPhotoCarousel
+              mountainName={group.name}
+              photos={group.images}
+              onSelect={(photo) => setSelectedPhoto({ ...photo, mountainName: group.name })}
+            />
           ) : (
             <Text style={styles.emptySection}>No photos yet.</Text>
           )}
@@ -146,13 +124,105 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
   </>;
 }
 
+const CAROUSEL_IMAGE_WIDTH = 180;
+const CAROUSEL_IMAGE_HEIGHT = 125;
+const CAROUSEL_IMAGE_GAP = 8;
+
+function MountainPhotoCarousel({
+  mountainName,
+  photos,
+  onSelect,
+}: {
+  mountainName: string;
+  photos: ShowcasePhoto[];
+  onSelect: (photo: ShowcasePhoto) => void;
+}) {
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const [viewportWidth, setViewportWidth] = React.useState(0);
+  const [scrollX] = React.useState(() => new Animated.Value(0));
+  const cardWidth = viewportWidth ? Math.min(CAROUSEL_IMAGE_WIDTH, viewportWidth * 0.72) : CAROUSEL_IMAGE_WIDTH;
+  const cardHeight = cardWidth * (CAROUSEL_IMAGE_HEIGHT / CAROUSEL_IMAGE_WIDTH);
+  const itemStride = cardWidth + CAROUSEL_IMAGE_GAP;
+
+  return (
+    <View
+      style={styles.carouselContainer}
+      onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
+    >
+      <Animated.FlatList
+        horizontal
+        data={photos}
+        keyExtractor={(photo, index) => `${photo.entry.id}-${photo.image}-${index}`}
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        bounces={false}
+        snapToInterval={itemStride}
+        snapToAlignment="start"
+        contentContainerStyle={{
+          paddingHorizontal: Math.max(0, (viewportWidth - cardWidth) / 2),
+        }}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: true },
+        )}
+        onMomentumScrollEnd={(event) => {
+          const index = Math.round(event.nativeEvent.contentOffset.x / itemStride);
+          setActiveIndex(Math.max(0, Math.min(index, photos.length - 1)));
+        }}
+        scrollEventThrottle={16}
+        renderItem={({ item: photo, index }) => {
+          const inputRange = [
+            (index - 1) * itemStride,
+            index * itemStride,
+            (index + 1) * itemStride,
+          ];
+          const scale = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.72, 1, 0.72],
+            extrapolate: 'clamp',
+          });
+          const opacity = scrollX.interpolate({
+            inputRange,
+            outputRange: [0.3, 1, 0.3],
+            extrapolate: 'clamp',
+          });
+          const imageUrl = getImageUrl(photo.image);
+
+          return (
+            <Animated.View style={{ width: itemStride, height: cardHeight, transform: [{ scale }], opacity }}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={`Read journal entry: ${photo.entry.title || mountainName}`}
+                onPress={() => onSelect(photo)}
+                activeOpacity={0.8}
+              >
+                <Image
+                  source={{ uri: imageUrl }}
+                  style={[styles.image, { width: cardWidth, height: cardHeight }]}
+                  onError={(event) => {
+                    console.error('[JournalShowcase] Image failed:', imageUrl, event.nativeEvent.error);
+                  }}
+                />
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        }}
+      />
+      <Text style={styles.carouselPosition}>
+        {activeIndex + 1} / {photos.length}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   scroll: { width: '100%' },
   groups: { gap: 16, width: '100%', paddingBottom: 8 },
   group: { gap: 7, width: '100%' },
   mountainName: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  image: { width: 110, height: 85, borderRadius: 6, backgroundColor: BG_AVATAR, borderWidth: 1, borderColor: BORDER_SUBTLE },
+  carouselContainer: { gap: 6 },
+  image: { width: CAROUSEL_IMAGE_WIDTH, height: CAROUSEL_IMAGE_HEIGHT, borderRadius: 6, backgroundColor: BG_AVATAR, borderWidth: 1, borderColor: BORDER_SUBTLE },
+  carouselPosition: { alignSelf: 'flex-end', color: TEXT_FAINT, fontSize: 10 },
   empty: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
   emptySection: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
   detailScreen: { flex: 1, flexDirection: 'row', backgroundColor: BG_PANEL },
