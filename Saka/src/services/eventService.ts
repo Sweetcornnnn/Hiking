@@ -33,6 +33,40 @@ export interface MyRsvp {
   created_at: string;
 }
 
+export type MyRsvpWithSafetyCheck = MyRsvp & { safety_check_id: string | null };
+
+export function eventPlannedFinish(event: {
+  event_date: string;
+  start_time: string;
+  duration_hours: number | null;
+}): Date | null {
+  if (!Number.isFinite(event.duration_hours) || !event.duration_hours || event.duration_hours <= 0) {
+    return null;
+  }
+
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(event.event_date);
+  const timeMatch = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(event.start_time);
+  if (!dateMatch || !timeMatch) return null;
+
+  const [, year, month, day] = dateMatch;
+  const [, hour, minute, second = '0'] = timeMatch;
+  const start = new Date(`${event.event_date}T${hour}:${minute}:${second}`);
+  if (
+    Number.isNaN(start.getTime()) ||
+    start.getFullYear() !== Number(year) ||
+    start.getMonth() !== Number(month) - 1 ||
+    start.getDate() !== Number(day) ||
+    start.getHours() !== Number(hour) ||
+    start.getMinutes() !== Number(minute) ||
+    start.getSeconds() !== Number(second)
+  ) {
+    return null;
+  }
+
+  const finish = new Date(start.getTime() + event.duration_hours * 3_600_000);
+  return Number.isNaN(finish.getTime()) ? null : finish;
+}
+
 export const eventService = {
   async getPublicEvents(filters?: PublicEventFilters): Promise<PublicEvent[]> {
     let query = supabase
@@ -115,6 +149,41 @@ export const eventService = {
       return null;
     }
     return (data as MyRsvp) ?? null;
+  },
+
+  async getMyRsvpForEventWithCheck(eventId: string): Promise<MyRsvpWithSafetyCheck | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data, error } = await supabase
+      .from('event_rsvps')
+      .select('id, event_id, status, guest_count, checked_in, created_at, event_safety_checks(id)')
+      .eq('event_id', eventId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error || !data) {
+      if (error) console.error('[EventService] getMyRsvpForEventWithCheck error:', error);
+      return null;
+    }
+
+    const row = data as unknown as MyRsvp & {
+      event_safety_checks?: { id: string } | { id: string }[] | null;
+    };
+    const relatedCheck = row.event_safety_checks;
+    const safetyCheckId = Array.isArray(relatedCheck)
+      ? relatedCheck[0]?.id ?? null
+      : relatedCheck?.id ?? null;
+
+    return {
+      id: row.id,
+      event_id: row.event_id,
+      status: row.status,
+      guest_count: row.guest_count,
+      checked_in: row.checked_in,
+      created_at: row.created_at,
+      safety_check_id: safetyCheckId,
+    };
   },
 
   async getMyRsvps(): Promise<MyRsvp[]> {

@@ -37,6 +37,70 @@ export const supabase = createClient(
   }
 );
 
+export type SafetyResponseStatus = 'pending' | 'got_home' | 'not_home_yet';
+export type SafetyCheckKind = 'hike' | 'event';
+export type AdminAlertType = 'not_home_yet' | 'timeout';
+
+export interface HikeSafetyCheckRow {
+  id: string;
+  hike_id: string;
+  user_id: string;
+  planned_finish_at: string;
+  response_status: SafetyResponseStatus;
+  responded_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventSafetyCheckRow {
+  id: string;
+  event_id: string;
+  rsvp_id: string;
+  user_id: string;
+  planned_finish_at: string;
+  response_status: SafetyResponseStatus;
+  responded_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminAlertRow {
+  id: string;
+  check_kind: SafetyCheckKind;
+  hike_safety_check_id: string | null;
+  event_safety_check_id: string | null;
+  alert_type: AdminAlertType;
+  subject_user_id: string;
+  triggered_at: string;
+  created_at: string;
+  dedupe_key: string;
+}
+
+export interface AdminAlertSeenRow {
+  alert_id: string;
+  admin_user_id: string;
+  seen_at: string;
+}
+
+export type Enums = {
+  safety_response_status: SafetyResponseStatus;
+  safety_check_kind: SafetyCheckKind;
+  admin_alert_type: AdminAlertType;
+};
+
+export type Functions = {
+  respond_to_hike_check: {
+    Args: { p_check_id: string; p_status: SafetyResponseStatus };
+    Returns: HikeSafetyCheckRow;
+  };
+  respond_to_event_check: {
+    Args: { p_check_id: string; p_status: SafetyResponseStatus };
+    Returns: EventSafetyCheckRow;
+  };
+  process_safety_timeouts: { Args: Record<string, never>; Returns: number };
+  is_admin: { Args: Record<string, never>; Returns: boolean };
+};
+
 // Type definitions for your database tables
 export type Tables = {
   profiles: {
@@ -179,5 +243,28 @@ export type Tables = {
     guest_count?: number | null;
     checked_in?: boolean | null;
     created_at: string;
+  };
+  hike_safety_checks: HikeSafetyCheckRow;
+  event_safety_checks: EventSafetyCheckRow;
+  admin_alerts: AdminAlertRow;
+  admin_alert_seen: AdminAlertSeenRow;
+};
+
+type SupabaseTable<Row> = {
+  Row: Row;
+  Insert: Partial<Row>;
+  Update: Partial<Row>;
+  Relationships: [];
+};
+
+export type Database = {
+  public: {
+    Tables: {
+      [TableName in keyof Tables]: SupabaseTable<Tables[TableName]>;
+    };
+    Views: Record<string, never>;
+    Enums: Enums;
+    Functions: Functions;
+    CompositeTypes: Record<string, never>;
   };
 };
