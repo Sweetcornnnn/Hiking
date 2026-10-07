@@ -10,6 +10,7 @@ import { useHikeSafetyStore } from '../store/hikeSafetyStore';
 import { supabase } from '../lib/supabase';
 import { organizationService, type Organization, type HikingEvent } from '../services/organizationService';
 import type { AdminSafetyRow } from '../services/hikeSafetyService';
+import { formatRangeShort } from '../utils/dateRange';
 import UserLocationModal from './UserLocationModal';
 
 // ---------- User Store (local, using authToken) ----------
@@ -548,7 +549,9 @@ export default function AdminRoute() {
                         </Text>
                       </View>
                       <Text style={styles.hikeMeta}>
-                        {new Date(hike.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {hike.end_date && hike.end_date !== hike.date
+                          ? formatRangeShort(hike.date, hike.end_date)
+                          : new Date(hike.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </Text>
                     </View>
                   )}
@@ -795,7 +798,9 @@ export default function AdminRoute() {
                               {e.title}
                             </Text>
                             <Text style={styles.requestEmail} numberOfLines={1}>
-                              {e.organizations?.name ?? 'Unknown org'} · {e.event_date}
+                              {e.organizations?.name ?? 'Unknown org'} · {e.end_date && e.end_date !== e.event_date
+                                ? `${e.event_date} – ${e.end_date}`
+                                : e.event_date}
                             </Text>
                           </View>
                           <View

@@ -4,6 +4,7 @@ import { Hike } from '../types';
 import { supabase } from '../lib/supabase';
 import { hikeSafetyService } from '../services/hikeSafetyService';
 import { cancelCheck, scheduleCheck } from '../services/hikeSafetyNotifications';
+import { isISODate } from '../utils/dateRange';
 
 interface HikesState {
   hikes: Hike[];
@@ -55,14 +56,24 @@ const mapUserShape = (userRow?: { email?: string | null; full_name?: string | nu
   };
 };
 
-function plannedFinishFromHike(date: string, endTime: string): Date | null {
-  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+function plannedFinishFromHike(
+  date: string,
+  endTime: string,
+  endDate?: string | null,
+): Date | null {
+  if (!isISODate(date)) return null;
+  let finishDate = date;
+  if (endDate) {
+    if (!isISODate(endDate) || endDate < date) return null;
+    finishDate = endDate;
+  }
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(finishDate);
   const timeMatch = /^(\d{2}):(\d{2})$/.exec(endTime);
   if (!dateMatch || !timeMatch) return null;
 
   const [, year, month, day] = dateMatch;
   const [, hour, minute] = timeMatch;
-  const planned = new Date(`${date}T${hour}:${minute}:00`);
+  const planned = new Date(`${finishDate}T${hour}:${minute}:00`);
   if (Number.isNaN(planned.getTime())) return null;
 
   if (
@@ -83,9 +94,10 @@ async function syncHikeSafetyCheck(args: {
   userId: string;
   date: string;
   endTime: string;
+  endDate?: string | null;
 }): Promise<void> {
   try {
-    const plannedFinishAt = plannedFinishFromHike(args.date, args.endTime);
+    const plannedFinishAt = plannedFinishFromHike(args.date, args.endTime, args.endDate);
     if (!plannedFinishAt) {
       const { data: check, error } = await supabase
         .from('hike_safety_checks')
@@ -313,6 +325,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         userId,
         date: hikeData.date,
         endTime: hikeData.end_time,
+        endDate: hikeData.end_date,
       });
 
       const mountainId = hikeData.mountain_id;
@@ -340,7 +353,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
       if (!existingHike) {
         const { data, error: lookupError } = await supabase
           .from('hikes')
-          .select('date, end_time, mountain_id')
+          .select('date, end_date, end_time, mountain_id')
           .eq('id', id)
           .eq('user_id', userId)
           .maybeSingle();
@@ -365,10 +378,13 @@ export const useHikesStore = create<HikesState>((set, get) => ({
       }
 
       const nextDate = hikeData.date ?? existingHike?.date;
+      const nextEndDate =
+        hikeData.end_date !== undefined ? hikeData.end_date : existingHike?.end_date ?? null;
       const nextEndTime = hikeData.end_time ?? existingHike?.end_time;
       const finishChanged =
         !existingHike ||
         nextDate !== existingHike.date ||
+        (nextEndDate ?? null) !== (existingHike.end_date ?? null) ||
         nextEndTime !== existingHike.end_time;
 
       if (finishChanged && nextDate && nextEndTime) {
@@ -377,6 +393,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
           userId,
           date: nextDate,
           endTime: nextEndTime,
+          endDate: nextEndDate,
         });
       }
 

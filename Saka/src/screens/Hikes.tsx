@@ -19,6 +19,7 @@ import { getWeatherForecast } from '../services/weatherService';
 import { Hike } from '../types';
 import HikeFormModal from '../components/HikeFormModal';
 import Toast, { ToastHandle } from '../components/Toast';
+import { dateInRange, effectiveEnd, formatRangeShort } from '../utils/dateRange';
 
 const COLUMNS = 3;
 const OUTER_PADDING = 16;
@@ -114,6 +115,7 @@ const getWeatherIconColor = (iconCode?: string) => {
 
 interface HikeCardProps {
   hike: Hike;
+  displayDate: string;
   weather: DayWeather | null;
   canEdit: boolean;
   isLastInRow: boolean;
@@ -134,7 +136,7 @@ interface HikeCardProps {
 // edit modal opens. Only once the delay is crossed does the gesture "engage"
 // — at which point releasing snaps the wipe back and, since you clearly
 // meant to hold rather than tap, does NOT also open the edit modal.
-function HikeCard({ hike, weather, canEdit, isLastInRow, onEdit, onDelete }: HikeCardProps) {
+function HikeCard({ hike, displayDate, weather, canEdit, isLastInRow, onEdit, onDelete }: HikeCardProps) {
   const fillAnim = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const fillAnimation = useRef<Animated.CompositeAnimation | null>(null);
@@ -239,6 +241,16 @@ function HikeCard({ hike, weather, canEdit, isLastInRow, onEdit, onDelete }: Hik
     outputRange: [1, 0.985],
   });
   const translateX = Animated.multiply(shakeAnim, shakeAmplitude);
+  const isMultiDay = !!(hike.end_date && hike.end_date !== hike.date);
+  const isFirstDay = hike.date === displayDate;
+  const isLastDay = effectiveEnd(hike.date, hike.end_date) === displayDate;
+  const timeText = !isMultiDay
+    ? `${formatTimeShort(hike.start_time)}–${formatTimeShort(hike.end_time)}`
+    : isFirstDay && !isLastDay
+      ? `Starts ${formatTimeShort(hike.start_time)}`
+      : isLastDay && !isFirstDay
+        ? `Ends ${formatTimeShort(hike.end_time)}`
+        : `${formatTimeShort(hike.start_time)}–${formatTimeShort(hike.end_time)}`;
 
   return (
     <Pressable
@@ -276,8 +288,16 @@ function HikeCard({ hike, weather, canEdit, isLastInRow, onEdit, onDelete }: Hik
 
         <View style={styles.cardInfoBlock}>
           <Text style={styles.cardTime} numberOfLines={1}>
-            {formatTimeShort(hike.start_time)}–{formatTimeShort(hike.end_time)}
+            {timeText}
           </Text>
+          {isMultiDay ? (
+            <View style={styles.cardRow}>
+              <Ionicons name="calendar-outline" size={10} color="rgba(201,169,110,0.7)" />
+              <Text style={styles.cardRowText} numberOfLines={1}>
+                {formatRangeShort(hike.date, hike.end_date)}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.cardRow}>
             <Ionicons name="people-outline" size={10} color="rgba(255,255,255,0.5)" />
             <Text style={styles.cardRowText}>{hike.tagalongs}</Text>
@@ -312,7 +332,7 @@ export default function HikesScreen() {
   const [dayWeather, setDayWeather] = useState<DayWeather | null>(null);
   const toastRef = useRef<ToastHandle>(null);
 
-  const hikesOnDate = mountainHikes.filter((h) => h.date === date);
+  const hikesOnDate = mountainHikes.filter((h) => dateInRange(date, h.date, h.end_date));
   const mountainName = resolvedMountain?.name ?? hikesOnDate[0]?.mountain_name;
 
   // Resolve the mountain (for its name and lat/long) — cache first, same as
@@ -456,6 +476,7 @@ export default function HikesScreen() {
           renderItem={({ item, index }) => (
             <HikeCard
               hike={item}
+              displayDate={date}
               weather={dayWeather}
               canEdit={item.user_id === user?.id}
               isLastInRow={(index + 1) % COLUMNS === 0}

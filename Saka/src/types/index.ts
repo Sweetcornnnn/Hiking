@@ -14,6 +14,7 @@ export interface Hike {
   id: string;
   user_id: string;
   date: string;
+  end_date?: string | null;
   start_time: string;
   end_time: string;
   tagalongs: number;
@@ -22,10 +23,7 @@ export interface Hike {
   mountain_id?: string;
   mountain_name?: string;
   created_at: string;
-  user?: {
-    email: string;
-    name: string;
-  };
+  user?: { email: string; name: string };
 }
 
 export interface Mountain {

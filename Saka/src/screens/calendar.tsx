@@ -17,6 +17,7 @@ import { getWeatherForecast } from '../services/weatherService';
 import { useAuthStore } from '../store/authStore';
 import HikeFormModal from '../components/HikeFormModal';
 import Toast, { ToastHandle } from '../components/Toast';
+import { inclusiveDates } from '../utils/dateRange';
 
 // ⚠️ Replace with your actual Mountain type import (e.g. from '../types')
 // if one already exists — this is a minimal shape to satisfy the fields
@@ -127,13 +128,15 @@ export default function CalendarScreen() {
 
 
   const markedDates = mountainHikes.reduce((acc, hike) => {
-    const isSelected = hike.date === selectedDate;
-    acc[hike.date] = {
-      marked: true,
-      dotColor: '#C9A96E',
-      selected: isSelected,
-      selectedColor: '#C9A96E',
-    };
+    for (const date of inclusiveDates(hike.date, hike.end_date)) {
+      const isSelected = date === selectedDate;
+      acc[date] = {
+        marked: true,
+        dotColor: '#C9A96E',
+        selected: isSelected,
+        selectedColor: '#C9A96E',
+      };
+    }
     return acc;
   }, {} as { [key: string]: any });
 
@@ -207,7 +210,10 @@ export default function CalendarScreen() {
     return '#C9A96E';
   };
 
-  const hikeDates = new Set(mountainHikes.map((hike) => hike.date));
+  const hikeDates = new Set<string>();
+  for (const hike of mountainHikes) {
+    for (const date of inclusiveDates(hike.date, hike.end_date)) hikeDates.add(date);
+  }
   const todayDateString = new Date().toISOString().split('T')[0];
 
   const renderDayComponent = ({

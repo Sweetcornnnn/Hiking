@@ -227,7 +227,9 @@ export default function OrgEventDetail() {
         <InfoRow
           icon="calendar-outline"
           label="When"
-          value={`${event.event_date} · ${event.start_time}${event.end_time ? `–${event.end_time}` : event.duration_hours ? ` · ${event.duration_hours}h` : ''}`}
+          value={`${event.end_date && event.end_date !== event.event_date
+            ? `${event.event_date} – ${event.end_date}`
+            : event.event_date} · ${event.start_time}${event.end_time ? `–${event.end_time}` : event.duration_hours ? ` · ${event.duration_hours}h` : ''}`}
         />
         <InfoRow icon="location-outline" label="Meeting point" value={event.meeting_point} />
         <InfoRow icon="speedometer-outline" label="Difficulty" value={event.difficulty} />

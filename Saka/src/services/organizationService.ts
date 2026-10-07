@@ -21,6 +21,7 @@ export interface HikingEvent {
   title: string;
   description: string | null;
   event_date: string;
+  end_date: string | null;
   start_time: string;
   end_time: string | null;
   meeting_point: string;
@@ -73,6 +74,7 @@ export interface CreateEventInput {
   title: string;
   description?: string;
   event_date: string;      // YYYY-MM-DD
+  end_date?: string | null;
   start_time: string;      // HH:MM (24h)
   end_time: string;        // HH:MM (24h)
   meeting_point: string;
@@ -364,7 +366,7 @@ export const organizationService = {
     const today = new Date().toISOString().slice(0, 10);
 
     const upcomingCount = events.filter(
-      (e) => e.event_date >= today && e.status === 'published'
+      (e) => (e.end_date ?? e.event_date) >= today && e.status === 'published'
     ).length;
     const draftCount = events.filter((e) => e.status === 'draft').length;
     const publishedCount = events.filter((e) => e.status === 'published').length;
