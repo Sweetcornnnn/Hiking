@@ -222,6 +222,7 @@ export type Tables = {
     description?: string | null;
     event_date: string;
     start_time: string;
+    end_time?: string | null;
     meeting_point: string;
     difficulty: string;
     duration_hours?: number | null;

@@ -38,12 +38,9 @@ export type MyRsvpWithSafetyCheck = MyRsvp & { safety_check_id: string | null };
 export function eventPlannedFinish(event: {
   event_date: string;
   start_time: string;
-  duration_hours: number | null;
+  end_time?: string | null;
+  duration_hours?: number | null;
 }): Date | null {
-  if (!Number.isFinite(event.duration_hours) || !event.duration_hours || event.duration_hours <= 0) {
-    return null;
-  }
-
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(event.event_date);
   const timeMatch = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(event.start_time);
   if (!dateMatch || !timeMatch) return null;
@@ -63,7 +60,27 @@ export function eventPlannedFinish(event: {
     return null;
   }
 
-  const finish = new Date(start.getTime() + event.duration_hours * 3_600_000);
+  let finish: Date;
+  if (event.end_time) {
+    const endMatch = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(event.end_time);
+    if (!endMatch) return null;
+    const [, endHour, endMinute, endSecond = '0'] = endMatch;
+    finish = new Date(`${event.event_date}T${endHour}:${endMinute}:${endSecond}`);
+    if (
+      Number.isNaN(finish.getTime()) ||
+      finish.getHours() !== Number(endHour) ||
+      finish.getMinutes() !== Number(endMinute) ||
+      finish.getSeconds() !== Number(endSecond)
+    ) {
+      return null;
+    }
+    if (finish <= start) finish.setDate(finish.getDate() + 1);
+  } else {
+    if (!Number.isFinite(event.duration_hours) || !event.duration_hours || event.duration_hours <= 0) {
+      return null;
+    }
+    finish = new Date(start.getTime() + event.duration_hours * 3_600_000);
+  }
   return Number.isNaN(finish.getTime()) ? null : finish;
 }
 
