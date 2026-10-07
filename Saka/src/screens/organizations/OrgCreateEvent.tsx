@@ -1,30 +1,63 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Modal,
-  FlatList,
-  Platform,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Modal } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../../store/authStore';
 import {
   organizationService,
   type Organization,
   type EventStatus,
 } from '../../services/organizationService';
 import { mountainService, type Mountain } from '../../services/mountainService';
+import { fetchMeetingPoints } from '../../services/viewpointService';
 import { useRequireOrganization } from '../../hooks/useRoleGuard';
+import {
+  OrgLandscapeShell,
+  RailButton,
+  CenteredState,
+  Banner,
+  Field,
+  FormInput,
+  FormRow,
+  SelectField,
+  Chip,
+  PickerModal,
+  PC,
+  SP,
+  FS,
+} from '../../components/organizations/OrgLandscapeShell';
 
 const DIFFICULTIES = ['Easy', 'Moderate', 'Hard', 'Expert'] as const;
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Local date (toISOString is UTC and is off by a day for early-morning UTC+8 users).
+const todayISO = () => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
+const dateFromISO = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const dateToISO = (value: Date) => {
+  const mm = String(value.getMonth() + 1).padStart(2, '0');
+  const dd = String(value.getDate()).padStart(2, '0');
+  return `${value.getFullYear()}-${mm}-${dd}`;
+};
+
+const timeFromValue = (value: string) => {
+  const [hours, minutes] = value.split(':').map(Number);
+  const result = new Date();
+  result.setHours(hours, minutes, 0, 0);
+  return result;
+};
+
+const timeToValue = (value: Date) =>
+  `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+
+const OTHER_MEETING_POINT = '__other__';
 
 const isDateLike = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 const isTimeLike = (v: string) => /^\d{2}:\d{2}$/.test(v);
@@ -32,22 +65,25 @@ const isTimeLike = (v: string) => /^\d{2}:\d{2}$/.test(v);
 export default function OrgCreateEvent() {
   const router = useRouter();
   useRequireOrganization();
-  const { profile } = useAuthStore();
 
   const [org, setOrg] = useState<Organization | null>(null);
   const [orgLoading, setOrgLoading] = useState(true);
   const [mountains, setMountains] = useState<Mountain[]>([]);
+  const [meetingPointOptions, setMeetingPointOptions] = useState<string[]>([]);
 
   // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [mountainId, setMountainId] = useState<string | null>(null);
   const [mountainPickerOpen, setMountainPickerOpen] = useState(false);
+  const [meetingPointPickerOpen, setMeetingPointPickerOpen] = useState(false);
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [meetingPoint, setMeetingPoint] = useState('');
+  const [customMeetingPoint, setCustomMeetingPoint] = useState(false);
+  const [activePicker, setActivePicker] = useState<'date' | 'start' | 'end' | null>(null);
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>('Moderate');
-  const [durationHours, setDurationHours] = useState('');
   const [capacity, setCapacity] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [allowWalkins, setAllowWalkins] = useState(false);
@@ -61,6 +97,25 @@ export default function OrgCreateEvent() {
     () => mountains.find((m) => m.id === mountainId) ?? null,
     [mountains, mountainId]
   );
+
+  useEffect(() => {
+    let mounted = true;
+    if (!mountainId) {
+      setMeetingPointOptions([]);
+      setMeetingPoint('');
+      setCustomMeetingPoint(false);
+      return;
+    }
+
+    fetchMeetingPoints(mountainId, selectedMountain?.name, selectedMountain?.viewpoints).then((points) => {
+      if (mounted) setMeetingPointOptions(points);
+    });
+    setMeetingPoint('');
+    setCustomMeetingPoint(false);
+    return () => {
+      mounted = false;
+    };
+  }, [mountainId, selectedMountain]);
 
   // Load org + mountains
   useEffect(() => {
@@ -97,11 +152,10 @@ export default function OrgCreateEvent() {
     if (!mountainId) return 'Please select a mountain';
     if (!isDateLike(date)) return 'Date must be in YYYY-MM-DD format';
     if (date < todayISO()) return 'Date must be today or later';
-    if (!isTimeLike(time)) return 'Time must be in HH:MM format';
+    if (!isTimeLike(time)) return 'Choose a start time';
+    if (!isTimeLike(endTime)) return 'Choose an end time';
+    if (time === endTime) return 'End time must be different from start time';
     if (!meetingPoint.trim()) return 'Meeting point is required';
-    if (durationHours && (Number.isNaN(Number(durationHours)) || Number(durationHours) <= 0)) {
-      return 'Duration must be a positive number';
-    }
     if (capacity && (Number.isNaN(Number(capacity)) || Number(capacity) < 1)) {
       return 'Capacity must be at least 1';
     }
@@ -131,9 +185,10 @@ export default function OrgCreateEvent() {
       description: description.trim() || undefined,
       event_date: date,
       start_time: time,
+      end_time: endTime,
       meeting_point: meetingPoint.trim(),
       difficulty,
-      duration_hours: durationHours ? Number(durationHours) : null,
+      duration_hours: durationFromTimes(time, endTime),
       capacity: capacity ? Number(capacity) : null,
       is_public: isPublic,
       allow_walkins: allowWalkins,
@@ -150,285 +205,306 @@ export default function OrgCreateEvent() {
     }
 
     router.replace({
-    pathname: '/organizations/EventDetail',
-    params: { eventId },
+      pathname: '/organizations/EventDetail',
+      params: { eventId },
     } as any);
   };
 
-  if (orgLoading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#C9A96E" />
-        <Text style={styles.centeredText}>Loading…</Text>
-      </View>
-    );
-  }
-
+  if (orgLoading) return <CenteredState loading message="Loading…" />;
   if (!org) return null;
 
   return (
     <>
-      <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={18} color="#C9A96E" />
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.eyebrow}>New event</Text>
-          <Text style={styles.title}>Create a hiking event</Text>
-          {!isVerified && (
-            <View style={styles.warnBanner}>
-              <Ionicons name="information-circle-outline" size={14} color="#C9A96E" />
-              <Text style={styles.warnText}>
-                Your organization isn't verified yet — you can save drafts, but publishing is
-                locked until an admin approves you.
-              </Text>
-            </View>
-          )}
-        </View>
+      <OrgLandscapeShell
+        onBack={() => router.back()}
+        backLabel="Back"
+        eyebrow="New event"
+        title="Create a hiking event"
+        titleLines={2}
+        rail={
+          <>
+            {!isVerified && (
+              <Banner>
+                Not verified yet — you can save drafts, but publishing is locked until an admin
+                approves you.
+              </Banner>
+            )}
+            {error && <Banner tone="error">{error}</Banner>}
+          </>
+        }
+        railFooter={
+          <>
+            <RailButton
+              icon="save-outline"
+              label="Save draft"
+              variant="secondary"
+              disabled={submitting}
+              onPress={() => handleSave('draft')}
+            />
+            <RailButton
+              icon={isVerified ? 'rocket-outline' : 'lock-closed-outline'}
+              label={isVerified ? 'Publish event' : 'Publish locked'}
+              variant="primary"
+              loading={submitting}
+              disabled={submitting || !isVerified}
+              onPress={() => handleSave('published')}
+            />
+          </>
+        }
+      >
+        {/* Title + mountain */}
+        <FormRow>
+          <Field label="EVENT TITLE">
+            <FormInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Sunrise Ridge Hike"
+              editable={!submitting}
+            />
+          </Field>
+          <Field label="MOUNTAIN">
+            <SelectField
+              icon={selectedMountain ? 'trail-sign-outline' : 'add-circle-outline'}
+              text={
+                selectedMountain
+                  ? `${selectedMountain.name} · ${selectedMountain.difficulty}`
+                  : 'Select a mountain'
+              }
+              selected={!!selectedMountain}
+              disabled={submitting}
+              onPress={() => setMountainPickerOpen(true)}
+            />
+          </Field>
+        </FormRow>
 
-        {error && (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle-outline" size={16} color="#E07070" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* Basic info */}
-        <FieldGroup label="EVENT TITLE">
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Sunrise Ridge Hike"
-            placeholderTextColor="rgba(255,255,255,0.2)"
-            style={styles.input}
-            editable={!submitting}
-          />
-        </FieldGroup>
-
-        <FieldGroup label="DESCRIPTION">
-          <TextInput
+        <Field label="DESCRIPTION">
+          <FormInput
             value={description}
             onChangeText={setDescription}
             placeholder="A moderate 6-hour ridge hike with a sunrise summit."
-            placeholderTextColor="rgba(255,255,255,0.2)"
-            style={[styles.input, styles.textarea]}
             multiline
             editable={!submitting}
           />
-        </FieldGroup>
+        </Field>
 
-        {/* Mountain picker */}
-        <FieldGroup label="MOUNTAIN">
-          <TouchableOpacity
-            style={styles.pickerBtn}
-            onPress={() => setMountainPickerOpen(true)}
-            disabled={submitting}
-            activeOpacity={0.75}
-          >
-            <Ionicons
-              name={selectedMountain ? 'trail-sign-outline' : 'add-circle-outline'}
-              size={16}
-              color={selectedMountain ? '#C9A96E' : 'rgba(255,255,255,0.4)'}
+        {/* Date and times use native pickers instead of manual text entry. */}
+        <FormRow>
+          <Field label="DATE">
+            <SelectField
+              icon="calendar-outline"
+              text={date ? dateFromISO(date).toLocaleDateString() : 'Event Date'}
+              selected={!!date}
+              disabled={submitting}
+              onPress={() => setActivePicker('date')}
             />
-            <Text
-              style={[styles.pickerText, selectedMountain && styles.pickerTextSelected]}
-              numberOfLines={1}
-            >
-              {selectedMountain
-                ? `${selectedMountain.name} · ${selectedMountain.difficulty}`
-                : 'Select a mountain'}
-            </Text>
-            <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.3)" />
-          </TouchableOpacity>
-        </FieldGroup>
+          </Field>
+          <Field label="START TIME">
+            <SelectField
+              icon="time-outline"
+              text={time ? timeFromValue(time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Starting time'}
+              selected={!!time}
+              disabled={submitting}
+              onPress={() => setActivePicker('start')}
+            />
+          </Field>
+          <Field label="END TIME">
+            <SelectField
+              icon="time-outline"
+              text={endTime ? timeFromValue(endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Ending time'}
+              selected={!!endTime}
+              disabled={submitting}
+              onPress={() => setActivePicker('end')}
+            />
+          </Field>
+        </FormRow>
 
-        {/* Date / time */}
-        <View style={styles.row}>
-          <View style={styles.rowItem}>
-            <FieldGroup label="DATE (YYYY-MM-DD)">
-              <TextInput
-                value={date}
-                onChangeText={setDate}
-                placeholder={todayISO()}
-                placeholderTextColor="rgba(255,255,255,0.2)"
-                autoCapitalize="none"
-                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-                style={styles.input}
+        {/* Meeting point + capacity */}
+        <FormRow weights={[2, 1]}>
+          <Field label="MEETING POINT">
+            <SelectField
+              icon="location-outline"
+              text={customMeetingPoint
+                ? 'Other location'
+                : meetingPoint || (mountainId ? 'Choose a meeting point' : 'Select a mountain first')}
+              selected={!!meetingPoint}
+              disabled={submitting}
+              onPress={() => {
+                if (!mountainId) {
+                  setMountainPickerOpen(true);
+                  return;
+                }
+                setMeetingPointPickerOpen(true);
+              }}
+            />
+            {customMeetingPoint && (
+              <FormInput
+                value={meetingPoint}
+                onChangeText={setMeetingPoint}
+                placeholder="Enter the meeting location"
                 editable={!submitting}
               />
-            </FieldGroup>
-          </View>
-          <View style={styles.rowItem}>
-            <FieldGroup label="START TIME (HH:MM)">
-              <TextInput
-                value={time}
-                onChangeText={setTime}
-                placeholder="05:30"
-                placeholderTextColor="rgba(255,255,255,0.2)"
-                autoCapitalize="none"
-                style={styles.input}
-                editable={!submitting}
-              />
-            </FieldGroup>
-          </View>
-        </View>
-
-        <FieldGroup label="MEETING POINT">
-          <TextInput
-            value={meetingPoint}
-            onChangeText={setMeetingPoint}
-            placeholder="Barangay Flores trailhead"
-            placeholderTextColor="rgba(255,255,255,0.2)"
-            style={styles.input}
-            editable={!submitting}
-          />
-        </FieldGroup>
+            )}
+          </Field>
+          <Field label="CAPACITY">
+            <FormInput
+              value={capacity}
+              onChangeText={setCapacity}
+              placeholder="20"
+              keyboardType="numeric"
+              editable={!submitting}
+            />
+          </Field>
+        </FormRow>
 
         {/* Difficulty */}
-        <FieldGroup label="DIFFICULTY">
+        <Field label="DIFFICULTY">
           <View style={styles.chipRow}>
             {DIFFICULTIES.map((d) => (
-              <TouchableOpacity
+              <Chip
                 key={d}
-                onPress={() => setDifficulty(d)}
-                style={[styles.chip, difficulty === d && styles.chipActive]}
+                label={d}
+                active={difficulty === d}
                 disabled={submitting}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.chipText, difficulty === d && styles.chipTextActive]}>{d}</Text>
-              </TouchableOpacity>
+                onPress={() => setDifficulty(d)}
+              />
             ))}
           </View>
-        </FieldGroup>
+        </Field>
 
-        <View style={styles.row}>
-          <View style={styles.rowItem}>
-            <FieldGroup label="DURATION (HRS)">
-              <TextInput
-                value={durationHours}
-                onChangeText={setDurationHours}
-                placeholder="6"
-                placeholderTextColor="rgba(255,255,255,0.2)"
-                keyboardType="numeric"
-                style={styles.input}
-                editable={!submitting}
-              />
-            </FieldGroup>
-          </View>
-          <View style={styles.rowItem}>
-            <FieldGroup label="CAPACITY">
-              <TextInput
-                value={capacity}
-                onChangeText={setCapacity}
-                placeholder="20"
-                placeholderTextColor="rgba(255,255,255,0.2)"
-                keyboardType="numeric"
-                style={styles.input}
-                editable={!submitting}
-              />
-            </FieldGroup>
-          </View>
-        </View>
-
-        {/* Toggles */}
-        <ToggleRow
-          label="Public event"
-          hint="Visible to all hikers once published"
-          value={isPublic}
-          onChange={setIsPublic}
-          disabled={submitting}
-        />
-        <ToggleRow
-          label="Allow walk-ins"
-          hint="Hikers can join without pre-RSVP"
-          value={allowWalkins}
-          onChange={setAllowWalkins}
-          disabled={submitting}
-        />
-
-        {/* Safety */}
-        <FieldGroup label="SAFETY NOTES">
-          <TextInput
-            value={safetyNotes}
-            onChangeText={setSafetyNotes}
-            placeholder="River crossing at KM 4, bring a change of socks."
-            placeholderTextColor="rgba(255,255,255,0.2)"
-            style={[styles.input, styles.textarea]}
-            multiline
-            editable={!submitting}
-          />
-        </FieldGroup>
-
-        <FieldGroup label="REQUIRED GEAR">
-          <TextInput
-            value={requiredGear}
-            onChangeText={setRequiredGear}
-            placeholder="3L water, headlamp, rain jacket, trekking poles"
-            placeholderTextColor="rgba(255,255,255,0.2)"
-            style={[styles.input, styles.textarea]}
-            multiline
-            editable={!submitting}
-          />
-        </FieldGroup>
-
-        {/* Actions */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.secondaryButton, submitting && styles.btnDisabled]}
-            onPress={() => handleSave('draft')}
+        {/* Toggles, side by side */}
+        <FormRow>
+          <ToggleRow
+            label="Public event"
+            hint="Visible to all hikers once published"
+            value={isPublic}
+            onChange={setIsPublic}
             disabled={submitting}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="save-outline" size={16} color="#F4E7C5" />
-            <Text style={styles.secondaryButtonText}>Save draft</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.primaryButton,
-              (submitting || !isVerified) && styles.btnDisabled,
-            ]}
-            onPress={() => handleSave('published')}
-            disabled={submitting || !isVerified}
-            activeOpacity={0.85}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#0E1520" />
-            ) : (
-              <>
-                <Ionicons
-                  name={isVerified ? 'rocket-outline' : 'lock-closed-outline'}
-                  size={16}
-                  color="#0E1520"
-                />
-                <Text style={styles.primaryButtonText}>
-                  {isVerified ? 'Publish event' : 'Publish locked'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+          />
+          <ToggleRow
+            label="Allow walk-ins"
+            hint="Hikers can join without pre-RSVP"
+            value={allowWalkins}
+            onChange={setAllowWalkins}
+            disabled={submitting}
+          />
+        </FormRow>
 
-      {/* Mountain picker modal */}
-      <MountainPickerModal
+        {/* Safety + gear, side by side */}
+        <FormRow>
+          <Field label="SAFETY NOTES">
+            <FormInput
+              value={safetyNotes}
+              onChangeText={setSafetyNotes}
+              placeholder="River crossing at KM 4, bring a change of socks."
+              multiline
+              editable={!submitting}
+            />
+          </Field>
+          <Field label="REQUIRED GEAR">
+            <FormInput
+              value={requiredGear}
+              onChangeText={setRequiredGear}
+              placeholder="3L water, headlamp, rain jacket, trekking poles"
+              multiline
+              editable={!submitting}
+            />
+          </Field>
+        </FormRow>
+      </OrgLandscapeShell>
+
+      <PickerModal
         visible={mountainPickerOpen}
-        mountains={mountains}
+        title="Select mountain"
+        items={mountains}
+        selectedId={mountainId}
+        emptyText="No mountains available."
         onSelect={setMountainId}
         onClose={() => setMountainPickerOpen(false)}
       />
+
+      <PickerModal
+        visible={meetingPointPickerOpen}
+        title="Choose meeting point"
+        items={[
+          ...meetingPointOptions.map((point) => ({ id: point, name: point })),
+          { id: OTHER_MEETING_POINT, name: 'Other location' },
+        ]}
+        selectedId={customMeetingPoint ? OTHER_MEETING_POINT : meetingPoint}
+        emptyText="No saved meeting points. Choose Other location."
+        onSelect={(value) => {
+          const isOther = value === OTHER_MEETING_POINT;
+          setCustomMeetingPoint(isOther);
+          setMeetingPoint(isOther ? '' : value);
+        }}
+        onClose={() => setMeetingPointPickerOpen(false)}
+      />
+
+      {activePicker && (
+        <>
+          {Platform.OS === 'ios' ? (
+            <Modal transparent animationType="fade" onRequestClose={() => setActivePicker(null)}>
+              <View style={styles.pickerOverlay}>
+                <View style={styles.pickerCard}>
+                  <DateTimePicker
+                    value={activePicker === 'date'
+                      ? (date ? dateFromISO(date) : new Date())
+                      : (activePicker === 'start' ? time : endTime)
+                        ? timeFromValue(activePicker === 'start' ? time : endTime)
+                        : new Date()}
+                    mode={activePicker === 'date' ? 'date' : 'time'}
+                    display="spinner"
+                    minimumDate={activePicker === 'date' ? new Date() : undefined}
+                    onValueChange={(_, selected) => handlePickerValue(selected)}
+                    onDismiss={handlePickerDismiss}
+                    onNeutralButtonPress={handlePickerDismiss}
+                  />
+                  <TouchableOpacity style={styles.pickerDone} onPress={() => setActivePicker(null)}>
+                    <Text style={styles.pickerDoneText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+          ) : (
+            <DateTimePicker
+              value={activePicker === 'date'
+                ? (date ? dateFromISO(date) : new Date())
+                : (activePicker === 'start' ? time : endTime)
+                  ? timeFromValue(activePicker === 'start' ? time : endTime)
+                  : new Date()}
+              mode={activePicker === 'date' ? 'date' : 'time'}
+              display="default"
+              is24Hour={false}
+              minimumDate={activePicker === 'date' ? new Date() : undefined}
+              onValueChange={(_, selected) => handlePickerValue(selected)}
+              onDismiss={handlePickerDismiss}
+              onNeutralButtonPress={handlePickerDismiss}
+            />
+          )}
+        </>
+      )}
     </>
   );
+
+  function handlePickerValue(selected: Date) {
+    if (!activePicker) return;
+    if (activePicker === 'date') setDate(dateToISO(selected));
+    if (activePicker === 'start') setTime(timeToValue(selected));
+    if (activePicker === 'end') setEndTime(timeToValue(selected));
+    if (Platform.OS !== 'ios') setActivePicker(null);
+  }
+
+  function handlePickerDismiss() {
+    setActivePicker(null);
+  }
 }
 
-function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.label}>{label}</Text>
-      {children}
-    </View>
-  );
+
+function durationFromTimes(start: string, end: string): number {
+  const [startHour, startMinute] = start.split(':').map(Number);
+  const [endHour, endMinute] = end.split(':').map(Number);
+  let minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+  if (minutes <= 0) minutes += 24 * 60;
+  return minutes / 60;
 }
 
 function ToggleRow({
@@ -446,10 +522,12 @@ function ToggleRow({
 }) {
   return (
     <TouchableOpacity
-      style={[styles.toggleRow, disabled && styles.btnDisabled]}
+      style={[styles.toggleRow, disabled && styles.disabled]}
       onPress={() => onChange(!value)}
       disabled={disabled}
       activeOpacity={0.8}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value, disabled: !!disabled }}
     >
       <View style={{ flex: 1 }}>
         <Text style={styles.toggleLabel}>{label}</Text>
@@ -462,243 +540,53 @@ function ToggleRow({
   );
 }
 
-function MountainPickerModal({
-  visible,
-  mountains,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  mountains: Mountain[];
-  onSelect: (id: string) => void;
-  onClose: () => void;
-}) {
-  return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select mountain</Text>
-            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
-              <Ionicons name="close" size={14} color="rgba(255,255,255,0.5)" />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={mountains}
-            keyExtractor={(m) => m.id}
-            contentContainerStyle={{ padding: 8 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.modalRow}
-                onPress={() => {
-                  onSelect(item.id);
-                  onClose();
-                }}
-                activeOpacity={0.75}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.modalRowTitle}>{item.name}</Text>
-                  <Text style={styles.modalRowSub}>
-                    {item.difficulty} · {item.elevationDisplay}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.3)" />
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <Text style={styles.modalEmpty}>No mountains available.</Text>
-            }
-          />
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A121A' },
-  container: { padding: 22, paddingTop: 28, paddingBottom: 80, gap: 14 },
-  centered: { flex: 1, backgroundColor: '#0A121A', justifyContent: 'center', alignItems: 'center', gap: 12 },
-  centeredText: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
-
-  header: { gap: 4, marginBottom: 4 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
-  backText: { color: '#C9A96E', fontWeight: '600', fontSize: 12 },
-  eyebrow: { color: '#C9A96E', fontSize: 11, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginTop: 4 },
-  title: { color: '#FFF', fontSize: 24, fontWeight: '800' },
-  warnBanner: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: 'rgba(201,169,110,0.06)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.2)',
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  pickerOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: SP.xl,
+    backgroundColor: 'rgba(0,0,0,0.65)',
   },
-  warnText: { color: '#E8D7AE', fontSize: 11, flex: 1, lineHeight: 16 },
-
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(224,112,112,0.08)',
+  pickerCard: {
+    backgroundColor: PC.bgPanel,
+    borderColor: PC.border,
     borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.25)',
-    padding: 12,
-    borderRadius: 10,
+    borderRadius: PC.radius,
+    padding: SP.md,
   },
-  errorText: { color: '#E07070', fontSize: 12, flex: 1 },
-
-  fieldGroup: { gap: 6 },
-  label: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  input: {
-    backgroundColor: '#111C27',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#FFF',
-    fontSize: 13,
-  },
-  textarea: { minHeight: 72, textAlignVertical: 'top' },
-  row: { flexDirection: 'row', gap: 12 },
-  rowItem: { flex: 1 },
-
-  pickerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#111C27',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-  },
-  pickerText: { flex: 1, color: 'rgba(255,255,255,0.4)', fontSize: 13 },
-  pickerTextSelected: { color: '#FFF', fontWeight: '600' },
-
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  chipActive: { backgroundColor: '#C9A96E', borderColor: '#C9A96E' },
-  chipText: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '600' },
-  chipTextActive: { color: '#0E1520', fontWeight: '800' },
+  pickerDone: { alignSelf: 'flex-end', paddingHorizontal: SP.lg, paddingVertical: SP.sm },
+  pickerDoneText: { color: PC.gold, fontSize: FS.base, fontWeight: '700' },
 
   toggleRow: {
+    minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#111C27',
-    borderRadius: 12,
+    gap: SP.md,
+    backgroundColor: PC.bgPanel,
+    borderRadius: PC.radius,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    padding: 14,
+    borderColor: PC.borderSoft,
+    paddingVertical: 10,
+    paddingHorizontal: SP.md,
   },
-  toggleLabel: { color: '#FFF', fontSize: 13, fontWeight: '700' },
-  toggleHint: { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 },
+  toggleLabel: { color: '#FFF', fontSize: FS.base, fontWeight: '700' },
+  toggleHint: { color: 'rgba(255,255,255,0.5)', fontSize: FS.small, marginTop: 2, lineHeight: 15 },
   toggleTrack: {
     width: 44,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     padding: 3,
     justifyContent: 'center',
   },
   toggleTrackOn: { backgroundColor: 'rgba(201,169,110,0.6)' },
   toggleThumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-  },
-  toggleThumbOn: { backgroundColor: '#C9A96E', alignSelf: 'flex-end' },
-
-  actionRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  primaryButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#C9A96E',
-    borderRadius: 12,
-    paddingVertical: 15,
-  },
-  primaryButtonText: { color: '#0E1520', fontWeight: '800', fontSize: 13 },
-  secondaryButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#111C27',
-    borderRadius: 12,
-    paddingVertical: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  secondaryButtonText: { color: '#F4E7C5', fontWeight: '700', fontSize: 13 },
-  btnDisabled: { opacity: 0.4 },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 440,
-    maxHeight: 500,
-    backgroundColor: '#111927',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
-  },
-  modalTitle: { color: '#FFF', fontSize: 14, fontWeight: '700' },
-  modalClose: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    width: 20,
+    height: 20,
     borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.65)',
   },
-  modalRowTitle: { color: '#FFF', fontSize: 13, fontWeight: '600' },
-  modalRowSub: { color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 },
-  modalEmpty: { color: 'rgba(255,255,255,0.4)', fontSize: 12, textAlign: 'center', padding: 24 },
+  toggleThumbOn: { backgroundColor: PC.gold, alignSelf: 'flex-end' },
+  disabled: { opacity: 0.4 },
 });
