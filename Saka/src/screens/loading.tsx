@@ -102,8 +102,8 @@ export default function LoadingScreen({
 
   const { width, height } = useWindowDimensions();
   const isLandscape = width >= height;
-  const textSize = width < 340 ? 10 : isLandscape ? 13 : 12;
-  const sidePadding = isLandscape ? 64 : Math.max(24, Math.round(width * 0.1));
+  const textSize = width < 340 ? 9 : isLandscape ? 11 : 10;
+  const sidePadding = isLandscape ? 24 : Math.max(12, Math.round(width * 0.04));
 
   const [lines] = useState(() => shuffled(HIKING_LINES));
   const [lineIndex, setLineIndex] = useState(0);
@@ -343,7 +343,7 @@ export default function LoadingScreen({
             <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
           </View>
 
-          <View style={[styles.textBox, { minHeight: textSize * 1.6 * 2 }]}>
+          <View style={[styles.textBox, { minHeight: textSize * 1.6 }]}>
             <Animated.Text
               style={[
                 styles.loadingText,
@@ -397,17 +397,17 @@ const styles = StyleSheet.create({
   bottom: {
     width: '100%',
     alignItems: 'center',
-    paddingBottom: 1,
+    paddingBottom: 16,
   },
 
   progressTrack: {
     width: '100%',
-    maxWidth: 820,
+    maxWidth: 1120,
     height: 1,
     backgroundColor: BG_CARD,
     borderRadius: 2,
     overflow: 'hidden',
-    marginBottom: 2,
+    marginBottom: 0,
   },
 
   progressFill: {
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
   textBox: {
     width: '100%',
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
 
   loadingText: {
@@ -427,6 +427,6 @@ const styles = StyleSheet.create({
     fontFamily: SERIF,
     fontWeight: '400',
     letterSpacing: 0.4,
-    textAlign: 'center',
+    textAlign: 'left',
   },
 });
