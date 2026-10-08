@@ -93,7 +93,9 @@ export default function OrgDashboard() {
   if (!org) return null;
 
   const today = todayISO();
-  const upcoming = events.filter((e) => e.status === 'published' && e.event_date >= today);
+  const upcoming = events.filter(
+    (e) => e.status === 'published' && (e.end_date ?? e.event_date) >= today,
+  );
 
   return (
     <OrgLandscapeShell
@@ -202,7 +204,14 @@ export default function OrgDashboard() {
                 </Text>
                 <Pill label="Open" bg="#1D8F6A" color="#FFFFFF" />
               </View>
-              <MetaRow icon="calendar-outline" text={`${event.event_date} · ${event.start_time}`} />
+              <MetaRow
+                icon="calendar-outline"
+                text={
+                  event.end_date && event.end_date !== event.event_date
+                    ? `${event.event_date} – ${event.end_date} · ${event.start_time}`
+                    : `${event.event_date} · ${event.start_time}`
+                }
+              />
               <MetaRow
                 icon="speedometer-outline"
                 text={`${event.difficulty} · capacity ${event.capacity ?? '∞'}`}

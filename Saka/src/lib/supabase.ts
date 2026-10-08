@@ -122,6 +122,7 @@ export type Tables = {
     id: string;
     user_id: string;
     date: string;
+    end_date?: string | null;
     start_time: string;
     end_time: string;
     tagalongs: number;
@@ -221,6 +222,7 @@ export type Tables = {
     title: string;
     description?: string | null;
     event_date: string;
+    end_date?: string | null;
     start_time: string;
     end_time?: string | null;
     meeting_point: string;

@@ -33,6 +33,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchViewpointDetail } from '../services/viewpointService';
 import SakagramSection from '../components/sakagram/SakagramSection';
+import LoadingScreen from './Loading';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -108,6 +109,8 @@ export default function ViewpointScreen() {
 
   const [data, setData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
+  const [loadingScreenComplete, setLoadingScreenComplete] = React.useState(false);
+  const [activeImageReady, setActiveImageReady] = React.useState(false);
   const [imageModalVisible, setImageModalVisible] = React.useState(false);
   const [modalMedia, setModalMedia] = React.useState<MediaItem | null>(null);
 
@@ -199,6 +202,11 @@ export default function ViewpointScreen() {
     let active = true;
 
     const loadViewpoint = async () => {
+      setLoading(true);
+      setData(null);
+      setLoadingScreenComplete(false);
+      setActiveImageReady(false);
+
       try {
         const selectedId = viewpointId || 'v1';
         const nextData = await fetchViewpointDetail(selectedId);
@@ -237,6 +245,14 @@ export default function ViewpointScreen() {
     }
     return [];
   }, [data]);
+  const firstMedia = mediaList[0];
+  const waitsForFirstImage = Boolean(
+    firstMedia?.type === 'image' &&
+    (firstMedia.key ? IMAGE_MAP[firstMedia.key] : firstMedia.uri)
+  );
+  const markActiveImageReady = React.useCallback(() => {
+    setActiveImageReady(true);
+  }, []);
 
   const openMediaModal = (item: MediaItem) => {
     setModalMedia(item);
@@ -248,15 +264,13 @@ export default function ViewpointScreen() {
     ? (modalMedia.key ? IMAGE_MAP[modalMedia.key] : modalMedia.uri ? { uri: modalMedia.uri } : null)
     : null;
 
-  if (loading) {
+  if (loading || (!data && !loadingScreenComplete)) {
     return (
-      <View style={styles.errorContainer}>
-        <View style={styles.errorIcon}>
-          <Ionicons name="trail-sign-outline" size={32} color={PC.gold} />
-        </View>
-        <Text style={styles.errorTitle}>Loading viewpoint…</Text>
-        <Text style={styles.errorSub}>Fetching trail details from Supabase.</Text>
-      </View>
+      <LoadingScreen
+        ready={!loading}
+        loadingDuration={1000}
+        onComplete={() => setLoadingScreenComplete(true)}
+      />
     );
   }
 
@@ -305,6 +319,7 @@ export default function ViewpointScreen() {
             height={SCREEN_HEIGHT}
             fallbackLabel={data.name}
             onPressImage={openMediaModal}
+            onActiveImageReady={markActiveImageReady}
           />
 
           <TouchableOpacity onPress={() => router.back()} style={styles.mapBackBtn}>
@@ -576,6 +591,16 @@ export default function ViewpointScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {!loadingScreenComplete && (
+        <View style={StyleSheet.absoluteFillObject}>
+          <LoadingScreen
+            ready={!loading && (!waitsForFirstImage || activeImageReady)}
+            loadingDuration={1000}
+            onComplete={() => setLoadingScreenComplete(true)}
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -618,11 +643,13 @@ function VerticalMediaCarousel({
   height,
   fallbackLabel,
   onPressImage,
+  onActiveImageReady,
 }: {
   media: MediaItem[];
   height: number;
   fallbackLabel?: string;
   onPressImage: (item: MediaItem) => void;
+  onActiveImageReady: () => void;
 }) {
   const [activeIndex, setActiveIndex] = React.useState(0);
   const scrollY = React.useRef(new Animated.Value(0)).current;
@@ -728,6 +755,7 @@ function VerticalMediaCarousel({
                 item={item}
                 isActive={index === activeIndex}
                 onPress={() => onPressImage(item)}
+                onActiveImageReady={onActiveImageReady}
               />
             </Animated.View>
           );
@@ -741,16 +769,26 @@ function MediaCard({
   item,
   isActive,
   onPress,
+  onActiveImageReady,
 }: {
   item: MediaItem;
   isActive: boolean;
   onPress: () => void;
+  onActiveImageReady: () => void;
 }) {
+  const [imageLoaded, setImageLoaded] = React.useState(false);
+  const [imageFailed, setImageFailed] = React.useState(false);
   const imageSource = item.key
     ? IMAGE_MAP[item.key]
     : item.type === 'image' && item.uri
       ? { uri: item.uri }
       : undefined;
+
+  React.useEffect(() => {
+    if (isActive && (imageLoaded || imageFailed)) {
+      onActiveImageReady();
+    }
+  }, [isActive, imageLoaded, imageFailed, onActiveImageReady]);
 
   return (
     <View style={styles.cardShadowWrap}>
@@ -765,7 +803,29 @@ function MediaCard({
             <Text style={styles.heroPlaceholderText}>Video</Text>
           </View>
         ) : imageSource ? (
-          <Image source={imageSource} style={styles.cardImage} resizeMode="cover" />
+          <>
+            {!imageLoaded && (
+              <View style={[styles.cardMediaFill, StyleSheet.absoluteFillObject]}>
+                <Ionicons
+                  name={imageFailed ? 'alert-circle-outline' : 'image-outline'}
+                  size={24}
+                  color={PC.gold}
+                />
+                {imageFailed && (
+                  <Text style={styles.heroPlaceholderText}>Image unavailable</Text>
+                )}
+              </View>
+            )}
+            {!imageFailed && (
+              <Image
+                source={imageSource}
+                style={[styles.cardImage, !imageLoaded && styles.hiddenCardImage]}
+                resizeMode="cover"
+                onLoad={() => setImageLoaded(true)}
+                onError={() => setImageFailed(true)}
+              />
+            )}
+          </>
         ) : (
           <View style={styles.cardMediaFill}>
             <Ionicons name="image-outline" size={24} color={PC.gold} />
@@ -917,6 +977,9 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: '100%',
+  },
+  hiddenCardImage: {
+    opacity: 0,
   },
   cardMediaFill: {
     width: '100%',

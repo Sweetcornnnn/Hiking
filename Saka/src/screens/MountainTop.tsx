@@ -11,12 +11,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { mountainService, Mountain } from '../services/mountainService';
 import { buildTrailCoordinates, Viewpoint } from '../utils/geoUtils';
+import LoadingScreen from './Loading';
 
 export default function MountainTopScreen() {
   const { mountainId } = useLocalSearchParams<{ mountainId: string }>();
   const cachedMountain = mountainId ? mountainService.getCachedMountainById(mountainId) : null;
   const [mountain, setMountain] = useState<Mountain | null>(cachedMountain);
   const [loading, setLoading] = useState(!cachedMountain);
+  const [mapTilesLoaded, setMapTilesLoaded] = useState(false);
+  const [loadingScreenComplete, setLoadingScreenComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mapRef = useRef<MapView>(null);
   const router = useRouter();
@@ -90,9 +93,7 @@ export default function MountainTopScreen() {
     }
   }, [mountain]);
 
-  if (loading) return null;
-
-  if (error || !mountain) {
+  if (!loading && (error || !mountain)) {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>{error || 'Mountain not found'}</Text>
@@ -100,108 +101,119 @@ export default function MountainTopScreen() {
     );
   }
 
-  const viewpoints = mountain.viewpoints || [];
+  const viewpoints = mountain?.viewpoints || [];
   const hasTrail = viewpoints.length >= 2;
   const trailCoords = hasTrail ? buildTrailCoordinates(viewpoints, 100) : [];
-  const centerCoord = {
-    latitude: mountain.latitude,
-    longitude: mountain.longitude,
-  };
+  const centerCoord = mountain
+    ? { latitude: mountain.latitude, longitude: mountain.longitude }
+    : null;
 
   return (
     <View style={styles.container}>
-      {/* Floating Header */}
-      <SafeAreaView style={styles.headerSafeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
+      {mountain && (
+        <>
+          {/* Floating Header */}
+          <SafeAreaView style={styles.headerSafeArea}>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
 
-          <Ionicons name="location-outline" size={18} color="#C9A96E" />
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {mountain.name}
-          </Text>
-          <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>{mountain.difficulty}</Text>
-          </View>
-        </View>
-      </SafeAreaView>
-
-      {/* Map — uses initialCamera, no useEffect centering needed */}
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_GOOGLE}
-        style={styles.map}
-        mapType="satellite"
-        pitchEnabled={true}
-        rotateEnabled={true}
-        showsCompass={true}
-        showsUserLocation={true}
-        initialCamera={initialCamera || {
-          center: { latitude: 11.4050, longitude: 122.1350 },
-          heading: 0,
-          pitch: 45,
-          altitude: 0,
-          zoom: 13.8,
-        }}
-        onMapReady={() => {
-          if (mapRef.current) {
-            setTimeout(() => {
-              mapRef.current?.animateCamera?.(
-                {
-                  pitch: 55,
-                },
-                { duration: 800 }
-              );
-            }, 300);
-          }
-        }}
-      >
-        {viewpoints.map((vp: Viewpoint) => (
-          <Marker
-            key={vp.id}
-            coordinate={{
-              latitude: vp.latitude,
-              longitude: vp.longitude,
-            }}
-            title={vp.name}
-            description={vp.notes || `Elevation: ${vp.elevation || 'N/A'}`}
-            onPress={() => {
-              if (!mountainId) return;
-              router.push({
-                pathname: '/Viewpoint',
-                params: { viewpointId: vp.id, mountainId },
-              });
-            }}
-          >
-            <View style={styles.markerDot}>
-              <View style={styles.markerInner} />
+              <Ionicons name="location-outline" size={18} color="#C9A96E" />
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {mountain.name}
+              </Text>
+              <View style={styles.headerBadge}>
+                <Text style={styles.headerBadgeText}>{mountain.difficulty}</Text>
+              </View>
             </View>
-          </Marker>
-        ))}
+          </SafeAreaView>
 
-        {!hasTrail && (
-          <Marker
-            coordinate={centerCoord}
-            title={mountain.name}
-            description={mountain.description}
+          <MapView
+            ref={mapRef}
+            provider={PROVIDER_GOOGLE}
+            style={styles.map}
+            mapType="satellite"
+            pitchEnabled={true}
+            rotateEnabled={true}
+            showsCompass={true}
+            showsUserLocation={true}
+            initialCamera={initialCamera || {
+              center: { latitude: 11.4050, longitude: 122.1350 },
+              heading: 0,
+              pitch: 45,
+              altitude: 0,
+              zoom: 13.8,
+            }}
+            onMapReady={() => {
+              if (mapRef.current) {
+                setTimeout(() => {
+                  mapRef.current?.animateCamera?.(
+                    {
+                      pitch: 55,
+                    },
+                    { duration: 800 }
+                  );
+                }, 300);
+              }
+            }}
+            onMapLoaded={() => setMapTilesLoaded(true)}
+          >
+            {viewpoints.map((vp: Viewpoint) => (
+              <Marker
+                key={vp.id}
+                coordinate={{
+                  latitude: vp.latitude,
+                  longitude: vp.longitude,
+                }}
+                onPress={() => {
+                  if (!mountainId) return;
+                  router.push({
+                    pathname: '/Viewpoint',
+                    params: { viewpointId: vp.id, mountainId },
+                  });
+                }}
+              >
+                <View style={styles.markerDot}>
+                  <View style={styles.markerInner} />
+                </View>
+              </Marker>
+            ))}
+
+            {!hasTrail && centerCoord && (
+              <Marker
+                coordinate={centerCoord}
+                title={mountain.name}
+                description={mountain.description}
+              />
+            )}
+
+            {hasTrail && trailCoords.length > 0 && (
+              <Polyline
+                coordinates={trailCoords}
+                strokeColor="#C9A96E"
+                strokeWidth={3}
+                lineDashPattern={[0, 0]}
+              />
+            )}
+          </MapView>
+
+          {!hasTrail && (
+            <View style={styles.fallbackMessage}>
+              <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.4)" />
+              <Text style={styles.fallbackText}>No trail data yet</Text>
+            </View>
+          )}
+        </>
+      )}
+
+      {!loadingScreenComplete && (
+        <View style={styles.loadingOverlay}>
+          <LoadingScreen
+            ready={!loading && mountain !== null && mapTilesLoaded}
+            loadingDuration={1000}
+            onComplete={() => setLoadingScreenComplete(true)}
           />
-        )}
-
-        {hasTrail && trailCoords.length > 0 && (
-          <Polyline
-            coordinates={trailCoords}
-            strokeColor="#C9A96E"
-            strokeWidth={3}
-            lineDashPattern={[0, 0]}
-          />
-        )}
-      </MapView>
-
-      {!hasTrail && (
-        <View style={styles.fallbackMessage}>
-          <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.4)" />
-          <Text style={styles.fallbackText}>No trail data yet</Text>
         </View>
       )}
     </View>
@@ -216,6 +228,10 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
   },
 
   // ─── Header (Option A) ────────────────────────────────────────────────

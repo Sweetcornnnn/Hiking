@@ -89,11 +89,14 @@ interface LoadingScreenProps {
   onComplete?: () => void;
   /** Minimum time (ms) the loading screen stays visible. The bar still follows real progress. */
   loadingDuration?: number;
+  /** In embedded loading mode, reveal the screen only after its content is ready. */
+  ready?: boolean;
 }
 
 export default function LoadingScreen({
   onComplete,
   loadingDuration = 6000,
+  ready,
 }: LoadingScreenProps) {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -112,8 +115,9 @@ export default function LoadingScreen({
 
   // Always-latest values so the loading effect runs ONCE and is never restarted
   // when the profile / route params update halfway through loading.
-  const latest = useRef({ profile, nextRoute, onComplete, router });
-  latest.current = { profile, nextRoute, onComplete, router };
+  const latest = useRef({ profile, nextRoute, onComplete, ready, router });
+  latest.current = { profile, nextRoute, onComplete, ready, router };
+  const didCompleteInline = useRef(false);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -177,7 +181,8 @@ export default function LoadingScreen({
     const timers: ReturnType<typeof setTimeout>[] = [];
     let didNavigate = false;
 
-    const { profile: p0, nextRoute: n0, onComplete: oc0 } = latest.current;
+    const { profile: p0, nextRoute: n0, onComplete: oc0, ready: r0 } = latest.current;
+    const isReadyDriven = r0 !== undefined && Boolean(oc0);
     const initialRole = p0?.role ?? 'hiker';
     const initialTarget: Href = n0
       ? (n0 as Href)
@@ -248,6 +253,16 @@ export default function LoadingScreen({
     );
     pulseAnimation.start();
 
+    if (isReadyDriven) {
+      didCompleteInline.current = false;
+      animateTo(0.85, Math.max(loadingDuration, 1000));
+      return () => {
+        mountedRef.current = false;
+        pulseAnimation.stop();
+        progressAnim.stopAnimation();
+      };
+    }
+
     // Progress plan (follows the real work):
     //  - mountains fetch:  creeps to 30% / 60% while waiting, 40% / 85% once done
     //  - video posters:    up to 95%, driven by completed/total
@@ -314,6 +329,32 @@ export default function LoadingScreen({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadingDuration]);
+
+  useEffect(() => {
+    if (!latest.current.onComplete) return;
+
+    if (ready !== true) {
+      if (didCompleteInline.current) {
+        didCompleteInline.current = false;
+        progressAnim.stopAnimation();
+      }
+      return;
+    }
+    if (didCompleteInline.current) return;
+
+    didCompleteInline.current = true;
+    progressAnim.stopAnimation();
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 700,
+      easing: Easing.inOut(Easing.quad),
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished && mountedRef.current) {
+        latest.current.onComplete?.();
+      }
+    });
+  }, [ready, progressAnim]);
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 1],

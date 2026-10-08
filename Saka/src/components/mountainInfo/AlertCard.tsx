@@ -2,7 +2,18 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Alert } from '../../data/mountainTips';
-import { FONT, RADIUS_BTN, SPACING, TEXT_MUTED } from '../../theme/designTokens';
+import {
+  ACCENT_GOLD,
+  BG_DANGER_SUBTLE,
+  BG_GOLD_TINT,
+  BG_SUBTLE,
+  FONT,
+  RADIUS_BTN,
+  SPACING,
+  TEXT_DANGER,
+  TEXT_MUTED,
+  TEXT_SECONDARY,
+} from '../../theme/designTokens';
 
 export interface AlertCardProps {
   alert: Alert;
@@ -10,19 +21,19 @@ export interface AlertCardProps {
 
 const ALERT_STYLES = {
   danger: {
-    color: '#D32F2F',
-    background: '#FDECEC',
-    icon: 'alert-circle' as const,
+    color: TEXT_DANGER,
+    background: BG_DANGER_SUBTLE,
+    icon: 'alert-circle-outline' as const,
   },
   warning: {
-    color: '#FF9800',
-    background: '#FFF4E5',
-    icon: 'warning' as const,
+    color: ACCENT_GOLD,
+    background: BG_GOLD_TINT,
+    icon: 'warning-outline' as const,
   },
   info: {
-    color: '#2196F3',
-    background: '#EAF4FE',
-    icon: 'information-circle' as const,
+    color: TEXT_MUTED,
+    background: BG_SUBTLE,
+    icon: 'information-circle-outline' as const,
   },
 };
 
@@ -36,7 +47,7 @@ export default function AlertCard({ alert }: AlertCardProps) {
     >
       <Ionicons
         name={appearance.icon}
-        size={22}
+        size={20}
         color={appearance.color}
         style={styles.icon}
       />
@@ -55,7 +66,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    borderLeftWidth: 4,
+    borderLeftWidth: 3,
     borderRadius: RADIUS_BTN,
     padding: SPACING.gapLg,
     marginTop: SPACING.gap,
@@ -85,7 +96,7 @@ const styles = StyleSheet.create({
     fontSize: FONT.tagSize,
   },
   message: {
-    color: '#273326',
+    color: TEXT_SECONDARY,
     fontSize: FONT.itemSize,
     lineHeight: 18,
   },
