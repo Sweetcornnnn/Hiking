@@ -42,7 +42,9 @@ export default function TipsAndTricksScreen() {
           accessibilityRole="button"
           accessibilityLabel="Close tips and tricks"
         >
-          <Ionicons name="close" size={22} color={ACCENT_GOLD} />
+          <View style={styles.backIconCircle}>
+            <Ionicons name="chevron-back" size={14} color={ACCENT_GOLD} />
+          </View>
         </TouchableOpacity>
         <View style={styles.message}>
           <Text style={styles.title}>Guide not available</Text>
@@ -72,6 +74,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'flex-end',
     marginBottom: 12,
+  },
+  backIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(201,169,110,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   message: {
     alignItems: 'center',
