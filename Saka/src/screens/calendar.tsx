@@ -16,8 +16,10 @@ import { mountainService } from '../services/mountainService'; // ⚠️ adjust 
 import { getWeatherForecast } from '../services/weatherService';
 import { useAuthStore } from '../store/authStore';
 import HikeFormModal from '../components/HikeFormModal';
-import Toast, { ToastHandle } from '../components/Toast';
+import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
 import { inclusiveDates } from '../utils/dateRange';
+
+const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
 
 // ⚠️ Replace with your actual Mountain type import (e.g. from '../types')
 // if one already exists — this is a minimal shape to satisfy the fields
@@ -42,7 +44,7 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [modalVisible, setModalVisible] = useState(false);
   const [infoVisible, setInfoVisible] = useState(false);
-  const toastRef = useRef<ToastHandle>(null);
+  const permit = useHikePermit(SAKA_LOGO);
   const [forecastByDate, setForecastByDate] = useState<Record<string, { icon: string; description: string; tempMin: number; tempMax: number }>>({});
   const [forecastLoading, setForecastLoading] = useState(false);
   const [resolvedMountain, setResolvedMountain] = useState<Mountain | null>(null);
@@ -368,15 +370,15 @@ export default function CalendarScreen() {
         editingHike={null}
         defaultDate={selectedDate}
         mountainId={activeMountainId}
-        onSaved={() => {
-          toastRef.current?.show({
-            type: 'success',
-            title: 'Hike scheduled',
-            message: 'Added to your calendar.',
-          });
+        onSaved={(_mode, hike) => {
+          if (activeMountainId) {
+            void fetchMountainHikes(activeMountainId);
+          }
+          // Stamped permit replaces the old "Hike scheduled" toast
+          permit.show('approved', buildPermitDetails(hike, resolvedMountain?.name));
         }}
       />
-      <Toast ref={toastRef} />
+      {permit.element}
 
       {/* How-to-use popover, opened from the small "i" circle in the month header */}
       <Modal animationType="fade" transparent visible={infoVisible} onRequestClose={() => setInfoVisible(false)}>
