@@ -37,6 +37,14 @@ export default function RootLayout() {
         <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
         <Stack.Screen name="Weather" options={screenOptionsNoHeader} />
         <Stack.Screen name="Settings" options={screenOptionsNoHeader} />
+        <Stack.Screen
+          name="mountainInfo/TipsAndTricks"
+          options={{
+            headerShown: false,
+            orientation: 'landscape',
+            contentStyle: { backgroundColor: '#F5E6D3' },
+          }}
+        />
         <Stack.Screen name="organizations/Dashboard" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/BecomeOrganizer" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/Events" options={screenOptionsNoHeader} />

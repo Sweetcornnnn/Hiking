@@ -145,6 +145,51 @@ export async function createJournalEntry(input: CreateJournalEntryInput): Promis
   return data as JournalEntry;
 }
 
+export async function updateJournalEntry(
+  entryId: string,
+  input: CreateJournalEntryInput,
+): Promise<JournalEntry> {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) throw new Error('You must be signed in to update a journal entry.');
+
+  const { data: currentEntry, error: fetchError } = await supabase
+    .from('hiking_journals')
+    .select('images')
+    .eq('id', entryId)
+    .eq('user_id', user.id)
+    .single();
+
+  if (fetchError || !currentEntry) throw new Error('Unable to load the journal entry.');
+
+  const images = await Promise.all(input.images.map(async (image) => {
+    if (image.uri.startsWith('http://') || image.uri.startsWith('https://')) {
+      return image.uri;
+    }
+
+    return uploadJournalImage(user.id, entryId, image);
+  }));
+
+  const { data, error } = await supabase
+    .from('hiking_journals')
+    .update({
+      title: input.title.trim(),
+      content: input.content.trim(),
+      images,
+      rating: input.rating ?? null,
+      mountain_id: input.mountainId ?? null,
+      hike_id: input.hikeId ?? null,
+      viewpoint_id: input.viewpointId ?? null,
+      is_public: input.isPublic ?? false,
+    })
+    .eq('id', entryId)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as JournalEntry;
+}
+
 function getStoragePath(imageUrl: string): string | null {
   const marker = `/storage/v1/object/public/${JOURNAL_BUCKET}/`;
   const markerIndex = imageUrl.indexOf(marker);

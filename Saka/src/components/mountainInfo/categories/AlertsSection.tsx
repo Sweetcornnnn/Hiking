@@ -3,17 +3,12 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Alert } from '../../../data/mountainTips';
 import AlertCard from '../AlertCard';
+import CategoryInfoModal from '../CategoryInfoModal';
 import {
-  ACCENT_GOLD,
-  BG_DANGER_SUBTLE,
-  BG_PANEL,
-  BG_SUBTLE,
-  BORDER_DEFAULT,
+  ACCENT_PURPLE,
   FONT,
   RADIUS_CARD,
-  RADIUS_BTN,
   SPACING,
-  TEXT_DANGER,
   TEXT_MUTED,
   TEXT_PRIMARY,
 } from '../../../theme/designTokens';
@@ -23,99 +18,91 @@ export interface AlertsSectionProps {
 }
 
 export default function AlertsSection({ alerts }: AlertsSectionProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
 
   return (
-    <View style={styles.card}>
+    <>
       <TouchableOpacity
-        style={styles.header}
-        onPress={() => setExpanded((current) => !current)}
+        activeOpacity={0.9}
+        onPress={() => setModalVisible(true)}
+        style={[styles.card, styles.compactCard]}
         accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        accessibilityLabel={`Events & Alerts, ${expanded ? 'collapse' : 'expand'}`}
-        activeOpacity={0.75}
+        accessibilityLabel="Open Events & Alerts"
+        accessibilityHint="Opens event and alert information"
       >
-        <View style={styles.iconWrap}>
-          <Ionicons name="notifications-outline" size={21} color={ACCENT_GOLD} />
+        <View style={[styles.iconWrap, { backgroundColor: ACCENT_PURPLE }]}>
+          <Ionicons name="notifications-outline" size={18} color="#FFFFFF" />
         </View>
-        <Text style={styles.title}>Events & Alerts</Text>
-        {alerts.length > 0 ? (
-          <View style={styles.count}>
-            <Text style={styles.countText}>{alerts.length}</Text>
-          </View>
-        ) : null}
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={20}
-          color={TEXT_MUTED}
-        />
+
+        <Text style={[styles.title, styles.compactTitle]} numberOfLines={2}>
+          Events & Alerts
+        </Text>
+
+        <Text style={[styles.subtitle, styles.compactSubtitle]} numberOfLines={3}>
+          Latest updates and important reminders.
+        </Text>
       </TouchableOpacity>
 
-      {expanded ? (
-        <View style={styles.content}>
-          {alerts.length > 0 ? alerts.map((alert, index) => (
+      <CategoryInfoModal
+        visible={modalVisible}
+        title="Events & Alerts"
+        icon="notifications-outline"
+        onClose={() => setModalVisible(false)}
+      >
+        {alerts.length > 0 ? (
+          alerts.map((alert, index) => (
             <AlertCard key={`${alert.type}-${alert.title}-${index}`} alert={alert} />
-          )) : (
-            <Text style={styles.emptyText}>There are no current alerts for this mountain.</Text>
-          )}
-        </View>
-      ) : null}
-    </View>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>There are no current alerts for this mountain.</Text>
+        )}
+      </CategoryInfoModal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: BG_PANEL,
+    width: '31%',
+    height: 148,
     borderRadius: RADIUS_CARD,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    padding: 10,
     marginBottom: SPACING.gapLg,
-    overflow: 'hidden',
+    justifyContent: 'space-between',
   },
-  header: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.cardPadH,
-    paddingVertical: SPACING.gapLg,
+  compactCard: {
+    height: 136,
+    padding: 8,
   },
   iconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: RADIUS_BTN,
-    backgroundColor: BG_SUBTLE,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: SPACING.gapLg,
+    marginBottom: 6,
   },
   title: {
-    flex: 1,
     color: TEXT_PRIMARY,
-    fontSize: FONT.itemSize,
-    fontWeight: FONT.itemWeight,
-  },
-  count: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: RADIUS_BTN,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BG_DANGER_SUBTLE,
-    marginRight: SPACING.gap,
-  },
-  countText: {
-    color: TEXT_DANGER,
-    fontSize: FONT.itemSize,
+    fontSize: 12.5,
     fontWeight: '700',
+    marginBottom: 2,
   },
-  content: {
-    paddingHorizontal: SPACING.cardPadH,
-    paddingTop: 2,
-    paddingBottom: SPACING.cardPadB,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: BORDER_DEFAULT,
+  compactTitle: {
+    fontSize: 11.5,
+  },
+  subtitle: {
+    color: TEXT_MUTED,
+    fontSize: 9.5,
+    lineHeight: 12.5,
+    flex: 1,
+  },
+  compactSubtitle: {
+    fontSize: 8.8,
+    lineHeight: 11.5,
   },
   emptyText: {
     color: TEXT_MUTED,

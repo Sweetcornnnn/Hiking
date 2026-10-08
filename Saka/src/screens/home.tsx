@@ -9,10 +9,9 @@ import {
   Image,
   TouchableOpacity,
   BackHandler,
-  Modal,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayer, type VideoThumbnail } from 'expo-video';
@@ -22,8 +21,6 @@ import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
 import { uploadProfileAvatar } from '../services/profileAvatarService';
 import { getHomeVideoPosters, MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
-import { MOUNTAIN_TIPS, MountainTips } from '../data/mountainTips';
-import TipsAndTricks from '../components/mountainInfo/TipsAndTricks';
 import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
@@ -161,12 +158,12 @@ const MountainSlide = memo(function MountainSlide({
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { returnToProfile } = useLocalSearchParams<{ returnToProfile?: string }>();
   const { user, profile, signOut, updateProfile } = useAuthStore();
   const { setSelectedMountainId } = useWildTrackStore();
   const [activeIndex, setActiveIndex] = useState(0);
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
-  const [profileCardVisible, setProfileCardVisible] = useState(false);
-  const [tipsMountain, setTipsMountain] = useState<MountainTips | null>(null);
+  const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
   const initialVideoMountainId = mountains[0] && MOUNTAIN_VIDEOS[mountains[0].id]
@@ -320,19 +317,11 @@ export default function HomeScreen() {
   const closeProfileCard = () => setProfileCardVisible(false);
 
   const handleOpenTips = useCallback((mountain: Mountain) => {
-    const normalizedName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const mountainTips = MOUNTAIN_TIPS.find((tips) =>
-      tips.id === mountain.id ||
-      tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedName
-    );
-
-    if (!mountainTips) {
-      Alert.alert('Guide not available', `Tips for ${mountain.name} are not available yet.`);
-      return;
-    }
-
-    setTipsMountain(mountainTips);
-  }, []);
+    router.push({
+      pathname: '/mountainInfo/TipsAndTricks',
+      params: { mountainId: mountain.id, mountainName: mountain.name },
+    } as any);
+  }, [router]);
   // Stable handler for the per-slide Events button (keeps MountainSlide memoized)
   const handleEventsPress = useCallback(
     (mountainId: string) => {
@@ -525,20 +514,6 @@ export default function HomeScreen() {
         profileImage={profileImage}
         onProfileImageSelect={handleProfileImageSelect}
       />
-
-      <Modal
-        visible={tipsMountain !== null}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setTipsMountain(null)}
-      >
-        {tipsMountain ? (
-          <TipsAndTricks
-            mountainTips={tipsMountain}
-            onBack={() => setTipsMountain(null)}
-          />
-        ) : null}
-      </Modal>
 
       {/* CTA button – shown on every slide */}
       {/* CTA button */}
