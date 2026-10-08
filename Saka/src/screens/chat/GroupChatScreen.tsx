@@ -16,13 +16,15 @@ import {
   Pressable,
   Animated,
   PanResponder,
+  Clipboard,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
-import { MessageBubble } from '../../components/chat/MessageBubble';
+import { MessageBubble, ReactionType } from '../../components/chat/MessageBubble';
+import MessageActionSheet from '../../components/chat/MessageActionSheet';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -63,6 +65,7 @@ type Message = {
   reply_to_id: number | null;
   reply_to_sender: string | null;
   reply_to_content: string | null;
+  reaction: ReactionType | null;
 };
 
 type GroupMember = {
@@ -162,6 +165,7 @@ const SELECT_COLS = `
   reply_to_id,
   reply_to_sender,
   reply_to_content,
+  reaction,
   profiles:profiles (
     full_name,
     username,
@@ -271,12 +275,9 @@ export default function GroupChatScreen() {
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
-  const [showDeleteSheet, setShowDeleteSheet] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [actionTarget, setActionTarget] = useState<Message | null>(null);
 
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
@@ -495,6 +496,7 @@ export default function GroupChatScreen() {
       reply_to_id: reply?.id ?? null,
       reply_to_sender: repliedToName,
       reply_to_content: reply?.content ?? null,
+      reaction: null,
       profiles: {
         full_name: user.user_metadata?.full_name || null,
         username: user.user_metadata?.username || null,
@@ -542,13 +544,12 @@ export default function GroupChatScreen() {
 
   // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
-    if (!selectedMessage || selectedMessage.sender_id !== user?.id) return;
-    const target = selectedMessage;
+    if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+    const target = actionTarget;
     setReplyingTo(null);
     setEditingMessage(target);
     setInputText(target.content);
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
+    setActionTarget(null);
     setTimeout(() => inputRef.current?.focus(), 120);
   };
 
@@ -581,16 +582,13 @@ export default function GroupChatScreen() {
     );
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('group_messages')
         .update({ content: newContent, updated_at: now })
         .eq('id', targetId)
-        .eq('sender_id', user.id)
-        .select('id')
-        .maybeSingle();
+        .eq('sender_id', user.id);
 
       if (error) throw error;
-      if (!data) throw new Error('Message could not be updated');
 
       setEditingMessage(null);
       setInputText('');
@@ -625,50 +623,92 @@ export default function GroupChatScreen() {
     return sendMessage();
   };
 
-  // ─── DELETE ────────────────────────────────────────────────
-  const openDeleteSheet = (message: Message) => {
-    if (message.type === 'system' || message.sender_id !== user?.id) return;
-    setSelectedMessage(message);
-    setShowDeleteSheet(true);
+  // ─── REACT / ACTIONS ──────────────────────────────────────
+  const openActionSheet = useCallback((message: Message) => {
+    if (message.type === 'system') return;
+    if (typeof message.id !== 'number' || message.id >= 1_000_000_000_000) return;
+    setActionTarget(message);
+  }, []);
+
+  const closeActionSheet = () => {
+    setActionTarget(null);
   };
 
-  const closeDeleteSheet = () => {
-    if (deleting) return;
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
-  };
+  const applyReaction = async (reaction: ReactionType) => {
+    if (!actionTarget || !user) return;
+    const targetId = actionTarget.id;
 
-  const confirmDeleteMessage = async () => {
-    if (
-      !selectedMessage ||
-      !user ||
-      selectedMessage.sender_id !== user.id ||
-      selectedMessage.type === 'system'
-    ) return;
-    const msgId = selectedMessage.id;
-    setDeleting(true);
+    if (typeof targetId !== 'number' || targetId >= 1_000_000_000_000) {
+      setActionTarget(null);
+      return;
+    }
+
+    const next = actionTarget.reaction === reaction ? null : reaction;
 
     const backup = messages;
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
+    setMessages((prev) =>
+      prev.map((m) => (m.id === targetId ? { ...m, reaction: next } : m))
+    );
+    setActionTarget(null);
 
     try {
-      const { data, error } = await supabase
+      const { data: updated, error } = await supabase
         .from('group_messages')
-        .delete()
-        .eq('id', msgId)
-        .eq('sender_id', user.id)
-        .select('id')
-        .maybeSingle();
+        .update({ reaction: next })
+        .eq('id', targetId)
+        .select('id, reaction');
+
       if (error) throw error;
-      if (!data) throw new Error('Message could not be deleted');
-    } catch {
+      if (!updated || updated.length === 0) {
+        throw new Error('Reaction not saved — RLS blocked or row missing');
+      }
+    } catch (err) {
+      console.warn('[reaction] failed:', err);
       setMessages(backup);
-      Alert.alert('Error', 'Failed to delete message. Please try again.');
-    } finally {
-      setDeleting(false);
+      Alert.alert('Error', 'Failed to react. Please try again.');
     }
+  };
+
+  const confirmDeleteFromSheet = () => {
+    if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+
+    Alert.alert(
+      'Unsend this message?',
+      'This will remove it for everyone in the group.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unsend',
+          style: 'destructive',
+          onPress: async () => {
+            const msgId = actionTarget.id;
+            const backup = messages;
+            setMessages((prev) => prev.filter((m) => m.id !== msgId));
+            setActionTarget(null);
+
+            try {
+              const { error } = await supabase
+                .from('group_messages')
+                .delete()
+                .eq('id', msgId)
+                .eq('sender_id', user!.id);
+
+              if (error) throw error;
+            } catch (err) {
+              console.error('[unsend] caught:', err);
+              setMessages(backup);
+              Alert.alert('Error', 'Failed to unsend. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const copyMessage = () => {
+    if (!actionTarget) return;
+    Clipboard.setString(actionTarget.content);
+    setActionTarget(null);
   };
 
   // ─── REALTIME ──────────────────────────────────────────────
@@ -719,6 +759,7 @@ export default function GroupChatScreen() {
               reply_to_id: updated.reply_to_id ?? msg.reply_to_id,
               reply_to_sender: updated.reply_to_sender ?? msg.reply_to_sender,
               reply_to_content: updated.reply_to_content ?? msg.reply_to_content,
+              reaction: updated.reaction ?? msg.reaction,
             }
           : msg
       )
@@ -978,7 +1019,7 @@ export default function GroupChatScreen() {
         {dateDivider}
         <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
           <Pressable
-            onLongPress={isMe ? () => openDeleteSheet(item) : undefined}
+            onLongPress={() => openActionSheet(item)}
             delayLongPress={350}
             style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
           >
@@ -990,6 +1031,7 @@ export default function GroupChatScreen() {
               hasReply={hasReply}
               replyCaption={replyCaption}
               replyPreview={replyPreview}
+              reaction={item.reaction}
               showReadReceipt={false}
               showAvatar={false}
               showSenderHeader={!isMe}
@@ -1041,6 +1083,7 @@ export default function GroupChatScreen() {
 
   const canSave = inputText.trim().length > 0 && !sending;
   const replyingSenderLabel = replyingTo ? getSenderLabel(replyingTo) : '';
+  const isActionTargetMine = !!actionTarget && actionTarget.sender_id === user?.id;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -1132,7 +1175,6 @@ export default function GroupChatScreen() {
           />
         )}
 
-        {/* Reply bar */}
         {replyingTo && (
           <View style={styles.replyBar}>
             <View style={styles.replyBarAccent} />
@@ -1154,7 +1196,6 @@ export default function GroupChatScreen() {
           </View>
         )}
 
-        {/* Edit bar */}
         {editingMessage && (
           <View style={styles.editingBar}>
             <Ionicons name="create-outline" size={13} color={ACCENT_GOLD} />
@@ -1371,56 +1412,26 @@ export default function GroupChatScreen() {
         </Pressable>
       </Modal>
 
-      {/* Message options sheet */}
-      <Modal
-        visible={showDeleteSheet}
-        transparent
-        animationType="fade"
-        onRequestClose={closeDeleteSheet}
-      >
-        <Pressable style={styles.sheetBackdrop} onPress={closeDeleteSheet}>
-          <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.sheetTitle}>Message options</Text>
-
-            <View style={styles.sheetBtnRow}>
-              <TouchableOpacity
-                style={[styles.sheetBtn, styles.sheetBtnEdit]}
-                onPress={openEditFromSheet}
-                disabled={deleting}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="create-outline" size={14} color={TEXT_PRIMARY} />
-                <Text style={styles.sheetBtnEditText}>Edit</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.sheetBtn, styles.sheetBtnDelete]}
-                onPress={confirmDeleteMessage}
-                disabled={deleting}
-                activeOpacity={0.85}
-              >
-                {deleting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="trash-outline" size={14} color="#fff" />
-                    <Text style={styles.sheetBtnDeleteText}>Unsend</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.sheetCancelBtn}
-              onPress={closeDeleteSheet}
-              disabled={deleting}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.sheetCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* ── Unified action sheet ── */}
+      <MessageActionSheet
+        visible={!!actionTarget}
+        isMe={isActionTargetMine}
+        currentReaction={actionTarget?.reaction ?? null}
+        onClose={closeActionSheet}
+        onReact={applyReaction}
+        onReply={
+          !isActionTargetMine && actionTarget
+            ? () => {
+                const target = actionTarget;
+                setActionTarget(null);
+                startReply(target);
+              }
+            : undefined
+        }
+        onEdit={isActionTargetMine ? openEditFromSheet : undefined}
+        onUnsend={isActionTargetMine ? confirmDeleteFromSheet : undefined}
+        onCopy={copyMessage}
+      />
     </SafeAreaView>
   );
 }
@@ -1495,7 +1506,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // ── Swipe wrapper ──
   swipeContainer: {
     width: '100%',
     marginVertical: 6,
@@ -1561,7 +1571,6 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
 
-  // ── Reply bar (above input) ──
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1601,7 +1610,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
 
-  // ── Edit bar (above input) ──
   editingBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1798,61 +1806,5 @@ const styles = StyleSheet.create({
     marginTop: 4,
     borderTopWidth: 1,
     borderTopColor: CHAT_BORDER,
-  },
-
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  sheetCard: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: CHAT_BG,
-    borderRadius: CHAT_RADIUS_MODAL,
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderWidth: 1,
-    borderColor: CHAT_BORDER,
-  },
-  sheetTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  sheetBtnRow: { flexDirection: 'row', gap: 8 },
-  sheetBtn: {
-    flex: 1,
-    height: 38,
-    borderRadius: CHAT_RADIUS_BTN,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  sheetBtnEdit: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  sheetBtnEditText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
-  sheetBtnDelete: { backgroundColor: CHAT_DANGER },
-  sheetBtnDeleteText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  sheetCancelBtn: {
-    marginTop: 8,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: CHAT_RADIUS_BTN,
-  },
-  sheetCancelText: {
-    color: TEXT_MUTED,
-    fontSize: 12,
-    fontWeight: '600',
   },
 });
