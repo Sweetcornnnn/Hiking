@@ -57,7 +57,7 @@ export const MOUNTAIN_TIPS: MountainTips[] = [
     ],
     safety: [
       'Check the day’s weather and ask locals whether any sections are slippery after rain.',
-      'Keep your group together and let someone know your expected return time.',
+      'Keep your group together and1 let someone know your expected return time.',
       'If anyone feels unwell, pause in a safe place and contact your group lead or local help.',
     ],
     transportation: [

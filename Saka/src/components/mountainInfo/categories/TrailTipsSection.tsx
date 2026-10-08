@@ -1,6 +1,6 @@
 import React from 'react';
 import InfoSection from '../InfoSection';
-import { ACCENT_ORANGE } from '../../../theme/designTokens';
+import { ACCENT_GOLD } from '../../../theme/designTokens';
 
 export interface TrailTipsSectionProps {
   items: string[];
@@ -12,7 +12,7 @@ export default function TrailTipsSection({ items }: TrailTipsSectionProps) {
       title="Trail Tips & Navigation"
       subtitle="Know the trail, find your way."
       icon="trail-sign-outline"
-      iconColor={ACCENT_ORANGE}
+      iconColor={ACCENT_GOLD}
       items={items}
       compact
       showArrow={false}

@@ -57,6 +57,14 @@ export const ACCENT_GREEN_ALT = '#6FAF8A';
 // cardTitle.color (TrailMap) → '#76FF03'
 export const ACCENT_TRAIL    = '#76FF03';
 
+// ─── Gold tints (ProfileCard quick-action tiles) ──────────────────────────
+// quickBtn.backgroundColor → 'rgba(201,169,110,0.08)'
+export const BG_GOLD_TINT     = 'rgba(201,169,110,0.08)';
+// quickIconWrap.backgroundColor → 'rgba(201,169,110,0.12)'
+export const BG_GOLD_ICON     = 'rgba(201,169,110,0.12)';
+// quickBtn.borderColor → 'rgba(201,169,110,0.25)'
+export const BORDER_GOLD_SOFT = 'rgba(201,169,110,0.25)';
+
 // ─── Shape ────────────────────────────────────────────────────────────────
 // card.borderRadius → 16
 export const RADIUS_CARD     = 16;
