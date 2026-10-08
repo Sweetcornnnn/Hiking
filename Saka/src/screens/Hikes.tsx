@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   Easing,
   FlatList,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,16 +20,14 @@ import { Hike } from '../types';
 import HikeFormModal from '../components/HikeFormModal';
 import Toast, { ToastHandle } from '../components/Toast';
 import { dateInRange, effectiveEnd, formatRangeShort } from '../utils/dateRange';
+import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
 
-const COLUMNS = 3;
+const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
+
+const COLUMNS = 2;
+// Space between cards, both side to side and row to row. Set to 0 for flush cards.
+const CARD_GAP = 8;
 const OUTER_PADDING = 16;
-const LIST_HORIZONTAL_PADDING = OUTER_PADDING + 50;
-const CARD_GAP = 10;
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-// Exact column width so 3 cards + 2 inner gaps fill the row with no
-// leftover space — margins are applied explicitly per-card below rather
-// than via the FlatList's `gap`, so the row never ends up lopsided.
-const CARD_WIDTH = (SCREEN_WIDTH - LIST_HORIZONTAL_PADDING * 2 - CARD_GAP * (COLUMNS - 1)) / COLUMNS;
 
 // A tap and a hold start the exact same way (finger goes down), so the
 // wipe animation doesn't begin the instant you touch the card — it waits
@@ -60,6 +58,8 @@ const WIPE_BORDER_COLORS = ['rgba(255,255,255,0.07)', '#F2994A', '#EB5757', '#D6
 // "Shared" tag — not just a small eye icon buried in the corner.
 const OWN_ACCENT = '#C9A96E';
 const SHARED_ACCENT = '#7CA8FF';
+
+const keyExtractor = (hike: Hike) => hike.id;
 
 // ⚠️ Minimal local shape — swap for your real Mountain type if it already
 // includes latitude/longitude/name.
@@ -118,9 +118,10 @@ interface HikeCardProps {
   displayDate: string;
   weather: DayWeather | null;
   canEdit: boolean;
-  isLastInRow: boolean;
+  cardWidth: number;
   onEdit: (hike: Hike) => void;
-  onDelete: (hike: Hike) => void;
+  // Return false (or a promise of false) when the delete failed so the card resets.
+  onDelete: (hike: Hike) => Promise<boolean> | boolean | void;
 }
 
 // Tap = edit. Hold = a wipe crawls left→right across the card, cycling
@@ -136,7 +137,15 @@ interface HikeCardProps {
 // edit modal opens. Only once the delay is crossed does the gesture "engage"
 // — at which point releasing snaps the wipe back and, since you clearly
 // meant to hold rather than tap, does NOT also open the edit modal.
-function HikeCard({ hike, displayDate, weather, canEdit, isLastInRow, onEdit, onDelete }: HikeCardProps) {
+const HikeCard = React.memo(function HikeCard({
+  hike,
+  displayDate,
+  weather,
+  canEdit,
+  cardWidth,
+  onEdit,
+  onDelete,
+}: HikeCardProps) {
   const fillAnim = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const fillAnimation = useRef<Animated.CompositeAnimation | null>(null);
@@ -161,7 +170,14 @@ function HikeCard({ hike, displayDate, weather, canEdit, isLastInRow, onEdit, on
         deletedRef.current = true;
         shakeLoop.current?.stop();
         shakeAnim.setValue(0);
-        onDelete(hike);
+        Promise.resolve(onDelete(hike)).then((ok) => {
+          // Delete failed: put the card back to normal so it can be used again
+          if (ok === false) {
+            deletedRef.current = false;
+            holdEngaged.current = false;
+            Animated.timing(fillAnim, { toValue: 0, duration: 260, useNativeDriver: false }).start();
+          }
+        });
       }
     });
 
@@ -207,7 +223,7 @@ function HikeCard({ hike, displayDate, weather, canEdit, isLastInRow, onEdit, on
 
   const wipeWidth = fillAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, CARD_WIDTH],
+    outputRange: [0, cardWidth],
   });
   // The fill behind the wipe front, cycling amber → red → near-black.
   const wipeFillColor = fillAnim.interpolate({
@@ -257,7 +273,7 @@ function HikeCard({ hike, displayDate, weather, canEdit, isLastInRow, onEdit, on
       onPress={handlePress}
       onPressIn={() => canEdit && startHold()}
       onPressOut={() => canEdit && cancelHold()}
-      style={[styles.cardTouchable, !isLastInRow && { marginRight: CARD_GAP }]}
+      style={styles.cardTouchable}
     >
       <Animated.View
         style={[
@@ -287,17 +303,15 @@ function HikeCard({ hike, displayDate, weather, canEdit, isLastInRow, onEdit, on
         </View>
 
         <View style={styles.cardInfoBlock}>
-          <Text style={styles.cardTime} numberOfLines={1}>
+          <Text style={styles.cardTime}>
             {timeText}
           </Text>
-          {isMultiDay ? (
-            <View style={styles.cardRow}>
-              <Ionicons name="calendar-outline" size={10} color="rgba(201,169,110,0.7)" />
-              <Text style={styles.cardRowText} numberOfLines={1}>
-                {formatRangeShort(hike.date, hike.end_date)}
-              </Text>
-            </View>
-          ) : null}
+          <View style={styles.cardRow}>
+            <Ionicons name="calendar-outline" size={10} color="rgba(201,169,110,0.7)" />
+            <Text style={styles.cardRowText}>
+              {formatRangeShort(hike.date, hike.end_date)}
+            </Text>
+          </View>
           <View style={styles.cardRow}>
             <Ionicons name="people-outline" size={10} color="rgba(255,255,255,0.5)" />
             <Text style={styles.cardRowText}>{hike.tagalongs}</Text>
@@ -319,7 +333,7 @@ function HikeCard({ hike, displayDate, weather, canEdit, isLastInRow, onEdit, on
       </Animated.View>
     </Pressable>
   );
-}
+});
 
 export default function HikesScreen() {
   const router = useRouter();
@@ -331,8 +345,28 @@ export default function HikesScreen() {
   const [resolvedMountain, setResolvedMountain] = useState<Mountain | null>(null);
   const [dayWeather, setDayWeather] = useState<DayWeather | null>(null);
   const toastRef = useRef<ToastHandle>(null);
+  // Grid sizing: roomy side margins that scale with the screen, and cards that
+  // are exactly (width - margins - gaps) / columns wide, so they never drift.
+  // Sized from the screen's real measured width (not the window size), so it
+  // stays centered even when the device has system bars or a cutout.
+  const { width: windowWidth } = useWindowDimensions();
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const screenWidth = measuredWidth || windowWidth;
+  const sidePadding = Math.max(28, Math.round(screenWidth * 0.06));
+  const cardWidth = Math.floor(
+    (screenWidth - sidePadding * 2 - CARD_GAP * (COLUMNS - 1)) / COLUMNS
+  );
+  // Hikes deleted this session: hidden immediately, even if the store hasn't caught up yet
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const permit = useHikePermit(SAKA_LOGO);
 
-  const hikesOnDate = mountainHikes.filter((h) => dateInRange(date, h.date, h.end_date));
+  const hikesOnDate = useMemo(
+    () =>
+      mountainHikes.filter(
+        (h) => !deletedIds.includes(h.id) && dateInRange(date, h.date, h.end_date)
+      ),
+    [mountainHikes, deletedIds, date]
+  );
   const mountainName = resolvedMountain?.name ?? hikesOnDate[0]?.mountain_name;
 
   // Resolve the mountain (for its name and lat/long) — cache first, same as
@@ -416,23 +450,53 @@ export default function HikesScreen() {
     return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
-  const handleEdit = (hike: Hike) => {
+  const handleEdit = useCallback((hike: Hike) => {
     setEditingHike(hike);
     setModalVisible(true);
-  };
+  }, []);
 
-  const handleDelete = async (hike: Hike) => {
+  const handleDelete = useCallback(async (hike: Hike): Promise<boolean> => {
     const { error } = await deleteHike(hike.id);
     if (error) {
       toastRef.current?.show({ type: 'error', title: 'Could not delete hike', message: error });
-    } else {
-      toastRef.current?.show({ type: 'success', title: 'Hike deleted', message: 'Removed from this day.' });
+      return false;
     }
-  };
+    // Remove the card right away, then re-sync the list from the server
+    setDeletedIds((ids) => [...ids, hike.id]);
+    if (mountainId) {
+      useHikesStore.getState().fetchMountainHikes(mountainId);
+    }
+    // The permit gets ripped in half instead of the old "Hike deleted" toast
+    permit.show('cancelled', buildPermitDetails(hike, mountainName));
+    return true;
+  }, [deleteHike, mountainId, mountainName, permit.show]);
+
+  const renderHike = useCallback(
+    ({ item }: { item: Hike }) => (
+      <View style={{ width: cardWidth }}>
+        <HikeCard
+          hike={item}
+          displayDate={date}
+          weather={dayWeather}
+          canEdit={item.user_id === user?.id}
+          cardWidth={cardWidth}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
+      </View>
+    ),
+    [date, dayWeather, user?.id, cardWidth, handleEdit, handleDelete]
+  );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View
+      style={styles.container}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        setMeasuredWidth((prev) => (prev === w ? prev : w));
+      }}
+    >
+      <View style={[styles.header, { paddingHorizontal: sidePadding }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={handleBackPress}
@@ -471,21 +535,11 @@ export default function HikesScreen() {
         <FlatList
           key={`hikes-grid-${COLUMNS}`}
           data={hikesOnDate}
-          keyExtractor={(item) => item.id}
+          keyExtractor={keyExtractor}
           numColumns={COLUMNS}
-          renderItem={({ item, index }) => (
-            <HikeCard
-              hike={item}
-              displayDate={date}
-              weather={dayWeather}
-              canEdit={item.user_id === user?.id}
-              isLastInRow={(index + 1) % COLUMNS === 0}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
-          )}
+          renderItem={renderHike}
           columnWrapperStyle={styles.row}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingHorizontal: sidePadding }]}
         />
       )}
 
@@ -500,6 +554,7 @@ export default function HikesScreen() {
         }}
       />
       <Toast ref={toastRef} />
+      {permit.element}
     </View>
   );
 }
@@ -553,21 +608,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   list: {
-    paddingHorizontal: LIST_HORIZONTAL_PADDING,
     paddingTop: 4,
-    paddingBottom: 20,
+    paddingBottom: 12,
   },
-  // No `gap` here on purpose — each card carries its own marginRight
-  // (except the last column) and marginBottom, so an incomplete final row
-  // still sits flush left instead of leaving a lopsided right margin.
+  // Cards in a row sit side by side with one even gutter; rows are spaced the same.
   row: {
+    flexDirection: 'row',
     justifyContent: 'flex-start',
+    gap: CARD_GAP,
+    marginBottom: CARD_GAP,
   },
   cardTouchable: {
     flex: 1,
-    maxWidth: CARD_WIDTH,
-    minWidth: CARD_WIDTH * 0.78,
-    marginBottom: CARD_GAP,
   },
   card: {
     flexDirection: 'column',
@@ -623,6 +675,7 @@ const styles = StyleSheet.create({
     minHeight: 32,
   },
   cardInfoBlock: {
+    minWidth: 0,
     gap: 5,
   },
   cardTopRow: {
@@ -632,8 +685,9 @@ const styles = StyleSheet.create({
   },
   cardTime: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
+    flexShrink: 1,
   },
   cardRow: {
     flexDirection: 'row',
@@ -643,6 +697,7 @@ const styles = StyleSheet.create({
   cardRowText: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 10,
+    flexShrink: 1,
   },
   sharedPill: {
     flexDirection: 'row',
