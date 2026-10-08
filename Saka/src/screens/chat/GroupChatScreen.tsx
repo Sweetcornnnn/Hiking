@@ -13,16 +13,18 @@ import {
   Alert,
   TextInput,
   Modal,
-  useWindowDimensions,
   Pressable,
   Animated,
   PanResponder,
+  Clipboard,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { MessageBubble, ReactionType } from '../../components/chat/MessageBubble';
+import MessageActionSheet from '../../components/chat/MessageActionSheet';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -36,7 +38,6 @@ import {
   CHAT_RADIUS_BTN,
   CHAT_RADIUS_CARD,
   CHAT_RADIUS_MODAL,
-  CHAT_RADIUS_BUBBLE,
   CHAT_FS_BODY,
   CHAT_FS_META,
 } from '../../theme/designTokens';
@@ -64,6 +65,7 @@ type Message = {
   reply_to_id: number | null;
   reply_to_sender: string | null;
   reply_to_content: string | null;
+  reaction: ReactionType | null;
 };
 
 type GroupMember = {
@@ -99,8 +101,8 @@ const formatSystemMessage = (item: Message, currentUserId: string): string => {
     return `${actor_name} added ${target_name} to the group.`;
   }
   if (action === 'member_left') {
-    if (actor_id === currentUserId) return 'You left the group';
-    return `${actor_name} left the group`;
+    if (actor_id === currentUserId) return 'You left the group.';
+    return `${actor_name} left the group.`;
   }
   return item.content;
 };
@@ -111,6 +113,43 @@ const isEdited = (m: { created_at: string; updated_at: string }) => {
   } catch {
     return false;
   }
+};
+
+const isSameDay = (first: string, second: string) => {
+  const firstDate = new Date(first);
+  const secondDate = new Date(second);
+  if (isNaN(firstDate.getTime()) || isNaN(secondDate.getTime())) return false;
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate()
+  );
+};
+
+const formatDateDivider = (timestamp: string) => {
+  const messageDate = new Date(timestamp);
+  if (isNaN(messageDate.getTime())) return '';
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageStart = new Date(
+    messageDate.getFullYear(),
+    messageDate.getMonth(),
+    messageDate.getDate()
+  );
+  const dayDifference = Math.round(
+    (todayStart.getTime() - messageStart.getTime()) / 86_400_000
+  );
+
+  if (dayDifference === 0) return 'Today';
+  if (dayDifference === 1) return 'Yesterday';
+  return messageDate.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    ...(messageDate.getFullYear() !== now.getFullYear()
+      ? { year: 'numeric' as const }
+      : {}),
+  });
 };
 
 const SELECT_COLS = `
@@ -126,6 +165,7 @@ const SELECT_COLS = `
   reply_to_id,
   reply_to_sender,
   reply_to_content,
+  reaction,
   profiles:profiles (
     full_name,
     username,
@@ -235,19 +275,15 @@ export default function GroupChatScreen() {
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
-  const [showDeleteSheet, setShowDeleteSheet] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [actionTarget, setActionTarget] = useState<Message | null>(null);
 
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
-  const { width: windowWidth } = useWindowDimensions();
 
   const isNearBottomRef = useRef(true);
   const initialScrollIndexRef = useRef<number | null>(null);
@@ -460,6 +496,7 @@ export default function GroupChatScreen() {
       reply_to_id: reply?.id ?? null,
       reply_to_sender: repliedToName,
       reply_to_content: reply?.content ?? null,
+      reaction: null,
       profiles: {
         full_name: user.user_metadata?.full_name || null,
         username: user.user_metadata?.username || null,
@@ -507,13 +544,12 @@ export default function GroupChatScreen() {
 
   // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
-    if (!selectedMessage) return;
-    const target = selectedMessage;
+    if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+    const target = actionTarget;
     setReplyingTo(null);
     setEditingMessage(target);
     setInputText(target.content);
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
+    setActionTarget(null);
     setTimeout(() => inputRef.current?.focus(), 120);
   };
 
@@ -523,7 +559,12 @@ export default function GroupChatScreen() {
   };
 
   const saveEdit = async () => {
-    if (!editingMessage || !inputText.trim() || sending) return;
+    if (
+      !editingMessage ||
+      editingMessage.sender_id !== user?.id ||
+      !inputText.trim() ||
+      sending
+    ) return;
 
     const newContent = inputText.trim();
     if (newContent === editingMessage.content) {
@@ -544,7 +585,8 @@ export default function GroupChatScreen() {
       const { error } = await supabase
         .from('group_messages')
         .update({ content: newContent, updated_at: now })
-        .eq('id', targetId);
+        .eq('id', targetId)
+        .eq('sender_id', user.id);
 
       if (error) throw error;
 
@@ -581,38 +623,92 @@ export default function GroupChatScreen() {
     return sendMessage();
   };
 
-  // ─── DELETE ────────────────────────────────────────────────
-  const openDeleteSheet = (message: Message) => {
+  // ─── REACT / ACTIONS ──────────────────────────────────────
+  const openActionSheet = useCallback((message: Message) => {
     if (message.type === 'system') return;
-    setSelectedMessage(message);
-    setShowDeleteSheet(true);
+    if (typeof message.id !== 'number' || message.id >= 1_000_000_000_000) return;
+    setActionTarget(message);
+  }, []);
+
+  const closeActionSheet = () => {
+    setActionTarget(null);
   };
 
-  const closeDeleteSheet = () => {
-    if (deleting) return;
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
-  };
+  const applyReaction = async (reaction: ReactionType) => {
+    if (!actionTarget || !user) return;
+    const targetId = actionTarget.id;
 
-  const confirmDeleteMessage = async () => {
-    if (!selectedMessage || !user) return;
-    const msgId = selectedMessage.id;
-    setDeleting(true);
+    if (typeof targetId !== 'number' || targetId >= 1_000_000_000_000) {
+      setActionTarget(null);
+      return;
+    }
+
+    const next = actionTarget.reaction === reaction ? null : reaction;
 
     const backup = messages;
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
+    setMessages((prev) =>
+      prev.map((m) => (m.id === targetId ? { ...m, reaction: next } : m))
+    );
+    setActionTarget(null);
 
     try {
-      const { error } = await supabase.from('group_messages').delete().eq('id', msgId);
+      const { data: updated, error } = await supabase
+        .from('group_messages')
+        .update({ reaction: next })
+        .eq('id', targetId)
+        .select('id, reaction');
+
       if (error) throw error;
-    } catch {
+      if (!updated || updated.length === 0) {
+        throw new Error('Reaction not saved — RLS blocked or row missing');
+      }
+    } catch (err) {
+      console.warn('[reaction] failed:', err);
       setMessages(backup);
-      Alert.alert('Error', 'Failed to delete message. Please try again.');
-    } finally {
-      setDeleting(false);
+      Alert.alert('Error', 'Failed to react. Please try again.');
     }
+  };
+
+  const confirmDeleteFromSheet = () => {
+    if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+
+    Alert.alert(
+      'Unsend this message?',
+      'This will remove it for everyone in the group.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unsend',
+          style: 'destructive',
+          onPress: async () => {
+            const msgId = actionTarget.id;
+            const backup = messages;
+            setMessages((prev) => prev.filter((m) => m.id !== msgId));
+            setActionTarget(null);
+
+            try {
+              const { error } = await supabase
+                .from('group_messages')
+                .delete()
+                .eq('id', msgId)
+                .eq('sender_id', user!.id);
+
+              if (error) throw error;
+            } catch (err) {
+              console.error('[unsend] caught:', err);
+              setMessages(backup);
+              Alert.alert('Error', 'Failed to unsend. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const copyMessage = () => {
+    if (!actionTarget) return;
+    Clipboard.setString(actionTarget.content);
+    setActionTarget(null);
   };
 
   // ─── REALTIME ──────────────────────────────────────────────
@@ -663,6 +759,7 @@ export default function GroupChatScreen() {
               reply_to_id: updated.reply_to_id ?? msg.reply_to_id,
               reply_to_sender: updated.reply_to_sender ?? msg.reply_to_sender,
               reply_to_content: updated.reply_to_content ?? msg.reply_to_content,
+              reaction: updated.reaction ?? msg.reaction,
             }
           : msg
       )
@@ -771,7 +868,7 @@ export default function GroupChatScreen() {
       await supabase.from('group_messages').insert({
         group_id: Number(groupId),
         sender_id: user.id,
-        content: `${userName} left the group`,
+        content: `${userName} left the group.`,
         type: 'system',
         metadata: { action: 'member_left', actor_id: user.id, actor_name: userName },
       });
@@ -862,13 +959,30 @@ export default function GroupChatScreen() {
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    const previousMessage = index > 0 ? messages[index - 1] : null;
+    const showDateDivider =
+      !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
+    const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
+    const dateDivider = dateLabel ? (
+      <View style={styles.dateDivider}>
+        <View style={styles.dateDividerLine} />
+        <View style={styles.datePill}>
+          <Text style={styles.datePillText}>{dateLabel}</Text>
+        </View>
+        <View style={styles.dateDividerLine} />
+      </View>
+    ) : null;
+
     if (item.type === 'system') {
       const displayText = formatSystemMessage(item, user?.id || '');
       return (
-        <View style={styles.systemMessageContainer}>
-          <Text style={styles.systemMessageText}>{displayText}</Text>
-        </View>
+        <>
+          {dateDivider}
+          <View style={styles.systemMessageContainer}>
+            <Text style={styles.systemMessageText}>{displayText}</Text>
+          </View>
+        </>
       );
     }
 
@@ -880,106 +994,53 @@ export default function GroupChatScreen() {
       ? new Date(item.created_at).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
+          hour12: true,
         })
       : '';
     const edited = isEdited(item);
     const hasReply = !!item.reply_to_id;
 
-    const replierLabel = isMe ? 'You' : senderName;
-    const repliedToLabel = item.reply_to_sender || 'a message';
-    const replyCaption = `${replierLabel} replied to ${repliedToLabel}`;
     const repliedMessage = hasReply
       ? messages.find((message) => message.id === item.reply_to_id)
       : null;
+    const repliedToLabel = repliedMessage
+      ? getSenderLabel(repliedMessage)
+      : item.reply_to_sender || 'a message';
+    const replyCaption = isMe
+      ? `You replied to ${repliedToLabel}`
+      : repliedMessage?.sender_id === user?.id
+        ? `${senderName} replied to you`
+        : `${senderName} replied to ${repliedToLabel}`;
     const replyPreview =
       repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
-    const bubbleTextLength = Math.max(
-      item.content.length,
-      hasReply ? replyCaption.length : 0,
-      hasReply ? replyPreview.length : 0
-    );
-    const bubbleWidth = Math.min(
-      Math.max(48, bubbleTextLength * 7.2 + 24),
-      windowWidth * 0.75
-    );
 
     return (
-      <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
-        <Pressable
-          onLongPress={() => openDeleteSheet(item)}
-          delayLongPress={350}
-          style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
-        >
-          {!isMe && (
-            <View style={styles.messageSenderRow}>
-              <View
-                style={[
-                  styles.smallAvatar,
-                  { backgroundColor: getAvatarColor(item.sender_id) },
-                ]}
-              >
-                <Text style={styles.smallAvatarText}>{getInitials(senderName)}</Text>
-              </View>
-              <Text style={styles.senderName}>{senderName}</Text>
-            </View>
-          )}
-
-          {hasReply && (
-            <View
-              style={[
-                styles.replyPreview,
-                isMe ? styles.replyPreviewMe : styles.replyPreviewOther,
-                { maxWidth: bubbleWidth, alignSelf: isMe ? 'flex-end' : 'flex-start' },
-              ]}
-            >
-              <View style={styles.replyPreviewAccent} />
-              <View style={styles.replyPreviewText}>
-                <Text
-                  style={[
-                    styles.replyPreviewCaption,
-                    isMe ? styles.replyPreviewCaptionMe : styles.replyPreviewCaptionOther,
-                  ]}
-                >
-                  {replyCaption}
-                </Text>
-                <Text
-                  style={[
-                    styles.replyPreviewContent,
-                    isMe ? styles.replyPreviewContentMe : styles.replyPreviewContentOther,
-                  ]}
-                >
-                  {replyPreview}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          <View
-            style={[
-              styles.messageBubble,
-              isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-              { maxWidth: bubbleWidth },
-            ]}
+      <>
+        {dateDivider}
+        <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
+          <Pressable
+            onLongPress={() => openActionSheet(item)}
+            delayLongPress={350}
+            style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
           >
-            <Text
-              style={[
-                styles.messageText,
-                { color: isMe ? CHAT_BG : TEXT_PRIMARY },
-                isMe && { fontWeight: '600' },
-              ]}
-            >
-              {item.content}
-            </Text>
-          </View>
-
-          <View style={styles.messageMeta}>
-            <Text style={styles.messageTime}>
-              {time}
-              {edited ? ' · edited' : ''}
-            </Text>
-          </View>
-        </Pressable>
-      </SwipeableRow>
+            <MessageBubble
+              content={item.content}
+              time={time}
+              isMe={isMe}
+              edited={edited}
+              hasReply={hasReply}
+              replyCaption={replyCaption}
+              replyPreview={replyPreview}
+              reaction={item.reaction}
+              showReadReceipt={false}
+              showAvatar={false}
+              showSenderHeader={!isMe}
+              senderName={senderName}
+              senderColorSeed={item.sender_id}
+            />
+          </Pressable>
+        </SwipeableRow>
+      </>
     );
   };
 
@@ -1022,6 +1083,7 @@ export default function GroupChatScreen() {
 
   const canSave = inputText.trim().length > 0 && !sending;
   const replyingSenderLabel = replyingTo ? getSenderLabel(replyingTo) : '';
+  const isActionTargetMine = !!actionTarget && actionTarget.sender_id === user?.id;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -1113,7 +1175,6 @@ export default function GroupChatScreen() {
           />
         )}
 
-        {/* Reply bar */}
         {replyingTo && (
           <View style={styles.replyBar}>
             <View style={styles.replyBarAccent} />
@@ -1135,7 +1196,6 @@ export default function GroupChatScreen() {
           </View>
         )}
 
-        {/* Edit bar */}
         {editingMessage && (
           <View style={styles.editingBar}>
             <Ionicons name="create-outline" size={13} color={ACCENT_GOLD} />
@@ -1352,56 +1412,26 @@ export default function GroupChatScreen() {
         </Pressable>
       </Modal>
 
-      {/* Message options sheet */}
-      <Modal
-        visible={showDeleteSheet}
-        transparent
-        animationType="fade"
-        onRequestClose={closeDeleteSheet}
-      >
-        <Pressable style={styles.sheetBackdrop} onPress={closeDeleteSheet}>
-          <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.sheetTitle}>Message options</Text>
-
-            <View style={styles.sheetBtnRow}>
-              <TouchableOpacity
-                style={[styles.sheetBtn, styles.sheetBtnEdit]}
-                onPress={openEditFromSheet}
-                disabled={deleting}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="create-outline" size={14} color={TEXT_PRIMARY} />
-                <Text style={styles.sheetBtnEditText}>Edit</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.sheetBtn, styles.sheetBtnDelete]}
-                onPress={confirmDeleteMessage}
-                disabled={deleting}
-                activeOpacity={0.85}
-              >
-                {deleting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="trash-outline" size={14} color="#fff" />
-                    <Text style={styles.sheetBtnDeleteText}>Unsend</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.sheetCancelBtn}
-              onPress={closeDeleteSheet}
-              disabled={deleting}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.sheetCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* ── Unified action sheet ── */}
+      <MessageActionSheet
+        visible={!!actionTarget}
+        isMe={isActionTargetMine}
+        currentReaction={actionTarget?.reaction ?? null}
+        onClose={closeActionSheet}
+        onReact={applyReaction}
+        onReply={
+          !isActionTargetMine && actionTarget
+            ? () => {
+                const target = actionTarget;
+                setActionTarget(null);
+                startReply(target);
+              }
+            : undefined
+        }
+        onEdit={isActionTargetMine ? openEditFromSheet : undefined}
+        onUnsend={isActionTargetMine ? confirmDeleteFromSheet : undefined}
+        onCopy={copyMessage}
+      />
     </SafeAreaView>
   );
 }
@@ -1438,9 +1468,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   headerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1476,10 +1506,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // ── Swipe wrapper ──
   swipeContainer: {
     width: '100%',
-    marginVertical: 2,
+    marginVertical: 6,
     justifyContent: 'center',
   },
   swipeIconWrap: {
@@ -1497,68 +1526,34 @@ const styles = StyleSheet.create({
   messageRow: { alignSelf: 'stretch' },
   messageLeft: { alignItems: 'flex-start' },
   messageRight: { alignItems: 'flex-end' },
-  messageSenderRow: {
+
+  dateDivider: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-    marginLeft: 2,
+    gap: 10,
+    paddingHorizontal: 24,
+    marginTop: 12,
+    marginBottom: 8,
   },
-  smallAvatar: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
+  dateDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: CHAT_BORDER,
   },
-  smallAvatarText: { color: '#fff', fontSize: 8.5, fontWeight: '700' },
-  senderName: { fontSize: 10, fontWeight: '600', color: TEXT_MUTED, letterSpacing: 0.3 },
-
-  replyPreview: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-    marginTop: 4,
-    marginBottom: -8,
-    borderRadius: 6,
-  },
-  replyPreviewMe: { backgroundColor: 'rgba(217,221,227,0.84)' },
-  replyPreviewOther: { backgroundColor: 'rgba(217,221,227,0.84)' },
-  replyPreviewAccent: { width: 2, borderRadius: 1, backgroundColor: ACCENT_GOLD },
-  replyPreviewText: { flex: 1, minWidth: 0 },
-  replyPreviewCaption: { fontSize: 10, fontWeight: '700' },
-  replyPreviewCaptionMe: { color: '#3F4650' },
-  replyPreviewCaptionOther: { color: '#3F4650' },
-  replyPreviewContent: { fontSize: 11, marginTop: 2, flexShrink: 1 },
-  replyPreviewContentMe: { color: '#252A31' },
-  replyPreviewContentOther: { color: '#252A31' },
-
-  messageBubble: {
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: CHAT_RADIUS_BUBBLE,
-    marginVertical: 1,
-  },
-  messageBubbleMe: {
-    backgroundColor: ACCENT_GOLD,
-    borderBottomRightRadius: 4,
-  },
-  messageBubbleOther: {
-    backgroundColor: CHAT_SUBTLE,
-    borderBottomLeftRadius: 4,
+  datePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
     borderColor: CHAT_BORDER,
   },
-  messageText: { fontSize: CHAT_FS_BODY, lineHeight: 17, flexShrink: 1 },
-  messageMeta: { flexDirection: 'row', marginTop: 2 },
-  messageTime: {
-    fontSize: CHAT_FS_META,
+  datePillText: {
+    fontSize: 9,
+    fontWeight: '800',
     color: TEXT_MUTED,
-    opacity: 0.75,
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 0.2,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
 
   systemMessageContainer: {
@@ -1576,7 +1571,6 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
 
-  // ── Reply bar (above input) ──
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1616,7 +1610,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
 
-  // ── Edit bar (above input) ──
   editingBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1813,61 +1806,5 @@ const styles = StyleSheet.create({
     marginTop: 4,
     borderTopWidth: 1,
     borderTopColor: CHAT_BORDER,
-  },
-
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  sheetCard: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: CHAT_BG,
-    borderRadius: CHAT_RADIUS_MODAL,
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderWidth: 1,
-    borderColor: CHAT_BORDER,
-  },
-  sheetTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  sheetBtnRow: { flexDirection: 'row', gap: 8 },
-  sheetBtn: {
-    flex: 1,
-    height: 38,
-    borderRadius: CHAT_RADIUS_BTN,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  sheetBtnEdit: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  sheetBtnEditText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
-  sheetBtnDelete: { backgroundColor: CHAT_DANGER },
-  sheetBtnDeleteText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  sheetCancelBtn: {
-    marginTop: 8,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: CHAT_RADIUS_BTN,
-  },
-  sheetCancelText: {
-    color: TEXT_MUTED,
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

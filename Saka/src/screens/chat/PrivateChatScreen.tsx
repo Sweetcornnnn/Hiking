@@ -90,6 +90,7 @@ export default function PrivateChatScreen() {
       if (!refresh) setLoading(true);
       const conversationsList: Conversation[] = [];
 
+      // ── Private conversations ──
       const { data: privateData, error: privateError } = await supabase
         .from('conversations')
         .select('id, participant1_id, participant2_id, last_message_at')
@@ -147,6 +148,7 @@ export default function PrivateChatScreen() {
         }
       }
 
+      // ── Group conversations (hidden ones excluded) ──
       const { data: groupData, error: groupError } = await supabase
         .from('group_members')
         .select(`
@@ -161,11 +163,14 @@ export default function PrivateChatScreen() {
               id,
               content,
               sender_id,
+              type,
+              metadata,
               created_at
             )
           )
         `)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .is('hidden_at', null);
 
       if (groupError) throw groupError;
 
@@ -178,6 +183,14 @@ export default function PrivateChatScreen() {
               new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
           const latestMessage = sortedMessages[0];
+          const messageMetadata = latestMessage?.metadata;
+          const preview =
+            latestMessage?.type === 'system' &&
+            messageMetadata?.action === 'member_added' &&
+            messageMetadata.actor_id === user.id &&
+            messageMetadata.target_name
+              ? `You added ${messageMetadata.target_name} to the group.`
+              : latestMessage?.content || 'No messages yet';
 
           const { data: receipt } = await supabase
             .from('group_read_receipts')
@@ -200,7 +213,7 @@ export default function PrivateChatScreen() {
           conversationsList.push({
             id: `group_${group.id}`,
             title: group.name,
-            preview: latestMessage?.content || 'No messages yet',
+            preview,
             type: 'group',
             time: latestMessage?.created_at
               ? formatTime(latestMessage.created_at)
@@ -256,6 +269,11 @@ export default function PrivateChatScreen() {
     loadConversations(true);
   }, [loadConversations]);
 
+  // ── Delete / hide ──
+  // Private  → hard delete the conversation rows (existing behavior).
+  // Group    → set hidden_at so it disappears from MY list only.
+  //            A new non-system message clears hidden_at (SQL trigger)
+  //            and the realtime handler above reloads the list.
   const handleDeleteOrLeave = async () => {
     if (!selectedConversation || !user) return;
     const isGroup = selectedConversation.type === 'group';
@@ -275,12 +293,12 @@ export default function PrivateChatScreen() {
           .delete()
           .eq('id', selectedConversation.conversation_id);
       } else if (isGroup && selectedConversation.group_id) {
-        const { error: leaveError } = await supabase
+        const { error: hideError } = await supabase
           .from('group_members')
-          .delete()
+          .update({ hidden_at: new Date().toISOString() })
           .eq('group_id', selectedConversation.group_id)
           .eq('user_id', user.id);
-        if (leaveError) throw leaveError;
+        if (hideError) throw hideError;
       }
 
       await loadConversations(true);
@@ -289,7 +307,9 @@ export default function PrivateChatScreen() {
       setSelectedConversation(null);
       Alert.alert(
         'Success',
-        wasGroup ? 'You have left the group' : 'Conversation deleted'
+        wasGroup
+          ? 'Chat removed from your list. It will reappear when someone posts.'
+          : 'Conversation deleted'
       );
     } catch {
       Alert.alert('Error', 'Action failed. Please try again.');
@@ -531,14 +551,10 @@ export default function PrivateChatScreen() {
               {deleting ? (
                 <ActivityIndicator size="small" color="#E07070" />
               ) : (
-                <Ionicons
-                  name={isSelectedGroup ? 'exit-outline' : 'trash-outline'}
-                  size={16}
-                  color="#E07070"
-                />
+                <Ionicons name="trash-outline" size={16} color="#E07070" />
               )}
               <Text style={[styles.actionOptionText, { color: '#E07070' }]}>
-                {isSelectedGroup ? 'Leave Group' : 'Delete Conversation'}
+                {isSelectedGroup ? 'Delete Chat' : 'Delete Conversation'}
               </Text>
             </TouchableOpacity>
 

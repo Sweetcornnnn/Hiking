@@ -13,7 +13,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
-import ChatMessage from '../../components/chat/ChatMessage';
+import { MessageBubble } from '../../components/chat/MessageBubble';
 import MessageInput from '../../components/chat/MessageInput';
 import ProfileCard from '../../components/chat/ProfileCard';
 import {
@@ -335,13 +335,41 @@ export default function WorldChatScreen() {
         data={[...messages].reverse()}
         inverted
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <ChatMessage
-            message={item}
-            currentUserId={user?.id}
-            onAvatarPress={openProfile}
-          />
-        )}
+        renderItem={({ item }) => {
+          const isMe = item.user_id === user?.id;
+          const profile = item.profiles || item.users || {};
+          const senderName =
+            profile.full_name || profile.username || 'Anonymous';
+          const time = item.created_at
+            ? new Date(item.created_at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : '';
+          const canOpenProfile =
+            !isMe && !!item.user_id && typeof openProfile === 'function';
+
+          return (
+            <View style={styles.messageItem}>
+              <MessageBubble
+                content={item.content}
+                time={time}
+                isMe={isMe}
+                showReadReceipt={false}
+                showAvatar={false}
+                showSenderHeader={!isMe}
+                senderName={senderName}
+                senderColorSeed={item.user_id}
+                onPressSender={
+                  canOpenProfile ? () => openProfile(item.user_id) : undefined
+                }
+                onPressBubble={
+                  canOpenProfile ? () => openProfile(item.user_id) : undefined
+                }
+              />
+            </View>
+          );
+        }}
         style={styles.list}
         contentContainerStyle={styles.messageList}
         showsVerticalScrollIndicator={false}
@@ -451,6 +479,9 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
     flexGrow: 1,
+  },
+  messageItem: {
+    marginVertical: 8,
   },
 
   inputWrapper: {
