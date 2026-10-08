@@ -13,7 +13,6 @@ import {
   Alert,
   TextInput,
   Modal,
-  useWindowDimensions,
   Pressable,
   Animated,
   PanResponder,
@@ -23,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { MessageBubble } from '../../components/chat/MessageBubble';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -36,7 +36,6 @@ import {
   CHAT_RADIUS_BTN,
   CHAT_RADIUS_CARD,
   CHAT_RADIUS_MODAL,
-  CHAT_RADIUS_BUBBLE,
   CHAT_FS_BODY,
   CHAT_FS_META,
 } from '../../theme/designTokens';
@@ -99,8 +98,8 @@ const formatSystemMessage = (item: Message, currentUserId: string): string => {
     return `${actor_name} added ${target_name} to the group.`;
   }
   if (action === 'member_left') {
-    if (actor_id === currentUserId) return 'You left the group';
-    return `${actor_name} left the group`;
+    if (actor_id === currentUserId) return 'You left the group.';
+    return `${actor_name} left the group.`;
   }
   return item.content;
 };
@@ -111,6 +110,43 @@ const isEdited = (m: { created_at: string; updated_at: string }) => {
   } catch {
     return false;
   }
+};
+
+const isSameDay = (first: string, second: string) => {
+  const firstDate = new Date(first);
+  const secondDate = new Date(second);
+  if (isNaN(firstDate.getTime()) || isNaN(secondDate.getTime())) return false;
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate()
+  );
+};
+
+const formatDateDivider = (timestamp: string) => {
+  const messageDate = new Date(timestamp);
+  if (isNaN(messageDate.getTime())) return '';
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageStart = new Date(
+    messageDate.getFullYear(),
+    messageDate.getMonth(),
+    messageDate.getDate()
+  );
+  const dayDifference = Math.round(
+    (todayStart.getTime() - messageStart.getTime()) / 86_400_000
+  );
+
+  if (dayDifference === 0) return 'Today';
+  if (dayDifference === 1) return 'Yesterday';
+  return messageDate.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    ...(messageDate.getFullYear() !== now.getFullYear()
+      ? { year: 'numeric' as const }
+      : {}),
+  });
 };
 
 const SELECT_COLS = `
@@ -247,7 +283,6 @@ export default function GroupChatScreen() {
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
-  const { width: windowWidth } = useWindowDimensions();
 
   const isNearBottomRef = useRef(true);
   const initialScrollIndexRef = useRef<number | null>(null);
@@ -507,7 +542,7 @@ export default function GroupChatScreen() {
 
   // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
-    if (!selectedMessage) return;
+    if (!selectedMessage || selectedMessage.sender_id !== user?.id) return;
     const target = selectedMessage;
     setReplyingTo(null);
     setEditingMessage(target);
@@ -523,7 +558,12 @@ export default function GroupChatScreen() {
   };
 
   const saveEdit = async () => {
-    if (!editingMessage || !inputText.trim() || sending) return;
+    if (
+      !editingMessage ||
+      editingMessage.sender_id !== user?.id ||
+      !inputText.trim() ||
+      sending
+    ) return;
 
     const newContent = inputText.trim();
     if (newContent === editingMessage.content) {
@@ -541,12 +581,16 @@ export default function GroupChatScreen() {
     );
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('group_messages')
         .update({ content: newContent, updated_at: now })
-        .eq('id', targetId);
+        .eq('id', targetId)
+        .eq('sender_id', user.id)
+        .select('id')
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) throw new Error('Message could not be updated');
 
       setEditingMessage(null);
       setInputText('');
@@ -583,7 +627,7 @@ export default function GroupChatScreen() {
 
   // ─── DELETE ────────────────────────────────────────────────
   const openDeleteSheet = (message: Message) => {
-    if (message.type === 'system') return;
+    if (message.type === 'system' || message.sender_id !== user?.id) return;
     setSelectedMessage(message);
     setShowDeleteSheet(true);
   };
@@ -595,7 +639,12 @@ export default function GroupChatScreen() {
   };
 
   const confirmDeleteMessage = async () => {
-    if (!selectedMessage || !user) return;
+    if (
+      !selectedMessage ||
+      !user ||
+      selectedMessage.sender_id !== user.id ||
+      selectedMessage.type === 'system'
+    ) return;
     const msgId = selectedMessage.id;
     setDeleting(true);
 
@@ -605,8 +654,15 @@ export default function GroupChatScreen() {
     setSelectedMessage(null);
 
     try {
-      const { error } = await supabase.from('group_messages').delete().eq('id', msgId);
+      const { data, error } = await supabase
+        .from('group_messages')
+        .delete()
+        .eq('id', msgId)
+        .eq('sender_id', user.id)
+        .select('id')
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error('Message could not be deleted');
     } catch {
       setMessages(backup);
       Alert.alert('Error', 'Failed to delete message. Please try again.');
@@ -771,7 +827,7 @@ export default function GroupChatScreen() {
       await supabase.from('group_messages').insert({
         group_id: Number(groupId),
         sender_id: user.id,
-        content: `${userName} left the group`,
+        content: `${userName} left the group.`,
         type: 'system',
         metadata: { action: 'member_left', actor_id: user.id, actor_name: userName },
       });
@@ -862,13 +918,30 @@ export default function GroupChatScreen() {
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    const previousMessage = index > 0 ? messages[index - 1] : null;
+    const showDateDivider =
+      !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
+    const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
+    const dateDivider = dateLabel ? (
+      <View style={styles.dateDivider}>
+        <View style={styles.dateDividerLine} />
+        <View style={styles.datePill}>
+          <Text style={styles.datePillText}>{dateLabel}</Text>
+        </View>
+        <View style={styles.dateDividerLine} />
+      </View>
+    ) : null;
+
     if (item.type === 'system') {
       const displayText = formatSystemMessage(item, user?.id || '');
       return (
-        <View style={styles.systemMessageContainer}>
-          <Text style={styles.systemMessageText}>{displayText}</Text>
-        </View>
+        <>
+          {dateDivider}
+          <View style={styles.systemMessageContainer}>
+            <Text style={styles.systemMessageText}>{displayText}</Text>
+          </View>
+        </>
       );
     }
 
@@ -880,6 +953,7 @@ export default function GroupChatScreen() {
       ? new Date(item.created_at).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
+          hour12: true,
         })
       : '';
     const edited = isEdited(item);
@@ -898,93 +972,33 @@ export default function GroupChatScreen() {
         : `${senderName} replied to ${repliedToLabel}`;
     const replyPreview =
       repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
-    const bubbleTextLength = Math.max(
-      item.content.length,
-      hasReply ? replyCaption.length : 0,
-      hasReply ? replyPreview.length : 0
-    );
-    const bubbleWidth = Math.min(
-      Math.max(48, bubbleTextLength * 7.2 + 24),
-      windowWidth * 0.75
-    );
 
     return (
-      <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
-        <Pressable
-          onLongPress={() => openDeleteSheet(item)}
-          delayLongPress={350}
-          style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
-        >
-          {!isMe && (
-            <View style={styles.messageSenderRow}>
-              <View
-                style={[
-                  styles.smallAvatar,
-                  { backgroundColor: getAvatarColor(item.sender_id) },
-                ]}
-              >
-                <Text style={styles.smallAvatarText}>{getInitials(senderName)}</Text>
-              </View>
-              <Text style={styles.senderName}>{senderName}</Text>
-            </View>
-          )}
-
-          {hasReply && (
-            <View
-              style={[
-                styles.replyPreview,
-                isMe ? styles.replyPreviewMe : styles.replyPreviewOther,
-                { maxWidth: bubbleWidth, alignSelf: isMe ? 'flex-end' : 'flex-start' },
-              ]}
-            >
-              <View style={styles.replyPreviewAccent} />
-              <View style={styles.replyPreviewText}>
-                <Text
-                  style={[
-                    styles.replyPreviewCaption,
-                    isMe ? styles.replyPreviewCaptionMe : styles.replyPreviewCaptionOther,
-                  ]}
-                >
-                  {replyCaption}
-                </Text>
-                <Text
-                  style={[
-                    styles.replyPreviewContent,
-                    isMe ? styles.replyPreviewContentMe : styles.replyPreviewContentOther,
-                  ]}
-                >
-                  {replyPreview}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          <View
-            style={[
-              styles.messageBubble,
-              isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-              { maxWidth: bubbleWidth },
-            ]}
+      <>
+        {dateDivider}
+        <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
+          <Pressable
+            onLongPress={isMe ? () => openDeleteSheet(item) : undefined}
+            delayLongPress={350}
+            style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
           >
-            <Text
-              style={[
-                styles.messageText,
-                { color: isMe ? CHAT_BG : TEXT_PRIMARY },
-                isMe && { fontWeight: '600' },
-              ]}
-            >
-              {item.content}
-            </Text>
-          </View>
-
-          <View style={styles.messageMeta}>
-            <Text style={styles.messageTime}>
-              {time}
-              {edited ? ' · edited' : ''}
-            </Text>
-          </View>
-        </Pressable>
-      </SwipeableRow>
+            <MessageBubble
+              content={item.content}
+              time={time}
+              isMe={isMe}
+              edited={edited}
+              hasReply={hasReply}
+              replyCaption={replyCaption}
+              replyPreview={replyPreview}
+              showReadReceipt={false}
+              showAvatar={false}
+              showSenderHeader={!isMe}
+              senderName={senderName}
+              senderColorSeed={item.sender_id}
+            />
+          </Pressable>
+        </SwipeableRow>
+      </>
     );
   };
 
@@ -1443,9 +1457,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   headerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1484,7 +1498,7 @@ const styles = StyleSheet.create({
   // ── Swipe wrapper ──
   swipeContainer: {
     width: '100%',
-    marginVertical: 2,
+    marginVertical: 6,
     justifyContent: 'center',
   },
   swipeIconWrap: {
@@ -1502,68 +1516,34 @@ const styles = StyleSheet.create({
   messageRow: { alignSelf: 'stretch' },
   messageLeft: { alignItems: 'flex-start' },
   messageRight: { alignItems: 'flex-end' },
-  messageSenderRow: {
+
+  dateDivider: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-    marginLeft: 2,
+    gap: 10,
+    paddingHorizontal: 24,
+    marginTop: 12,
+    marginBottom: 8,
   },
-  smallAvatar: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
+  dateDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: CHAT_BORDER,
   },
-  smallAvatarText: { color: '#fff', fontSize: 8.5, fontWeight: '700' },
-  senderName: { fontSize: 10, fontWeight: '600', color: TEXT_MUTED, letterSpacing: 0.3 },
-
-  replyPreview: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-    marginTop: 4,
-    marginBottom: -8,
-    borderRadius: 6,
-  },
-  replyPreviewMe: { backgroundColor: 'rgba(217,221,227,0.84)' },
-  replyPreviewOther: { backgroundColor: 'rgba(217,221,227,0.84)' },
-  replyPreviewAccent: { width: 2, borderRadius: 1, backgroundColor: ACCENT_GOLD },
-  replyPreviewText: { flex: 1, minWidth: 0 },
-  replyPreviewCaption: { fontSize: 10, fontWeight: '700' },
-  replyPreviewCaptionMe: { color: '#3F4650' },
-  replyPreviewCaptionOther: { color: '#3F4650' },
-  replyPreviewContent: { fontSize: 11, marginTop: 2, flexShrink: 1 },
-  replyPreviewContentMe: { color: '#252A31' },
-  replyPreviewContentOther: { color: '#252A31' },
-
-  messageBubble: {
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: CHAT_RADIUS_BUBBLE,
-    marginVertical: 1,
-  },
-  messageBubbleMe: {
-    backgroundColor: ACCENT_GOLD,
-    borderBottomRightRadius: 4,
-  },
-  messageBubbleOther: {
-    backgroundColor: CHAT_SUBTLE,
-    borderBottomLeftRadius: 4,
+  datePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
     borderColor: CHAT_BORDER,
   },
-  messageText: { fontSize: CHAT_FS_BODY, lineHeight: 17, flexShrink: 1 },
-  messageMeta: { flexDirection: 'row', marginTop: 2 },
-  messageTime: {
-    fontSize: CHAT_FS_META,
+  datePillText: {
+    fontSize: 9,
+    fontWeight: '800',
     color: TEXT_MUTED,
-    opacity: 0.75,
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 0.2,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
 
   systemMessageContainer: {
@@ -1822,7 +1802,7 @@ const styles = StyleSheet.create({
 
   sheetBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,

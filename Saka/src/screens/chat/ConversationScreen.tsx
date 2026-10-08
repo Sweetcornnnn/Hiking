@@ -12,7 +12,6 @@ import {
   RefreshControl,
   Alert,
   TextInput,
-  useWindowDimensions,
   Modal,
   Pressable,
   Animated,
@@ -23,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { MessageBubble } from '../../components/chat/MessageBubble';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -52,6 +52,7 @@ type Message = {
   read_at: string | null;
   created_at: string;
   updated_at: string;
+  is_edited: boolean;
   reply_to_id: number | null;
   reply_to_sender: string | null;
   reply_to_content: string | null;
@@ -79,17 +80,49 @@ const SELECT_COLS = `
   read_at,
   created_at,
   updated_at,
+  is_edited,
   reply_to_id,
   reply_to_sender,
   reply_to_content
 `;
 
-const isEdited = (m: { created_at: string; updated_at: string }) => {
-  try {
-    return new Date(m.updated_at).getTime() - new Date(m.created_at).getTime() > 1000;
-  } catch {
-    return false;
-  }
+const isEdited = (message: Pick<Message, 'is_edited'>) => message.is_edited;
+
+const isSameDay = (first: string, second: string) => {
+  const firstDate = new Date(first);
+  const secondDate = new Date(second);
+  if (isNaN(firstDate.getTime()) || isNaN(secondDate.getTime())) return false;
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate()
+  );
+};
+
+const formatDateDivider = (timestamp: string) => {
+  const messageDate = new Date(timestamp);
+  if (isNaN(messageDate.getTime())) return '';
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageStart = new Date(
+    messageDate.getFullYear(),
+    messageDate.getMonth(),
+    messageDate.getDate()
+  );
+  const dayDifference = Math.round(
+    (todayStart.getTime() - messageStart.getTime()) / 86_400_000
+  );
+
+  if (dayDifference === 0) return 'Today';
+  if (dayDifference === 1) return 'Yesterday';
+  return messageDate.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    ...(messageDate.getFullYear() !== now.getFullYear()
+      ? { year: 'numeric' as const }
+      : {}),
+  });
 };
 
 const REPLY_THRESHOLD = 56;
@@ -190,8 +223,6 @@ export default function ConversationScreen() {
   const [inputText, setInputText] = useState('');
   const [otherUser, setOtherUser] = useState<Profile | null>(null);
   const [firstUnreadId, setFirstUnreadId] = useState<number | null>(null);
-  const { width: windowWidth } = useWindowDimensions();
-
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -267,35 +298,50 @@ export default function ConversationScreen() {
   const markAllAsRead = useCallback(async () => {
     if (!user || !userId) return;
     try {
-      await supabase
+      const { error: rpcError } = await supabase
         .from('private_messages')
         .update({ is_read: true, read_at: new Date().toISOString() })
         .eq('sender_id', userId)
         .eq('recipient_id', user.id)
         .eq('is_read', false);
-    } catch {
-      return;
+      if (rpcError) {
+        console.warn('[markAllAsRead] error:', rpcError.message, rpcError);
+      }
+    } catch (err) {
+      console.warn('[markAllAsRead] threw:', err);
     }
   }, [user, userId]);
 
   const loadUserProfile = useCallback(async () => {
-    if (!userId) return;
+    if (!userId) {
+      console.warn('[loadUserProfile] no userId param');
+      return;
+    }
     try {
-      const { data, error } = await supabase
+      const { data, error: profileError } = await supabase
         .from('profiles')
         .select('id, full_name, username, email, avatar_url, status, is_online, last_seen')
         .eq('id', userId)
         .single();
-      if (error) throw error;
+      if (profileError) {
+        console.warn('[loadUserProfile] error:', profileError.message, profileError);
+        return;
+      }
       setOtherUser(data);
-    } catch {
-      return;
+    } catch (err) {
+      console.warn('[loadUserProfile] threw:', err);
     }
   }, [userId]);
 
   const loadMessages = useCallback(
     async (refresh = false) => {
-      if (!user || !userId) return;
+      if (!user || !userId) {
+        console.warn('[loadMessages] missing user or userId', { user: !!user, userId });
+        setError('Missing user or conversation id');
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
 
       try {
         setError(null);
@@ -311,7 +357,15 @@ export default function ConversationScreen() {
           .order('created_at', { ascending: true })
           .limit(200);
 
-        if (queryError) throw queryError;
+        if (queryError) {
+          console.error('[loadMessages] Supabase error:', {
+            message: queryError.message,
+            details: queryError.details,
+            hint: queryError.hint,
+            code: queryError.code,
+          });
+          throw queryError;
+        }
 
         const newMessages: Message[] = data || [];
         const firstUnreadIndex = newMessages.findIndex(
@@ -335,8 +389,11 @@ export default function ConversationScreen() {
             listRef.current?.scrollToEnd({ animated: false });
           }
         }, 300);
-      } catch {
-        setError('Failed to load messages');
+      } catch (err: any) {
+        console.error('[loadMessages] caught:', err);
+        setError(
+          err?.message ? `Failed to load: ${err.message}` : 'Failed to load messages'
+        );
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -372,6 +429,7 @@ export default function ConversationScreen() {
       read_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      is_edited: false,
       reply_to_id: reply?.id ?? null,
       reply_to_sender: repliedToName,
       reply_to_content: reply?.content ?? null,
@@ -382,7 +440,7 @@ export default function ConversationScreen() {
     setTimeout(() => scrollToEnd(true), 100);
 
     try {
-      const { data, error } = await supabase
+      const { data, error: insertError } = await supabase
         .from('private_messages')
         .insert({
           sender_id: user.id,
@@ -396,12 +454,16 @@ export default function ConversationScreen() {
         .select(SELECT_COLS)
         .single();
 
-      if (error) throw error;
+      if (insertError) {
+        console.error('[sendMessage] error:', insertError);
+        throw insertError;
+      }
 
       setMessages((prev) => prev.map((msg) => (msg.id === tempId ? data : msg)));
-    } catch {
+    } catch (err: any) {
+      console.error('[sendMessage] caught:', err);
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      Alert.alert('Error', err?.message || 'Failed to send message. Please try again.');
     } finally {
       setSending(false);
     }
@@ -409,7 +471,7 @@ export default function ConversationScreen() {
 
   // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
-    if (!selectedMessage) return;
+    if (!selectedMessage || selectedMessage.sender_id !== user?.id) return;
     const target = selectedMessage;
     setReplyingTo(null);
     setEditingMessage(target);
@@ -425,7 +487,12 @@ export default function ConversationScreen() {
   };
 
   const saveEdit = async () => {
-    if (!editingMessage || !inputText.trim() || sending) return;
+    if (
+      !editingMessage ||
+      editingMessage.sender_id !== user?.id ||
+      !inputText.trim() ||
+      sending
+    ) return;
 
     const newContent = inputText.trim();
     if (newContent === editingMessage.content) {
@@ -439,36 +506,48 @@ export default function ConversationScreen() {
 
     setSending(true);
     setMessages((prev) =>
-      prev.map((m) => (m.id === targetId ? { ...m, content: newContent, updated_at: now } : m))
+      prev.map((m) =>
+        m.id === targetId
+          ? { ...m, content: newContent, updated_at: now, is_edited: true }
+          : m
+      )
     );
 
     try {
-      const { error } = await supabase
+      const { data, error: updateError } = await supabase
         .from('private_messages')
-        .update({ content: newContent, updated_at: now })
-        .eq('id', targetId);
+        .update({ content: newContent, updated_at: now, is_edited: true })
+        .eq('id', targetId)
+        .eq('sender_id', user.id)
+        .select('id')
+        .maybeSingle();
 
-      if (error) throw error;
+      if (updateError) {
+        console.error('[saveEdit] error:', updateError);
+        throw updateError;
+      }
+      if (!data) throw new Error('Message could not be updated (no row returned)');
 
       setEditingMessage(null);
       setInputText('');
-    } catch {
+    } catch (err: any) {
+      console.error('[saveEdit] caught:', err);
       setMessages(backup);
-      Alert.alert('Error', 'Failed to edit message. Please try again.');
+      Alert.alert('Error', err?.message || 'Failed to edit message. Please try again.');
     } finally {
       setSending(false);
     }
   };
 
   // ─── REPLY ─────────────────────────────────────────────────
-  const startReply = (msg: Message) => {
+  const startReply = useCallback((msg: Message) => {
     if (editingMessage) {
       setEditingMessage(null);
       setInputText('');
     }
     setReplyingTo(msg);
     setTimeout(() => inputRef.current?.focus(), 120);
-  };
+  }, [editingMessage]);
 
   const cancelReply = () => setReplyingTo(null);
 
@@ -478,10 +557,11 @@ export default function ConversationScreen() {
   };
 
   // ─── DELETE ────────────────────────────────────────────────
-  const openDeleteSheet = (message: Message) => {
+  const openDeleteSheet = useCallback((message: Message) => {
+    if (message.sender_id !== user?.id) return;
     setSelectedMessage(message);
     setShowDeleteSheet(true);
-  };
+  }, [user?.id]);
 
   const closeDeleteSheet = () => {
     if (deleting) return;
@@ -490,7 +570,7 @@ export default function ConversationScreen() {
   };
 
   const confirmDeleteMessage = async () => {
-    if (!selectedMessage || !user) return;
+    if (!selectedMessage || !user || selectedMessage.sender_id !== user.id) return;
     const msgId = selectedMessage.id;
     setDeleting(true);
 
@@ -500,11 +580,23 @@ export default function ConversationScreen() {
     setSelectedMessage(null);
 
     try {
-      const { error } = await supabase.from('private_messages').delete().eq('id', msgId);
-      if (error) throw error;
-    } catch {
+      const { data, error: deleteError } = await supabase
+        .from('private_messages')
+        .delete()
+        .eq('id', msgId)
+        .eq('sender_id', user.id)
+        .select('id')
+        .maybeSingle();
+
+      if (deleteError) {
+        console.error('[confirmDeleteMessage] error:', deleteError);
+        throw deleteError;
+      }
+      if (!data) throw new Error('Message could not be deleted (no row returned)');
+    } catch (err: any) {
+      console.error('[confirmDeleteMessage] caught:', err);
       setMessages(backup);
-      Alert.alert('Error', 'Failed to delete message. Please try again.');
+      Alert.alert('Error', err?.message || 'Failed to delete message. Please try again.');
     } finally {
       setDeleting(false);
     }
@@ -520,13 +612,18 @@ export default function ConversationScreen() {
         (newMessage.sender_id === user?.id && newMessage.recipient_id === userId) ||
         (newMessage.sender_id === userId && newMessage.recipient_id === user?.id)
       ) {
-        const { data, error } = await supabase
+        const { data, error: fetchError } = await supabase
           .from('private_messages')
           .select(SELECT_COLS)
           .eq('id', newMessage.id)
           .single();
 
-        if (!error && data && mountedRef.current) {
+        if (fetchError) {
+          console.warn('[handleNewMessage] fetch error:', fetchError.message);
+          return;
+        }
+
+        if (data && mountedRef.current) {
           setMessages((prev) => {
             if (prev.some((m) => m.id === data.id)) return prev;
             return [...prev, data];
@@ -535,18 +632,22 @@ export default function ConversationScreen() {
           if (isNearBottomRef.current) setTimeout(() => scrollToEnd(true), 100);
 
           if (data.recipient_id === user?.id && !data.is_read) {
-            await supabase
+            const { error: readError } = await supabase
               .from('private_messages')
               .update({ is_read: true, read_at: new Date().toISOString() })
               .eq('id', data.id);
 
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === data.id
-                  ? { ...msg, is_read: true, read_at: new Date().toISOString() }
-                  : msg
-              )
-            );
+            if (readError) {
+              console.warn('[handleNewMessage] mark-read error:', readError.message);
+            } else {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === data.id
+                    ? { ...msg, is_read: true, read_at: new Date().toISOString() }
+                    : msg
+                )
+              );
+            }
           }
         }
       }
@@ -567,6 +668,7 @@ export default function ConversationScreen() {
               is_read: updated.is_read ?? msg.is_read,
               read_at: updated.read_at ?? msg.read_at,
               updated_at: updated.updated_at ?? msg.updated_at,
+              is_edited: updated.is_edited ?? msg.is_edited,
               reply_to_id: updated.reply_to_id ?? msg.reply_to_id,
               reply_to_sender: updated.reply_to_sender ?? msg.reply_to_sender,
               reply_to_content: updated.reply_to_content ?? msg.reply_to_content,
@@ -656,7 +758,7 @@ export default function ConversationScreen() {
     router.back();
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = useCallback(({ item, index }: { item: Message; index: number }) => {
     const isMe = item.sender_id === user?.id;
     const time = item.created_at
       ? new Date(item.created_at).toLocaleTimeString([], {
@@ -665,6 +767,10 @@ export default function ConversationScreen() {
         })
       : '';
     const showDivider = firstUnreadId !== null && item.id === firstUnreadId;
+    const previousMessage = index > 0 ? messages[index - 1] : null;
+    const showDateDivider =
+      !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
+    const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
     const edited = isEdited(item);
     const hasReply = !!item.reply_to_id;
 
@@ -676,18 +782,18 @@ export default function ConversationScreen() {
       : null;
     const replyPreview =
       repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
-    const bubbleTextLength = Math.max(
-      item.content.length,
-      hasReply ? replyCaption.length : 0,
-      hasReply ? replyPreview.length : 0
-    );
-    const bubbleWidth = Math.min(
-      Math.max(48, bubbleTextLength * 7.2 + 24),
-      windowWidth * 0.75
-    );
-
     return (
       <>
+        {dateLabel ? (
+          <View style={styles.dateDivider}>
+            <View style={styles.dateDividerLine} />
+            <View style={styles.datePill}>
+              <Text style={styles.datePillText}>{dateLabel}</Text>
+            </View>
+            <View style={styles.dateDividerLine} />
+          </View>
+        ) : null}
+
         {showDivider && (
           <View style={styles.unreadDivider}>
             <View style={styles.unreadDividerLine} />
@@ -698,77 +804,28 @@ export default function ConversationScreen() {
 
         <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
           <Pressable
-            onLongPress={() => openDeleteSheet(item)}
+            onLongPress={isMe ? () => openDeleteSheet(item) : undefined}
             delayLongPress={350}
             style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
           >
-            {hasReply && (
-              <View
-                style={[
-                  styles.replyPreview,
-                  isMe ? styles.replyPreviewMe : styles.replyPreviewOther,
-                  { maxWidth: bubbleWidth, alignSelf: isMe ? 'flex-end' : 'flex-start' },
-                ]}
-              >
-                <View style={styles.replyPreviewAccent} />
-                <View style={styles.replyPreviewText}>
-                  <Text
-                    style={[
-                      styles.replyPreviewCaption,
-                      isMe ? styles.replyPreviewCaptionMe : styles.replyPreviewCaptionOther,
-                    ]}
-                  >
-                    {replyCaption}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.replyPreviewContent,
-                      isMe ? styles.replyPreviewContentMe : styles.replyPreviewContentOther,
-                    ]}
-                  >
-                    {replyPreview}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            <View
-              style={[
-                styles.messageBubble,
-                isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-                { maxWidth: bubbleWidth },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.messageText,
-                  { color: isMe ? CHAT_BG : TEXT_PRIMARY },
-                  isMe && { fontWeight: '600' },
-                ]}
-              >
-                {item.content}
-              </Text>
-            </View>
-
-            <View style={styles.messageFooter} pointerEvents="none">
-              <Text style={styles.messageTime}>
-                {time}
-                {edited ? ' · edited' : ''}
-              </Text>
-              {isMe && (
-                <Ionicons
-                  name={item.is_read ? 'checkmark-done' : 'checkmark'}
-                  size={11}
-                  color={item.is_read ? CHAT_ONLINE : 'rgba(255,255,255,0.35)'}
-                  style={styles.readReceipt}
-                />
-              )}
-            </View>
+            <MessageBubble
+              content={item.content}
+              time={time}
+              isMe={isMe}
+              isRead={item.is_read}
+              edited={edited}
+              hasReply={hasReply}
+              replyCaption={replyCaption}
+              replyPreview={replyPreview}
+              avatarUri={otherUser?.avatar_url}
+              avatarLabel={otherDisplayName}
+              avatarColorSeed={userId || ''}
+            />
           </Pressable>
         </SwipeableRow>
       </>
     );
-  };
+  }, [firstUnreadId, messages, openDeleteSheet, otherDisplayName, otherUser?.avatar_url, sending, startReply, user?.id, userId]);
 
   if (loading && messages.length === 0) {
     return (
@@ -1111,6 +1168,40 @@ const styles = StyleSheet.create({
   messageRow: { alignSelf: 'stretch' },
   messageLeft: { alignItems: 'flex-start' },
   messageRight: { alignItems: 'flex-end' },
+  messageContentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  messageContentRowMe: {
+    alignSelf: 'stretch',
+    justifyContent: 'flex-end',
+  },
+  messageContentRowOther: {
+    alignSelf: 'stretch',
+    justifyContent: 'flex-start',
+  },
+  messageAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ translateY: -20 }],
+  },
+  messageAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  messageAvatarText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  messageStack: { flexShrink: 1 },
+  messageStackMe: { alignItems: 'flex-end' },
+  messageStackOther: { alignItems: 'flex-start' },
 
   replyPreview: {
     flexDirection: 'row',
@@ -1126,9 +1217,21 @@ const styles = StyleSheet.create({
   replyPreviewOther: { backgroundColor: 'rgba(217,221,227,0.84)' },
   replyPreviewAccent: { width: 2, borderRadius: 1, backgroundColor: ACCENT_GOLD },
   replyPreviewText: { flex: 1, minWidth: 0 },
-  replyPreviewCaption: { fontSize: 10, fontWeight: '700' },
-  replyPreviewCaptionMe: { color: '#3F4650' },
-  replyPreviewCaptionOther: { color: '#3F4650' },
+  replyCaptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 4,
+    marginBottom: 2,
+    paddingHorizontal: 2,
+    opacity: 0.55,
+    transform: [{ translateY: 3 }],
+  },
+  replyCaption: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: TEXT_MUTED,
+  },
   replyPreviewContent: { fontSize: 11, marginTop: 2, flexShrink: 1 },
   replyPreviewContentMe: { color: '#252A31' },
   replyPreviewContentOther: { color: '#252A31' },
@@ -1151,7 +1254,7 @@ const styles = StyleSheet.create({
     borderColor: CHAT_BORDER,
     alignSelf: 'flex-start',
   },
-  messageText: { fontSize: CHAT_FS_BODY, lineHeight: 17, flexShrink: 1 },
+  messageText: { fontSize: CHAT_FS_BODY, lineHeight: 17 },
   messageFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1165,7 +1268,45 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     letterSpacing: 0.2,
   },
-  readReceipt: { marginLeft: 2 },
+  messageEdited: {
+    fontSize: CHAT_FS_META,
+    color: TEXT_MUTED,
+    opacity: 0.6,
+  },
+  readReceiptSlot: {
+    width: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  dateDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 24,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  dateDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: CHAT_BORDER,
+  },
+  datePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+  },
+  datePillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: TEXT_MUTED,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
 
   unreadDivider: {
     flexDirection: 'row',
