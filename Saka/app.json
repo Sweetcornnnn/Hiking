@@ -17,7 +17,8 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need continuous location access to provide real-time safety monitoring and emergency assistance.",
         "NSLocationAlwaysUsageDescription": "We need continuous location access for background safety tracking.",
         "UIBackgroundModes": [
-          "location"
+           "location",
+           "remote-notification"
         ]
       }
     },
@@ -46,6 +47,14 @@
     },
     "plugins": [
       "expo-router",
+       [
+         "expo-notifications",
+         {
+           "icon": "./assets/images/icon.png",
+           "color": "#C9A96E",
+           "defaultChannel": "safety"
+         }
+       ],
       [
         "expo-splash-screen",
         {

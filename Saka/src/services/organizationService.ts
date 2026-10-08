@@ -22,6 +22,7 @@ export interface HikingEvent {
   description: string | null;
   event_date: string;
   start_time: string;
+  end_time: string | null;
   meeting_point: string;
   difficulty: string;
   duration_hours: number | null;
@@ -73,6 +74,7 @@ export interface CreateEventInput {
   description?: string;
   event_date: string;      // YYYY-MM-DD
   start_time: string;      // HH:MM (24h)
+  end_time: string;        // HH:MM (24h)
   meeting_point: string;
   difficulty: string;
   duration_hours?: number | null;

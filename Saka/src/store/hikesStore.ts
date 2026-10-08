@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { useAuthStore } from './authStore';
 import { Hike } from '../types';
 import { supabase } from '../lib/supabase';
+import { hikeSafetyService } from '../services/hikeSafetyService';
+import { cancelCheck, scheduleCheck } from '../services/hikeSafetyNotifications';
 
 interface HikesState {
   hikes: Hike[];
@@ -52,6 +54,72 @@ const mapUserShape = (userRow?: { email?: string | null; full_name?: string | nu
     name: userRow.full_name || userRow.email || 'Unknown',
   };
 };
+
+function plannedFinishFromHike(date: string, endTime: string): Date | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(endTime);
+  if (!dateMatch || !timeMatch) return null;
+
+  const [, year, month, day] = dateMatch;
+  const [, hour, minute] = timeMatch;
+  const planned = new Date(`${date}T${hour}:${minute}:00`);
+  if (Number.isNaN(planned.getTime())) return null;
+
+  if (
+    planned.getFullYear() !== Number(year) ||
+    planned.getMonth() !== Number(month) - 1 ||
+    planned.getDate() !== Number(day) ||
+    planned.getHours() !== Number(hour) ||
+    planned.getMinutes() !== Number(minute)
+  ) {
+    return null;
+  }
+
+  return planned;
+}
+
+async function syncHikeSafetyCheck(args: {
+  hikeId: string;
+  userId: string;
+  date: string;
+  endTime: string;
+}): Promise<void> {
+  try {
+    const plannedFinishAt = plannedFinishFromHike(args.date, args.endTime);
+    if (!plannedFinishAt) {
+      const { data: check, error } = await supabase
+        .from('hike_safety_checks')
+        .select('id')
+        .eq('hike_id', args.hikeId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('[HikesStore] Could not look up invalid hike safety check:', error.message);
+        return;
+      }
+
+      if (check?.id) await cancelCheck(check.id);
+      await hikeSafetyService.deleteHikeCheck(args.hikeId);
+      return;
+    }
+
+    const { checkId, error } = await hikeSafetyService.upsertHikeCheck({
+      hikeId: args.hikeId,
+      userId: args.userId,
+      plannedFinishAt,
+    });
+
+    if (error || !checkId) {
+      console.warn('[HikesStore] Could not save hike safety check:', error);
+      return;
+    }
+
+    await cancelCheck(checkId);
+    await scheduleCheck({ checkId, kind: 'hike', plannedFinishAt });
+  } catch (error) {
+    console.warn('[HikesStore] Could not synchronize hike safety check:', error);
+  }
+}
 
 export const useHikesStore = create<HikesState>((set, get) => ({
   hikes: [],
@@ -225,18 +293,27 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: 'Please sign in to manage hikes' };
       }
 
-      const { error } = await supabase.from('hikes').insert([
-        {
+      const { data: inserted, error } = await supabase
+        .from('hikes')
+        .insert({
           ...hikeData,
           user_id: userId,
-        },
-      ]);
+        })
+        .select('id')
+        .single();
 
       if (error) {
         console.error('[HikesStore] createHike error:', error);
         set({ isLoading: false });
         return { error: error.message || 'Failed to create hike' };
       }
+
+      await syncHikeSafetyCheck({
+        hikeId: inserted.id,
+        userId,
+        date: hikeData.date,
+        endTime: hikeData.end_time,
+      });
 
       const mountainId = hikeData.mountain_id;
       await get().fetchHikes(mountainId);
@@ -259,6 +336,22 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: 'Please sign in to manage hikes' };
       }
 
+      let existingHike = get().hikes.find((hike) => hike.id === id);
+      if (!existingHike) {
+        const { data, error: lookupError } = await supabase
+          .from('hikes')
+          .select('date, end_time, mountain_id')
+          .eq('id', id)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (lookupError) {
+          console.warn('[HikesStore] Could not load hike before update:', lookupError.message);
+        } else if (data) {
+          existingHike = { ...data, id } as Hike;
+        }
+      }
+
       const { error } = await supabase
         .from('hikes')
         .update(hikeData)
@@ -271,7 +364,23 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: error.message || 'Failed to update hike' };
       }
 
-      const mountainId = hikeData.mountain_id ?? get().hikes.find((hike) => hike.id === id)?.mountain_id;
+      const nextDate = hikeData.date ?? existingHike?.date;
+      const nextEndTime = hikeData.end_time ?? existingHike?.end_time;
+      const finishChanged =
+        !existingHike ||
+        nextDate !== existingHike.date ||
+        nextEndTime !== existingHike.end_time;
+
+      if (finishChanged && nextDate && nextEndTime) {
+        await syncHikeSafetyCheck({
+          hikeId: id,
+          userId,
+          date: nextDate,
+          endTime: nextEndTime,
+        });
+      }
+
+      const mountainId = hikeData.mountain_id ?? existingHike?.mountain_id;
       await get().fetchHikes(mountainId);
       set({ isLoading: false });
       return { error: null };
@@ -292,6 +401,16 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: 'Please sign in to manage hikes' };
       }
 
+      const { data: safetyCheck, error: safetyCheckError } = await supabase
+        .from('hike_safety_checks')
+        .select('id')
+        .eq('hike_id', id)
+        .maybeSingle();
+
+      if (safetyCheckError) {
+        console.warn('[HikesStore] Could not load hike safety check before delete:', safetyCheckError.message);
+      }
+
       const { error } = await supabase
         .from('hikes')
         .delete()
@@ -303,6 +422,9 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         set({ isLoading: false });
         return { error: error.message || 'Failed to delete hike' };
       }
+
+      if (safetyCheck?.id) await cancelCheck(safetyCheck.id);
+      await hikeSafetyService.deleteHikeCheck(id);
 
       const mountainId = get().hikes.find((hike) => hike.id === id)?.mountain_id;
       await get().fetchHikes(mountainId);

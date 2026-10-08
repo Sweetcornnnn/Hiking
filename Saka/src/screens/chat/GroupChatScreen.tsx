@@ -15,6 +15,8 @@ import {
   Modal,
   useWindowDimensions,
   Pressable,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -59,6 +61,9 @@ type Message = {
   created_at: string;
   updated_at: string;
   profiles?: any;
+  reply_to_id: number | null;
+  reply_to_sender: string | null;
+  reply_to_content: string | null;
 };
 
 type GroupMember = {
@@ -102,13 +107,115 @@ const formatSystemMessage = (item: Message, currentUserId: string): string => {
 
 const isEdited = (m: { created_at: string; updated_at: string }) => {
   try {
-    return (
-      new Date(m.updated_at).getTime() - new Date(m.created_at).getTime() > 1000
-    );
+    return new Date(m.updated_at).getTime() - new Date(m.created_at).getTime() > 1000;
   } catch {
     return false;
   }
 };
+
+const SELECT_COLS = `
+  id,
+  group_id,
+  sender_id,
+  content,
+  type,
+  media_url,
+  metadata,
+  created_at,
+  updated_at,
+  reply_to_id,
+  reply_to_sender,
+  reply_to_content,
+  profiles:profiles (
+    full_name,
+    username,
+    avatar_url
+  )
+`;
+
+const REPLY_THRESHOLD = 56;
+const REPLY_MAX = 76;
+
+function SwipeableRow({
+  onReply,
+  disabled,
+  children,
+}: {
+  onReply: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  const springBack = () => {
+    Animated.spring(translateX, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 22,
+      bounciness: 5,
+    }).start();
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) =>
+        !disabled &&
+        Math.abs(g.dx) > 12 &&
+        Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderMove: (_, g) => {
+        const dx = Math.max(0, Math.min(g.dx, REPLY_MAX));
+        translateX.setValue(dx);
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dx >= REPLY_THRESHOLD) onReply();
+        springBack();
+      },
+      onPanResponderTerminate: () => springBack(),
+    })
+  ).current;
+
+  const iconOpacity = translateX.interpolate({
+    inputRange: [0, REPLY_THRESHOLD * 0.45, REPLY_THRESHOLD],
+    outputRange: [0, 0.35, 1],
+    extrapolate: 'clamp',
+  });
+
+  const iconScale = translateX.interpolate({
+    inputRange: [0, REPLY_THRESHOLD],
+    outputRange: [0.55, 1],
+    extrapolate: 'clamp',
+  });
+
+  const iconBg = translateX.interpolate({
+    inputRange: [0, REPLY_THRESHOLD],
+    outputRange: ['rgba(201,169,110,0.10)', 'rgba(201,169,110,0.22)'],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <View style={styles.swipeContainer}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.swipeIconWrap,
+          { opacity: iconOpacity, backgroundColor: iconBg },
+        ]}
+      >
+        <Animated.View style={{ transform: [{ scale: iconScale }] }}>
+          <Ionicons name="arrow-undo" size={16} color={ACCENT_GOLD} />
+        </Animated.View>
+      </Animated.View>
+
+      <Animated.View
+        style={{ width: '100%', transform: [{ translateX }] }}
+        {...panResponder.panHandlers}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
 
 export default function GroupChatScreen() {
   const router = useRouter();
@@ -132,8 +239,8 @@ export default function GroupChatScreen() {
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // ── Edit mode ──
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
@@ -146,6 +253,12 @@ export default function GroupChatScreen() {
   const initialScrollIndexRef = useRef<number | null>(null);
   const initialPositionPendingRef = useRef(false);
   const initialPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const myDisplayName =
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.username ||
+    user?.email?.split('@')[0] ||
+    'You';
 
   const handleScroll = useCallback((event: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
@@ -273,22 +386,7 @@ export default function GroupChatScreen() {
 
         const { data, error: queryError } = await supabase
           .from('group_messages')
-          .select(`
-            id,
-            group_id,
-            sender_id,
-            content,
-            type,
-            media_url,
-            metadata,
-            created_at,
-            updated_at,
-            profiles:profiles (
-              full_name,
-              username,
-              avatar_url
-            )
-          `)
+          .select(SELECT_COLS)
           .eq('group_id', groupId)
           .order('created_at', { ascending: true })
           .limit(200);
@@ -332,13 +430,22 @@ export default function GroupChatScreen() {
     [user, groupId, markGroupAsRead]
   );
 
-  // ─── SEND (new) ─────────────────────────────────────────────
+  // ─── SEND ──────────────────────────────────────────────────
   const sendMessage = async () => {
     if (!user || !groupId || !inputText.trim() || sending) return;
 
     const text = inputText.trim();
     setInputText('');
     setSending(true);
+
+    const reply = replyingTo;
+    const repliedToName = reply
+      ? reply.sender_id === user.id
+        ? myDisplayName
+        : normalizeProfile(reply.profiles)?.full_name ||
+          normalizeProfile(reply.profiles)?.username ||
+          'Member'
+      : null;
 
     const tempId = Date.now();
     const optimisticMessage: Message = {
@@ -350,6 +457,9 @@ export default function GroupChatScreen() {
       media_url: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      reply_to_id: reply?.id ?? null,
+      reply_to_sender: repliedToName,
+      reply_to_content: reply?.content ?? null,
       profiles: {
         full_name: user.user_metadata?.full_name || null,
         username: user.user_metadata?.username || null,
@@ -358,6 +468,7 @@ export default function GroupChatScreen() {
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
+    setReplyingTo(null);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
@@ -368,23 +479,11 @@ export default function GroupChatScreen() {
           sender_id: user.id,
           content: text,
           type: 'text',
+          reply_to_id: reply?.id ?? null,
+          reply_to_sender: repliedToName,
+          reply_to_content: reply?.content ?? null,
         })
-        .select(`
-          id,
-          group_id,
-          sender_id,
-          content,
-          type,
-          media_url,
-          metadata,
-          created_at,
-          updated_at,
-          profiles:profiles (
-            full_name,
-            username,
-            avatar_url
-          )
-        `)
+        .select(SELECT_COLS)
         .single();
 
       if (error) throw error;
@@ -406,10 +505,11 @@ export default function GroupChatScreen() {
     }
   };
 
-  // ─── EDIT ───────────────────────────────────────────────────
+  // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
     if (!selectedMessage) return;
     const target = selectedMessage;
+    setReplyingTo(null);
     setEditingMessage(target);
     setInputText(target.content);
     setShowDeleteSheet(false);
@@ -437,9 +537,7 @@ export default function GroupChatScreen() {
 
     setSending(true);
     setMessages((prev) =>
-      prev.map((m) =>
-        m.id === targetId ? { ...m, content: newContent, updated_at: now } : m
-      )
+      prev.map((m) => (m.id === targetId ? { ...m, content: newContent, updated_at: now } : m))
     );
 
     try {
@@ -460,11 +558,30 @@ export default function GroupChatScreen() {
     }
   };
 
+  // ─── REPLY ─────────────────────────────────────────────────
+  const getSenderLabel = (msg: Message): string => {
+    if (msg.sender_id === user?.id) return 'You';
+    const p = normalizeProfile(msg.profiles);
+    return p?.full_name || p?.username || 'Member';
+  };
+
+  const startReply = (msg: Message) => {
+    if (editingMessage) {
+      setEditingMessage(null);
+      setInputText('');
+    }
+    setReplyingTo(msg);
+    setTimeout(() => inputRef.current?.focus(), 120);
+  };
+
+  const cancelReply = () => setReplyingTo(null);
+
   const handleSendOrSave = () => {
     if (editingMessage) return saveEdit();
     return sendMessage();
   };
 
+  // ─── DELETE ────────────────────────────────────────────────
   const openDeleteSheet = (message: Message) => {
     if (message.type === 'system') return;
     setSelectedMessage(message);
@@ -498,6 +615,7 @@ export default function GroupChatScreen() {
     }
   };
 
+  // ─── REALTIME ──────────────────────────────────────────────
   const handleNewMessage = useCallback(
     async (payload: any) => {
       if (!mountedRef.current) return;
@@ -506,22 +624,7 @@ export default function GroupChatScreen() {
 
       const { data, error } = await supabase
         .from('group_messages')
-        .select(`
-          id,
-          group_id,
-          sender_id,
-          content,
-          type,
-          media_url,
-          metadata,
-          created_at,
-          updated_at,
-          profiles:profiles (
-            full_name,
-            username,
-            avatar_url
-          )
-        `)
+        .select(SELECT_COLS)
         .eq('id', newMessage.id)
         .single();
 
@@ -557,6 +660,9 @@ export default function GroupChatScreen() {
               ...msg,
               content: updated.content ?? msg.content,
               updated_at: updated.updated_at ?? msg.updated_at,
+              reply_to_id: updated.reply_to_id ?? msg.reply_to_id,
+              reply_to_sender: updated.reply_to_sender ?? msg.reply_to_sender,
+              reply_to_content: updated.reply_to_content ?? msg.reply_to_content,
             }
           : msg
       )
@@ -768,11 +874,7 @@ export default function GroupChatScreen() {
 
     const isMe = item.sender_id === user?.id;
     const profile = normalizeProfile(item.profiles);
-    const senderName = profile?.full_name || profile?.username || 'Anonymous';
-    const bubbleWidth = Math.min(
-      Math.max(48, item.content.length * 7.2 + 24),
-      windowWidth * 0.75
-    );
+    const senderName = profile?.full_name || profile?.username || 'Member';
 
     const time = item.created_at
       ? new Date(item.created_at).toLocaleTimeString([], {
@@ -781,50 +883,103 @@ export default function GroupChatScreen() {
         })
       : '';
     const edited = isEdited(item);
+    const hasReply = !!item.reply_to_id;
+
+    const replierLabel = isMe ? 'You' : senderName;
+    const repliedToLabel = item.reply_to_sender || 'a message';
+    const replyCaption = `${replierLabel} replied to ${repliedToLabel}`;
+    const repliedMessage = hasReply
+      ? messages.find((message) => message.id === item.reply_to_id)
+      : null;
+    const replyPreview =
+      repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
+    const bubbleTextLength = Math.max(
+      item.content.length,
+      hasReply ? replyCaption.length : 0,
+      hasReply ? replyPreview.length : 0
+    );
+    const bubbleWidth = Math.min(
+      Math.max(48, bubbleTextLength * 7.2 + 24),
+      windowWidth * 0.75
+    );
 
     return (
-      <Pressable
-        onLongPress={() => openDeleteSheet(item)}
-        delayLongPress={350}
-        style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
-      >
-        {!isMe && (
-          <View style={styles.messageSenderRow}>
+      <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
+        <Pressable
+          onLongPress={() => openDeleteSheet(item)}
+          delayLongPress={350}
+          style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
+        >
+          {!isMe && (
+            <View style={styles.messageSenderRow}>
+              <View
+                style={[
+                  styles.smallAvatar,
+                  { backgroundColor: getAvatarColor(item.sender_id) },
+                ]}
+              >
+                <Text style={styles.smallAvatarText}>{getInitials(senderName)}</Text>
+              </View>
+              <Text style={styles.senderName}>{senderName}</Text>
+            </View>
+          )}
+
+          {hasReply && (
             <View
               style={[
-                styles.smallAvatar,
-                { backgroundColor: getAvatarColor(item.sender_id) },
+                styles.replyPreview,
+                isMe ? styles.replyPreviewMe : styles.replyPreviewOther,
+                { maxWidth: bubbleWidth, alignSelf: isMe ? 'flex-end' : 'flex-start' },
               ]}
             >
-              <Text style={styles.smallAvatarText}>{getInitials(senderName)}</Text>
+              <View style={styles.replyPreviewAccent} />
+              <View style={styles.replyPreviewText}>
+                <Text
+                  style={[
+                    styles.replyPreviewCaption,
+                    isMe ? styles.replyPreviewCaptionMe : styles.replyPreviewCaptionOther,
+                  ]}
+                >
+                  {replyCaption}
+                </Text>
+                <Text
+                  style={[
+                    styles.replyPreviewContent,
+                    isMe ? styles.replyPreviewContentMe : styles.replyPreviewContentOther,
+                  ]}
+                >
+                  {replyPreview}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.senderName}>{senderName}</Text>
-          </View>
-        )}
-        <View
-          style={[
-            styles.messageBubble,
-            isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-            { maxWidth: bubbleWidth },
-          ]}
-        >
-          <Text
+          )}
+
+          <View
             style={[
-              styles.messageText,
-              { color: isMe ? CHAT_BG : TEXT_PRIMARY },
-              isMe && { fontWeight: '600' },
+              styles.messageBubble,
+              isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
+              { maxWidth: bubbleWidth },
             ]}
           >
-            {item.content}
-          </Text>
-        </View>
-        <View style={styles.messageMeta}>
-          <Text style={styles.messageTime}>
-            {time}
-            {edited ? ' · edited' : ''}
-          </Text>
-        </View>
-      </Pressable>
+            <Text
+              style={[
+                styles.messageText,
+                { color: isMe ? CHAT_BG : TEXT_PRIMARY },
+                isMe && { fontWeight: '600' },
+              ]}
+            >
+              {item.content}
+            </Text>
+          </View>
+
+          <View style={styles.messageMeta}>
+            <Text style={styles.messageTime}>
+              {time}
+              {edited ? ' · edited' : ''}
+            </Text>
+          </View>
+        </Pressable>
+      </SwipeableRow>
     );
   };
 
@@ -866,6 +1021,7 @@ export default function GroupChatScreen() {
   }
 
   const canSave = inputText.trim().length > 0 && !sending;
+  const replyingSenderLabel = replyingTo ? getSenderLabel(replyingTo) : '';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -957,7 +1113,29 @@ export default function GroupChatScreen() {
           />
         )}
 
-        {/* Edit banner */}
+        {/* Reply bar */}
+        {replyingTo && (
+          <View style={styles.replyBar}>
+            <View style={styles.replyBarAccent} />
+            <View style={styles.replyBarText}>
+              <Text style={styles.replyBarLabel}>
+                REPLYING TO {replyingSenderLabel.toUpperCase()}
+              </Text>
+              <Text style={styles.replyBarPreview} numberOfLines={1}>
+                {replyingTo.content}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={cancelReply}
+              hitSlop={8}
+              style={styles.replyBarClose}
+            >
+              <Ionicons name="close" size={15} color={TEXT_MUTED} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Edit bar */}
         {editingMessage && (
           <View style={styles.editingBar}>
             <Ionicons name="create-outline" size={13} color={ACCENT_GOLD} />
@@ -983,7 +1161,13 @@ export default function GroupChatScreen() {
               ref={inputRef}
               value={inputText}
               onChangeText={setInputText}
-              placeholder={editingMessage ? 'Edit message...' : 'Type a message...'}
+              placeholder={
+                editingMessage
+                  ? 'Edit message...'
+                  : replyingTo
+                  ? 'Reply...'
+                  : 'Type a message...'
+              }
               placeholderTextColor="rgba(255,255,255,0.28)"
               style={[styles.input, { color: TEXT_PRIMARY }]}
               multiline
@@ -1001,9 +1185,7 @@ export default function GroupChatScreen() {
             onPress={handleSendOrSave}
             style={[
               styles.sendButton,
-              {
-                backgroundColor: canSave ? ACCENT_GOLD : 'rgba(255,255,255,0.06)',
-              },
+              { backgroundColor: canSave ? ACCENT_GOLD : 'rgba(255,255,255,0.06)' },
             ]}
             disabled={!canSave}
             activeOpacity={0.85}
@@ -1293,7 +1475,26 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     flexGrow: 1,
   },
-  messageRow: { alignSelf: 'stretch', marginVertical: 2 },
+
+  // ── Swipe wrapper ──
+  swipeContainer: {
+    width: '100%',
+    marginVertical: 2,
+    justifyContent: 'center',
+  },
+  swipeIconWrap: {
+    position: 'absolute',
+    left: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    top: '50%',
+    marginTop: -15,
+  },
+
+  messageRow: { alignSelf: 'stretch' },
   messageLeft: { alignItems: 'flex-start' },
   messageRight: { alignItems: 'flex-end' },
   messageSenderRow: {
@@ -1312,6 +1513,27 @@ const styles = StyleSheet.create({
   },
   smallAvatarText: { color: '#fff', fontSize: 8.5, fontWeight: '700' },
   senderName: { fontSize: 10, fontWeight: '600', color: TEXT_MUTED, letterSpacing: 0.3 },
+
+  replyPreview: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    marginTop: 4,
+    marginBottom: -8,
+    borderRadius: 6,
+  },
+  replyPreviewMe: { backgroundColor: 'rgba(217,221,227,0.84)' },
+  replyPreviewOther: { backgroundColor: 'rgba(217,221,227,0.84)' },
+  replyPreviewAccent: { width: 2, borderRadius: 1, backgroundColor: ACCENT_GOLD },
+  replyPreviewText: { flex: 1, minWidth: 0 },
+  replyPreviewCaption: { fontSize: 10, fontWeight: '700' },
+  replyPreviewCaptionMe: { color: '#3F4650' },
+  replyPreviewCaptionOther: { color: '#3F4650' },
+  replyPreviewContent: { fontSize: 11, marginTop: 2, flexShrink: 1 },
+  replyPreviewContentMe: { color: '#252A31' },
+  replyPreviewContentOther: { color: '#252A31' },
 
   messageBubble: {
     paddingVertical: 7,
@@ -1354,7 +1576,47 @@ const styles = StyleSheet.create({
     opacity: 0.75,
   },
 
-  // Editing banner above input
+  // ── Reply bar (above input) ──
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: CHAT_BORDER,
+    backgroundColor: 'rgba(201,169,110,0.06)',
+  },
+  replyBarAccent: {
+    width: 2,
+    alignSelf: 'stretch',
+    borderRadius: 1,
+    backgroundColor: ACCENT_GOLD,
+  },
+  replyBarText: { flex: 1, minWidth: 0 },
+  replyBarLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+    color: ACCENT_GOLD,
+  },
+  replyBarPreview: {
+    fontSize: 11,
+    color: TEXT_MUTED,
+    marginTop: 1,
+  },
+  replyBarClose: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
+  // ── Edit bar (above input) ──
   editingBar: {
     flexDirection: 'row',
     alignItems: 'center',

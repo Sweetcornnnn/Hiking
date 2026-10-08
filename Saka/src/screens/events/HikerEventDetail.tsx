@@ -1,21 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   eventService,
+  eventPlannedFinish,
   type PublicEvent,
   type EventRsvpCounts,
-  type MyRsvp,
+  type MyRsvpWithSafetyCheck,
 } from '../../services/eventService';
+import { hikeSafetyService } from '../../services/hikeSafetyService';
+import { cancelCheck, scheduleCheck } from '../../services/hikeSafetyNotifications';
+import { supabase } from '../../lib/supabase';
 import { useRequireAuth } from '../../hooks/useRoleGuard';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import {
@@ -24,11 +20,25 @@ import {
   getWeatherSafetyAdvice,
   type WeatherCondition,
 } from '../../services/weatherService';
+import {
+  OrgLandscapeShell,
+  RailButton,
+  CenteredState,
+  Banner,
+  Card,
+  Pill,
+  InfoRow,
+  Block,
+  Grid,
+  PC,
+  SP,
+  FS,
+} from '../../components/organizations/OrgLandscapeShell';
 
 const formatDate = (iso: string) => {
   const d = new Date(iso + 'T00:00:00');
   return d.toLocaleDateString('en-US', {
-    weekday: 'long',
+    weekday: 'short',
     month: 'long',
     day: 'numeric',
     year: 'numeric',
@@ -93,7 +103,7 @@ function WeatherBanner({ state }: { state: WeatherState }) {
     return (
       <View style={[styles.weatherBanner, styles.weatherBannerNeutral]}>
         <ActivityIndicator size="small" color="rgba(255,255,255,0.45)" />
-        <Text style={styles.weatherBannerLoadingText}>Checking mountain weather…</Text>
+        <Text style={styles.weatherLoadingText}>Checking mountain weather…</Text>
       </View>
     );
   }
@@ -103,8 +113,8 @@ function WeatherBanner({ state }: { state: WeatherState }) {
       <View style={[styles.weatherBanner, styles.weatherBannerNeutral]}>
         <Ionicons name="calendar-outline" size={16} color="rgba(255,255,255,0.5)" />
         <View style={{ flex: 1 }}>
-          <Text style={styles.weatherBannerNeutralLabel}>Forecast not available yet</Text>
-          <Text style={styles.weatherBannerNeutralText}>
+          <Text style={styles.weatherNeutralLabel}>Forecast not available yet</Text>
+          <Text style={styles.weatherNeutralText}>
             Reliable forecasts open 5 days before the hike. Check back closer to the date.
           </Text>
         </View>
@@ -156,17 +166,15 @@ function WeatherBanner({ state }: { state: WeatherState }) {
       ]}
     >
       <Ionicons name={config.icon} size={18} color={config.color} />
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.weatherBannerLabel, { color: config.color }]}>
-          {config.label}
-        </Text>
-        <Text style={styles.weatherBannerContext}>{contextLine}</Text>
-        <Text style={styles.weatherBannerMeta}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={[styles.weatherLabel, { color: config.color }]}>{config.label}</Text>
+        <Text style={styles.weatherContext}>{contextLine}</Text>
+        <Text style={styles.weatherMeta}>
           {weather.description} · {weather.temperature.toFixed(0)}°C · Wind{' '}
           {weather.windSpeed.toFixed(0)} m/s · Humidity {weather.humidity}%
         </Text>
         {advice ? (
-          <Text style={styles.weatherBannerAdvice} numberOfLines={3}>
+          <Text style={styles.weatherAdvice} numberOfLines={3}>
             {advice}
           </Text>
         ) : null}
@@ -183,7 +191,7 @@ export default function HikerEventDetail() {
   const [event, setEvent] = useState<PublicEvent | null>(null);
   const [mountain, setMountain] = useState<Mountain | null>(null);
   const [counts, setCounts] = useState<EventRsvpCounts>({ confirmed: 0, waitlist: 0, total: 0 });
-  const [myRsvp, setMyRsvp] = useState<MyRsvp | null>(null);
+  const [myRsvp, setMyRsvp] = useState<MyRsvpWithSafetyCheck | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +208,7 @@ export default function HikerEventDetail() {
     try {
       const [evt, rsvp] = await Promise.all([
         eventService.getEventById(eventId),
-        eventService.getMyRsvpForEvent(eventId),
+        eventService.getMyRsvpForEventWithCheck(eventId),
       ]);
       if (!evt) {
         setError('Event not found');
@@ -315,6 +323,34 @@ export default function HikerEventDetail() {
         );
       }
 
+      const plannedFinishAt = eventPlannedFinish(event);
+      if (plannedFinishAt && plannedFinishAt.getTime() > Date.now()) {
+        try {
+          const [rsvp, { data: { user } }] = await Promise.all([
+            eventService.getMyRsvpForEventWithCheck(event.id),
+            supabase.auth.getUser(),
+          ]);
+
+          if (rsvp && user) {
+            const { checkId, error } = await hikeSafetyService.upsertEventCheck({
+              eventId: event.id,
+              rsvpId: rsvp.id,
+              userId: user.id,
+              plannedFinishAt,
+            });
+
+            if (error || !checkId) {
+              console.warn('[HikerEventDetail] Could not save event safety check:', error);
+            } else {
+              if (rsvp.safety_check_id) await cancelCheck(rsvp.safety_check_id);
+              await scheduleCheck({ checkId, kind: 'event', plannedFinishAt });
+            }
+          }
+        } catch (safetyError) {
+          console.warn('[HikerEventDetail] Could not schedule event safety check:', safetyError);
+        }
+      }
+
       await fetchAll();
     } catch (err: any) {
       Alert.alert('RSVP failed', err?.message ?? String(err));
@@ -332,127 +368,174 @@ export default function HikerEventDetail() {
         style: 'destructive',
         onPress: async () => {
           setWorking(true);
-          const { error: e } = await eventService.cancelMyRsvp(myRsvp.id);
-          setWorking(false);
-          if (e) {
-            Alert.alert('Cancel failed', e);
-            return;
+          try {
+            const { error: e } = await eventService.cancelMyRsvp(myRsvp.id);
+            if (e) {
+              Alert.alert('Cancel failed', e);
+              return;
+            }
+
+            if (myRsvp.safety_check_id) await cancelCheck(myRsvp.safety_check_id);
+            await hikeSafetyService.deleteEventCheck(myRsvp.id);
+            await fetchAll();
+          } catch (err: any) {
+            Alert.alert('Cancel failed', err?.message ?? String(err));
+          } finally {
+            setWorking(false);
           }
-          await fetchAll();
         },
       },
     ]);
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#C9A96E" />
-        <Text style={styles.centeredText}>Loading event…</Text>
-      </View>
-    );
-  }
-
+  if (loading) return <CenteredState loading message="Loading event…" />;
   if (error || !event) {
     return (
-      <View style={styles.centered}>
-        <Ionicons name="alert-circle-outline" size={36} color="#E07070" />
-        <Text style={styles.centeredText}>{error ?? 'Event not found'}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={() => router.back()}>
-          <Text style={styles.retryText}>Go back</Text>
-        </TouchableOpacity>
-      </View>
+      <CenteredState
+        message={error ?? 'Event not found'}
+        actionLabel="Go back"
+        onAction={() => router.back()}
+      />
     );
   }
 
+  const hasCapacity = event.capacity !== null && event.capacity !== undefined;
+  const isWaitlisted = myRsvp?.status === 'waitlist';
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-        <Ionicons name="chevron-back" size={18} color="#C9A96E" />
-        <Text style={styles.backText}>Events</Text>
-      </TouchableOpacity>
-
-      {/* Org header */}
-      <View style={styles.orgHeader}>
-        <View style={styles.orgAvatar}>
-          <Ionicons name="business-outline" size={18} color="#C9A96E" />
+    <OrgLandscapeShell
+      onBack={() => router.back()}
+      backLabel="Events"
+      title={event.title}
+      titleLines={3}
+      badge={
+        <View style={styles.pillRow}>
+          <Pill
+            label={event.difficulty}
+            bg="rgba(201,169,110,0.12)"
+            color={PC.gold}
+            border="rgba(201,169,110,0.3)"
+            uppercase={false}
+          />
+          {event.is_public ? (
+            <Pill
+              label="Public"
+              icon="eye-outline"
+              bg="rgba(255,255,255,0.05)"
+              color="rgba(255,255,255,0.7)"
+              border="rgba(255,255,255,0.1)"
+              uppercase={false}
+            />
+          ) : null}
+          {event.allow_walkins ? (
+            <Pill
+              label="Walk-ins"
+              icon="walk-outline"
+              bg="rgba(255,255,255,0.05)"
+              color="rgba(255,255,255,0.7)"
+              border="rgba(255,255,255,0.1)"
+              uppercase={false}
+            />
+          ) : null}
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.orgName} numberOfLines={1}>
-            {event.organizations?.name ?? 'Organizer'}
-          </Text>
-          <View style={styles.orgMeta}>
-            {event.organizations?.is_verified ? (
-              <>
-                <Ionicons name="shield-checkmark" size={11} color="#3FD69D" />
-                <Text style={styles.orgVerified}>Verified organizer</Text>
-              </>
-            ) : (
-              <Text style={styles.orgUnverified}>Unverified organizer</Text>
+      }
+      rail={
+        <>
+          {/* Organizer */}
+          <Card style={styles.orgHeader}>
+            <View style={styles.orgAvatar}>
+              <Ionicons name="business-outline" size={16} color={PC.gold} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.orgName} numberOfLines={1}>
+                {event.organizations?.name ?? 'Organizer'}
+              </Text>
+              <View style={styles.orgMeta}>
+                {event.organizations?.is_verified ? (
+                  <>
+                    <Ionicons name="shield-checkmark" size={11} color={PC.green} />
+                    <Text style={styles.orgVerified}>Verified organizer</Text>
+                  </>
+                ) : (
+                  <Text style={styles.orgUnverified}>Unverified organizer</Text>
+                )}
+              </View>
+            </View>
+          </Card>
+
+          {/* Capacity meter */}
+          <Card style={styles.capacityCard}>
+            <View style={styles.capacityHeader}>
+              <Text style={styles.capacityLabel}>Attending</Text>
+              <Text style={styles.capacityValue}>
+                {counts.confirmed}
+                {hasCapacity ? (
+                  <Text style={styles.capacityValueSub}>{` / ${event.capacity}`}</Text>
+                ) : null}
+              </Text>
+            </View>
+            {hasCapacity && (event.capacity as number) > 0 && (
+              <View style={styles.capacityTrack}>
+                <View
+                  style={[
+                    styles.capacityFill,
+                    {
+                      width: `${Math.min(100, (counts.confirmed / (event.capacity as number)) * 100)}%`,
+                      backgroundColor: isFull ? PC.orange : PC.green,
+                    },
+                  ]}
+                />
+              </View>
             )}
-          </View>
-        </View>
-      </View>
-
-      <Text style={styles.title}>{event.title}</Text>
-
-      <View style={styles.pillRow}>
-        <View style={styles.diffPill}>
-          <Text style={styles.diffPillText}>{event.difficulty}</Text>
-        </View>
-        {event.is_public ? (
-          <View style={styles.softPill}>
-            <Ionicons name="eye-outline" size={11} color="rgba(255,255,255,0.6)" />
-            <Text style={styles.softPillText}>Public</Text>
-          </View>
-        ) : null}
-        {event.allow_walkins ? (
-          <View style={styles.softPill}>
-            <Ionicons name="walk-outline" size={11} color="rgba(255,255,255,0.6)" />
-            <Text style={styles.softPillText}>Walk-ins</Text>
-          </View>
-        ) : null}
-      </View>
-
+            {counts.waitlist > 0 && (
+              <Text style={styles.waitlistText}>{counts.waitlist} on the waitlist</Text>
+            )}
+          </Card>
+        </>
+      }
+      railFooter={
+        hasActiveRsvp ? (
+          <>
+            <Banner tone={isWaitlisted ? 'info' : 'success'} icon={isWaitlisted ? 'hourglass-outline' : 'checkmark-circle'}>
+              {isWaitlisted ? "You're on the waitlist" : "You're going — see you on the trail"}
+            </Banner>
+            <RailButton
+              icon="close-circle-outline"
+              label="Cancel RSVP"
+              variant="danger"
+              loading={working}
+              disabled={working}
+              onPress={handleCancel}
+            />
+          </>
+        ) : (
+          <RailButton
+            icon={isFull ? 'hourglass-outline' : 'checkmark-circle-outline'}
+            label={isFull ? 'Join waitlist' : 'RSVP to this hike'}
+            variant="primary"
+            loading={working}
+            disabled={working}
+            onPress={handleRsvp}
+          />
+        )
+      }
+    >
       {/* Weather banner — driven by event proximity */}
       <WeatherBanner state={weatherState} />
 
-      {/* Capacity meter */}
-      <View style={styles.capacityCard}>
-        <View style={styles.capacityHeader}>
-          <Text style={styles.capacityLabel}>Attending</Text>
-          <Text style={styles.capacityValue}>
-            {counts.confirmed}
-            {event.capacity !== null && event.capacity !== undefined ? ` / ${event.capacity}` : ''}
-          </Text>
-        </View>
-        {event.capacity !== null && event.capacity !== undefined && event.capacity > 0 && (
-          <View style={styles.capacityTrack}>
-            <View
-              style={[
-                styles.capacityFill,
-                {
-                  width: `${Math.min(100, (counts.confirmed / event.capacity) * 100)}%`,
-                  backgroundColor: isFull ? '#E67E22' : '#3FD69D',
-                },
-              ]}
-            />
-          </View>
-        )}
-        {counts.waitlist > 0 && (
-          <Text style={styles.waitlistText}>{counts.waitlist} on the waitlist</Text>
-        )}
-      </View>
-
-      {/* Info */}
-      <InfoRow icon="trail-sign-outline" label="Mountain" value={mountain?.name ?? '—'} />
-      <InfoRow icon="calendar-outline" label="Date" value={formatDate(event.event_date)} />
-      <InfoRow
-        icon="time-outline"
-        label="Start time"
-        value={`${formatTime(event.start_time)}${event.duration_hours ? ` · ~${event.duration_hours}h` : ''}`}
-      />
-      <InfoRow icon="location-outline" label="Meeting point" value={event.meeting_point} />
+      {/* Info blocks, two per row */}
+      <Grid>
+        <InfoRow icon="trail-sign-outline" label="Mountain" value={mountain?.name ?? '—'} />
+        <InfoRow icon="calendar-outline" label="Date" value={formatDate(event.event_date)} />
+        <InfoRow
+          icon="time-outline"
+          label="Time"
+          value={event.end_time
+            ? `${formatTime(event.start_time)} – ${formatTime(event.end_time)}`
+            : `${formatTime(event.start_time)}${event.duration_hours ? ` · ~${event.duration_hours}h` : ''}`}
+        />
+        <InfoRow icon="location-outline" label="Meeting point" value={event.meeting_point} />
+      </Grid>
 
       {event.description ? (
         <Block label="ABOUT THIS HIKE">
@@ -461,320 +544,78 @@ export default function HikerEventDetail() {
       ) : null}
 
       {event.safety_notes ? (
-        <Block label="SAFETY NOTES" accent="rgba(201,169,110,0.15)">
+        <Block label="SAFETY NOTES" accent="rgba(201,169,110,0.2)">
           <Text style={styles.blockText}>{event.safety_notes}</Text>
         </Block>
       ) : null}
 
       {event.required_gear ? (
-        <Block label="REQUIRED GEAR" accent="rgba(255,255,255,0.04)">
+        <Block label="REQUIRED GEAR">
           <Text style={styles.blockText}>{event.required_gear}</Text>
         </Block>
       ) : null}
-
-      {/* Action */}
-      <View style={styles.actionSection}>
-        {hasActiveRsvp ? (
-          <>
-            <View
-              style={[
-                styles.statusBanner,
-                myRsvp!.status === 'waitlist'
-                  ? styles.statusBannerWaitlist
-                  : styles.statusBannerConfirmed,
-              ]}
-            >
-              <Ionicons
-                name={myRsvp!.status === 'waitlist' ? 'hourglass-outline' : 'checkmark-circle'}
-                size={16}
-                color={myRsvp!.status === 'waitlist' ? '#C9A96E' : '#3FD69D'}
-              />
-              <Text
-                style={[
-                  styles.statusBannerText,
-                  myRsvp!.status === 'waitlist' ? { color: '#C9A96E' } : { color: '#3FD69D' },
-                ]}
-              >
-                {myRsvp!.status === 'waitlist'
-                  ? "You're on the waitlist"
-                  : "You're going — see you on the trail"}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.dangerOutlineBtn}
-              onPress={handleCancel}
-              disabled={working}
-              activeOpacity={0.85}
-            >
-              {working ? (
-                <ActivityIndicator color="#E07070" />
-              ) : (
-                <>
-                  <Ionicons name="close-circle-outline" size={16} color="#E07070" />
-                  <Text style={styles.dangerOutlineText}>Cancel RSVP</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </>
-        ) : (
-          <TouchableOpacity
-            style={[styles.primaryBtn, working && styles.btnDisabled]}
-            onPress={handleRsvp}
-            disabled={working}
-            activeOpacity={0.85}
-          >
-            {working ? (
-              <ActivityIndicator color="#0E1520" />
-            ) : (
-              <>
-                <Ionicons
-                  name={isFull ? 'hourglass-outline' : 'checkmark-circle-outline'}
-                  size={17}
-                  color="#0E1520"
-                />
-                <Text style={styles.primaryBtnText}>
-                  {isFull ? 'Join waitlist' : 'RSVP to this hike'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
-    </ScrollView>
-  );
-}
-
-function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIcon}>
-        <Ionicons name={icon} size={14} color="#C9A96E" />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
-      </View>
-    </View>
-  );
-}
-
-function Block({
-  label,
-  children,
-  accent,
-}: {
-  label: string;
-  children: React.ReactNode;
-  accent?: string;
-}) {
-  return (
-    <View style={[styles.block, accent ? { borderColor: accent } : null]}>
-      <Text style={styles.blockLabel}>{label}</Text>
-      {children}
-    </View>
+    </OrgLandscapeShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0A121A' },
-  container: { padding: 22, paddingTop: 26, paddingBottom: 80, gap: 12 },
-  centered: { flex: 1, backgroundColor: '#0A121A', justifyContent: 'center', alignItems: 'center', gap: 12 },
-  centeredText: { color: 'rgba(255,255,255,0.6)', fontSize: 13 },
-  retryBtn: { marginTop: 8, paddingHorizontal: 18, paddingVertical: 10, backgroundColor: '#C9A96E', borderRadius: 10 },
-  retryText: { color: '#0E1520', fontWeight: '700' },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingVertical: 4 },
-  backText: { color: '#C9A96E', fontWeight: '600', fontSize: 12 },
-
-  orgHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 10,
-    backgroundColor: '#111C27',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
+  // Rail: organizer
+  orgHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10 },
   orgAvatar: {
-    width: 36, height: 36, borderRadius: 12,
-    backgroundColor: 'rgba(201,169,110,0.12)',
-    borderWidth: 1, borderColor: 'rgba(201,169,110,0.28)',
-    justifyContent: 'center', alignItems: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: PC.goldSoft,
+    borderWidth: 1,
+    borderColor: PC.borderGold,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  orgName: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  orgName: { color: '#FFF', fontSize: FS.base, fontWeight: '700' },
   orgMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  orgVerified: { color: '#3FD69D', fontSize: 11, fontWeight: '600' },
-  orgUnverified: { color: 'rgba(255,255,255,0.4)', fontSize: 11 },
+  orgVerified: { color: PC.green, fontSize: FS.small, fontWeight: '600' },
+  orgUnverified: { color: PC.textFaint, fontSize: FS.small },
 
-  title: { color: '#FFF', fontSize: 24, fontWeight: '800', marginTop: 6 },
+  // Rail: capacity
+  capacityCard: { gap: SP.sm },
+  capacityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  capacityLabel: { color: '#A9B7C4', fontSize: FS.micro, textTransform: 'uppercase', letterSpacing: 0.6 },
+  capacityValue: { color: '#FFF', fontSize: FS.title, fontWeight: '800' },
+  capacityValueSub: { color: 'rgba(255,255,255,0.45)', fontSize: FS.base, fontWeight: '600' },
+  capacityTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden' },
+  capacityFill: { height: '100%', borderRadius: 3 },
+  waitlistText: { color: PC.gold, fontSize: FS.small, fontWeight: '600' },
 
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  diffPill: {
-    backgroundColor: 'rgba(201,169,110,0.12)',
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1, borderColor: 'rgba(201,169,110,0.3)',
-  },
-  diffPillText: { color: '#C9A96E', fontSize: 11, fontWeight: '700' },
-  softPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-  },
-  softPillText: { color: 'rgba(255,255,255,0.65)', fontSize: 11, fontWeight: '600' },
-
+  // Panel: weather
   weatherBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    padding: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: SP.md,
+    borderRadius: PC.radius,
     borderWidth: 1,
-    marginTop: 6,
   },
   weatherBannerNeutral: {
     backgroundColor: 'rgba(255,255,255,0.03)',
     borderColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
   },
-  weatherBannerLoadingText: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 12,
-    marginLeft: 8,
-  },
-  weatherBannerNeutralLabel: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  weatherBannerNeutralText: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  weatherBannerLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  weatherBannerContext: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 10,
+  weatherLoadingText: { color: 'rgba(255,255,255,0.5)', fontSize: FS.body },
+  weatherNeutralLabel: { color: 'rgba(255,255,255,0.7)', fontSize: FS.body, fontWeight: '700' },
+  weatherNeutralText: { color: 'rgba(255,255,255,0.45)', fontSize: FS.small, lineHeight: 16, marginTop: 2 },
+  weatherLabel: { fontSize: FS.small, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' },
+  weatherContext: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: FS.micro,
     fontWeight: '600',
     letterSpacing: 0.3,
-    marginTop: 1,
     textTransform: 'uppercase',
   },
-  weatherBannerMeta: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    marginTop: 3,
-  },
-  weatherBannerAdvice: {
-    color: '#DCE6EF',
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
-  },
+  weatherMeta: { color: 'rgba(255,255,255,0.7)', fontSize: FS.body, marginTop: 2 },
+  weatherAdvice: { color: PC.textBody, fontSize: FS.body, lineHeight: 17, marginTop: 2 },
 
-  capacityCard: {
-    backgroundColor: '#111C27',
-    borderRadius: 12,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
-    padding: 14,
-    gap: 8,
-  },
-  capacityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  capacityLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
-  capacityValue: { color: '#FFF', fontSize: 18, fontWeight: '800' },
-  capacityTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' },
-  capacityFill: { height: '100%', borderRadius: 3 },
-  waitlistText: { color: '#C9A96E', fontSize: 11, fontWeight: '600', marginTop: 2 },
-
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#111C27',
-    borderRadius: 12,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
-    padding: 12,
-  },
-  infoIcon: {
-    width: 28, height: 28, borderRadius: 8,
-    backgroundColor: 'rgba(201,169,110,0.1)',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(201,169,110,0.2)',
-  },
-  infoLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
-  infoValue: { color: '#FFF', fontSize: 13, fontWeight: '600', marginTop: 2 },
-
-  block: {
-    backgroundColor: '#111C27',
-    borderRadius: 12,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
-    padding: 14,
-    gap: 6,
-  },
-  blockLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  blockText: { color: '#DCE6EF', fontSize: 13, lineHeight: 19 },
-
-  actionSection: { gap: 10, marginTop: 10 },
-
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#C9A96E',
-    borderRadius: 12,
-    paddingVertical: 16,
-  },
-  primaryBtnText: { color: '#0E1520', fontWeight: '800', fontSize: 14 },
-  btnDisabled: { opacity: 0.5 },
-
-  statusBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  statusBannerConfirmed: {
-    backgroundColor: 'rgba(63,214,157,0.06)',
-    borderColor: 'rgba(63,214,157,0.28)',
-  },
-  statusBannerWaitlist: {
-    backgroundColor: 'rgba(201,169,110,0.06)',
-    borderColor: 'rgba(201,169,110,0.28)',
-  },
-  statusBannerText: { fontSize: 13, fontWeight: '700', flex: 1 },
-
-  dangerOutlineBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(224,112,112,0.06)',
-    borderRadius: 12,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.3)',
-  },
-  dangerOutlineText: { color: '#E07070', fontWeight: '700', fontSize: 13 },
+  blockText: { color: PC.textBody, fontSize: FS.base, lineHeight: 19 },
 });

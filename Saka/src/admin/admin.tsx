@@ -6,8 +6,10 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
+import { useHikeSafetyStore } from '../store/hikeSafetyStore';
 import { supabase } from '../lib/supabase';
 import { organizationService, type Organization, type HikingEvent } from '../services/organizationService';
+import type { AdminSafetyRow } from '../services/hikeSafetyService';
 import UserLocationModal from './UserLocationModal';
 
 // ---------- User Store (local, using authToken) ----------
@@ -24,8 +26,16 @@ export default function AdminRoute() {
   const router = useRouter();
   const { user, profile, authToken, signOut } = useAuthStore();
   const { allHikes, adminStats, fetchAllHikes, fetchAdminStats, isLoading: hikesLoading } = useHikesStore();
+  const {
+    adminHikes,
+    adminEvents,
+    adminLoading,
+    adminError,
+    loadAdminSafety,
+    markAdminAlertSeen,
+  } = useHikeSafetyStore();
   // Tab state
-  const [activeTab, setActiveTab] = useState<'hikes' | 'users' | 'orgs' | 'events'>('hikes');
+  const [activeTab, setActiveTab] = useState<'hikes' | 'users' | 'orgs' | 'events' | 'safety'>('hikes');
 
   // Organization verification state
   const [orgs, setOrgs] = useState<Organization[]>([]);
@@ -234,8 +244,10 @@ export default function AdminRoute() {
       fetchOrgs();
     } else if (activeTab === 'events') {
       fetchModEvents();
+    } else if (activeTab === 'safety') {
+      loadAdminSafety();
     }
-  }, [activeTab]);
+  }, [activeTab, loadAdminSafety]);
 
   // ── Unified feedback toast ───────────────────────────────────────────────
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'warning'; title: string; msg: string } | null>(null);
@@ -487,6 +499,21 @@ export default function AdminRoute() {
                   <Text style={[styles.tabText, activeTab === 'events' && styles.activeTabText]}>
                     Events
                   </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tab, activeTab === 'safety' && styles.activeTab]}
+                  onPress={() => setActiveTab('safety')}
+                >
+                  <Text style={[styles.tabText, activeTab === 'safety' && styles.activeTabText]}>
+                    Safety
+                  </Text>
+                  {adminHikes.concat(adminEvents).some((row) => row.active_alert_id && !row.seen) && (
+                    <View style={styles.tabBadge}>
+                      <Text style={styles.tabBadgeText}>
+                        {adminHikes.concat(adminEvents).filter((row) => row.active_alert_id && !row.seen).length}
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -832,6 +859,48 @@ export default function AdminRoute() {
                 )}
               </>
             )}
+
+            {activeTab === 'safety' && (
+              <ScrollView contentContainerStyle={styles.listContent}>
+                <View style={styles.filterTabs}>
+                  <Text style={styles.filterTabText}>Personal hikes</Text>
+                </View>
+                {adminLoading ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>Loading safety checks…</Text>
+                  </View>
+                ) : adminError ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>{adminError}</Text>
+                  </View>
+                ) : adminHikes.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No hike safety checks.</Text>
+                  </View>
+                ) : (
+                  adminHikes.map((row) => (
+                    <SafetyRow key={row.check_id} row={row} onMarkSeen={markAdminAlertSeen} />
+                  ))
+                )}
+
+                <View style={styles.filterTabs}>
+                  <Text style={styles.filterTabText}>Organization events</Text>
+                </View>
+                {adminLoading ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>Loading safety checks…</Text>
+                  </View>
+                ) : adminError ? null : adminEvents.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyStateText}>No event safety checks.</Text>
+                  </View>
+                ) : (
+                  adminEvents.map((row) => (
+                    <SafetyRow key={row.check_id} row={row} onMarkSeen={markAdminAlertSeen} />
+                  ))
+                )}
+              </ScrollView>
+            )}
           </View>
         </View>
       </View>
@@ -887,6 +956,68 @@ export default function AdminRoute() {
         </Animated.View>
       )}
     </>
+  );
+}
+
+function SafetyRow({
+  row,
+  onMarkSeen,
+}: {
+  row: AdminSafetyRow;
+  onMarkSeen: (id: string) => Promise<void>;
+}) {
+  const isActive = !!row.active_alert_id && !row.seen;
+  const statusColor =
+    row.response_status === 'got_home'
+      ? '#6FAF8A'
+      : row.response_status === 'not_home_yet'
+        ? '#E07070'
+        : 'rgba(255,255,255,0.55)';
+
+  return (
+    <View style={[styles.requestCard, isActive && styles.requestCardPending]}>
+      <View style={styles.requestHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.requestName} numberOfLines={1}>
+            {row.subject_name ?? row.subject_email ?? row.subject_user_id}
+          </Text>
+          <Text style={styles.requestEmail} numberOfLines={1}>{row.title}</Text>
+        </View>
+        <View style={[styles.statusBadge, { borderColor: statusColor, backgroundColor: 'transparent', borderWidth: 1 }]}>
+          <Text style={[styles.statusText, { color: statusColor, textTransform: 'none' }]}>
+            {row.response_status.replace(/_/g, ' ')}
+          </Text>
+        </View>
+      </View>
+      <Text style={styles.requestDate}>
+        Planned finish {new Date(row.planned_finish_at).toLocaleString()}
+        {row.responded_at ? ` · Responded ${new Date(row.responded_at).toLocaleTimeString()}` : ''}
+      </Text>
+      {row.needs_duration && (
+        <Text style={[styles.requestDate, { color: '#C9A96E' }]}>Needs duration</Text>
+      )}
+      {row.active_alert_id && (
+        <View style={styles.actionButtonsContainer}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: isActive ? '#E07070' : 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700' }}>
+              {row.active_alert_type === 'not_home_yet' ? 'Not home yet' : 'No response (1h)'}
+              {row.active_alert_triggered_at
+                ? ` · ${new Date(row.active_alert_triggered_at).toLocaleTimeString()}`
+                : ''}
+            </Text>
+          </View>
+          {isActive && (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.approveButton]}
+              onPress={() => { void onMarkSeen(row.active_alert_id!); }}
+            >
+              <Ionicons name="checkmark" size={13} color="#6FAF8A" />
+              <Text style={styles.approveBtnText}>Mark seen</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 

@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Text,
   TouchableOpacity,
   View,
@@ -18,7 +17,6 @@ import SakagramPostCard from './SakagramPostCard';
 import {
   ACCENT_GOLD,
   BG_AVATAR,
-  BG_PANEL,
   BG_SUBTLE,
   BORDER_DEFAULT,
   BORDER_GOLD,
@@ -29,17 +27,19 @@ import {
   TEXT_FAINT,
   TEXT_MUTED,
   TEXT_PRIMARY,
-  TEXT_SECONDARY,
 } from '../../theme/designTokens';
 
 interface Props {
   viewpointId: string;
   viewpointName?: string;
   mountainId?: string;
+  /** True when Sakagram fills the screen; bumps type and spacing up. */
+  focused?: boolean;
 }
 
-export default function SakagramSection({ viewpointId, viewpointName, mountainId }: Props) {
+export default function SakagramSection({ viewpointId, viewpointName, mountainId, focused = false }: Props) {
   const router = useRouter();
+  const s = useMemo(() => makeStyles(focused), [focused]);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const [posts, setPosts] = useState<SakagramPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -127,66 +127,68 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
   };
 
   return (
-    <View style={styles.section}>
-      <View style={styles.header}>
-        <View style={styles.headingGroup}>
-          <View style={styles.titleRow}>
-            <View style={styles.accent} />
-            <Text style={styles.title}>Sakagram</Text>
+    <View style={s.section}>
+      <View style={s.header}>
+        <View style={s.headingGroup}>
+          <View style={s.titleRow}>
+            <View style={s.logoMark}>
+              <Ionicons name="camera" size={focused ? 15 : 12} color={ACCENT_GOLD} />
+            </View>
+            <Text style={s.title}>Sakagram</Text>
             {!isLoading && !loadError && (
-              <Text style={styles.count}>{posts.length}</Text>
+              <Text style={s.count}>{posts.length}</Text>
             )}
           </View>
-          <Text style={styles.subtitle} numberOfLines={1}>
+          <Text style={s.subtitle} numberOfLines={1}>
             {viewpointName ? `Photos from ${viewpointName}` : 'Photos shared from this stop'}
           </Text>
         </View>
         <TouchableOpacity
           onPress={handleAddPhoto}
-          style={styles.addButton}
+          style={s.addButton}
           accessibilityRole="button"
           accessibilityLabel="Add a Journal photo to Sakagram"
         >
-          <Ionicons name="camera-outline" size={14} color={ACCENT_GOLD} />
-          <Text style={styles.addButtonText}>Add photo</Text>
+          <Ionicons name="add" size={focused ? 17 : 14} color="#0E1520" />
+          <Text style={s.addButtonText}>Add photo</Text>
         </TouchableOpacity>
       </View>
 
-      {likeError && <Text style={styles.inlineError}>{likeError}</Text>}
+      {likeError && <Text style={s.inlineError}>{likeError}</Text>}
 
       {isLoading ? (
         <View accessibilityLabel="Loading Sakagram posts">
           {[0, 1].map((item) => (
-            <View key={item} style={styles.skeleton}>
-              <View style={styles.skeletonAuthor}>
-                <View style={styles.skeletonAvatar} />
-                <View style={styles.skeletonText} />
+            <View key={item} style={s.skeleton}>
+              <View style={s.skeletonAuthor}>
+                <View style={s.skeletonAvatar} />
+                <View style={s.skeletonText} />
               </View>
-              <View style={styles.skeletonPhoto} />
-              <View style={styles.skeletonTextWide} />
+              <View style={s.skeletonPhoto} />
+              <View style={s.skeletonTextWide} />
             </View>
           ))}
         </View>
       ) : loadError ? (
-        <View style={styles.messageState}>
+        <View style={s.messageState}>
           <Ionicons name="cloud-offline-outline" size={22} color={TEXT_MUTED} />
-          <Text style={styles.messageText}>{loadError}</Text>
+          <Text style={s.messageText}>{loadError}</Text>
           <TouchableOpacity
             onPress={() => setReloadKey((value) => value + 1)}
-            style={styles.retryButton}
+            style={s.retryButton}
             accessibilityRole="button"
           >
             <Ionicons name="refresh-outline" size={13} color={ACCENT_GOLD} />
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={s.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : posts.length === 0 ? (
-        <View style={styles.messageState}>
-          <View style={styles.emptyIcon}>
+        <View style={s.messageState}>
+          <View style={s.emptyIcon}>
             <Ionicons name="camera-outline" size={18} color={ACCENT_GOLD} />
           </View>
-          <Text style={styles.emptyTitle}>No Sakagram posts yet</Text>
-          <Text style={styles.messageText}>
+          <Text style={s.emptyTitle}>No Sakagram posts yet</Text>
+          <Text style={s.messageText}>
             Be the first to share a photo from this viewpoint.
           </Text>
         </View>
@@ -198,6 +200,8 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
               post={post}
               onToggleLike={handleToggleLike}
               isLikePending={pendingLikeIds.has(post.id)}
+              locationLabel={viewpointName}
+              focused={focused}
             />
           ))}
         </View>
@@ -206,28 +210,33 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
   );
 }
 
-const styles = StyleSheet.create({
-  section: { marginHorizontal: 12, marginTop: 14, marginBottom: 4 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 },
-  headingGroup: { flex: 1, minWidth: 0 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  accent: { width: 3, height: 15, borderRadius: 2, backgroundColor: ACCENT_GOLD },
-  title: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '800' },
-  count: { color: TEXT_MUTED, fontSize: 10, fontWeight: '700' },
-  subtitle: { color: TEXT_FAINT, fontSize: 9, marginTop: 3, marginLeft: 10 },
-  addButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 9, borderRadius: RADIUS_BTN, borderWidth: 1, borderColor: BORDER_GOLD, backgroundColor: BG_SUBTLE },
-  addButtonText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '700' },
-  inlineError: { color: TEXT_DANGER, fontSize: 10, lineHeight: 15, marginBottom: 8 },
-  skeleton: { padding: 9, marginBottom: 9, borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
-  skeletonAuthor: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  skeletonAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: BG_AVATAR },
-  skeletonText: { width: '42%', height: 9, borderRadius: 5, backgroundColor: BG_AVATAR },
-  skeletonPhoto: { width: '100%', aspectRatio: 1, borderRadius: RADIUS_BTN, backgroundColor: BG_AVATAR },
-  skeletonTextWide: { width: '72%', height: 9, borderRadius: 5, marginTop: 9, backgroundColor: BG_AVATAR },
-  messageState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 18, paddingHorizontal: 14, borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_DEFAULT, backgroundColor: BG_PANEL, gap: 6 },
-  emptyIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: BG_SUBTLE, borderWidth: 1, borderColor: BORDER_GOLD },
-  emptyTitle: { color: TEXT_PRIMARY, fontSize: 11, fontWeight: '700' },
-  messageText: { color: TEXT_MUTED, fontSize: 10, lineHeight: 15, textAlign: 'center' },
-  retryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, marginTop: 2 },
-  retryText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '700' },
-});
+// Sizes scale up when Sakagram is the focus of the screen.
+function makeStyles(focused: boolean) {
+  const f = (n: number) => Math.round(n * (focused ? 1.3 : 1));
+
+  return StyleSheet.create({
+    section: { marginHorizontal: 12, marginTop: 14, marginBottom: 4 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: f(14), paddingBottom: f(12), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: BORDER_SUBTLE },
+    headingGroup: { flex: 1, minWidth: 0 },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    logoMark: { width: f(24), height: f(24), alignItems: 'center', justifyContent: 'center', borderRadius: f(8), borderWidth: 1.5, borderColor: ACCENT_GOLD },
+    title: { color: TEXT_PRIMARY, fontSize: f(15), fontWeight: '800', fontStyle: 'italic', letterSpacing: 0.3 },
+    count: { color: TEXT_MUTED, fontSize: f(10), fontWeight: '700' },
+    subtitle: { color: TEXT_FAINT, fontSize: f(9), marginTop: 3 },
+    addButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: f(11), borderRadius: 999, backgroundColor: ACCENT_GOLD },
+    addButtonText: { color: '#0E1520', fontSize: f(10), fontWeight: '800' },
+    inlineError: { color: TEXT_DANGER, fontSize: f(10), lineHeight: f(15), marginBottom: 8 },
+    skeleton: { marginBottom: f(22) },
+    skeletonAuthor: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+    skeletonAvatar: { width: f(32), height: f(32), borderRadius: f(16), backgroundColor: BG_AVATAR },
+    skeletonText: { width: '42%', height: 9, borderRadius: 5, backgroundColor: BG_AVATAR },
+    skeletonPhoto: { width: '100%', aspectRatio: 1, maxHeight: 260, borderRadius: RADIUS_BTN, backgroundColor: BG_AVATAR },
+    skeletonTextWide: { width: '72%', height: 9, borderRadius: 5, marginTop: 9, backgroundColor: BG_AVATAR },
+    messageState: { alignItems: 'center', justifyContent: 'center', paddingVertical: f(22), paddingHorizontal: 14, borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_DEFAULT, gap: 6 },
+    emptyIcon: { width: f(40), height: f(40), alignItems: 'center', justifyContent: 'center', borderRadius: f(20), backgroundColor: BG_SUBTLE, borderWidth: 1.5, borderColor: BORDER_GOLD },
+    emptyTitle: { color: TEXT_PRIMARY, fontSize: f(11), fontWeight: '700' },
+    messageText: { color: TEXT_MUTED, fontSize: f(10), lineHeight: f(15), textAlign: 'center' },
+    retryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, marginTop: 2 },
+    retryText: { color: ACCENT_GOLD, fontSize: f(10), fontWeight: '700' },
+  });
+}

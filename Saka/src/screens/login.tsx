@@ -241,7 +241,7 @@ export default function LoginScreen() {
         }
 
         if (role === 'organization') {
-          router.replace('/organizations/Dashboard');
+          router.replace('/Loading');
           return;
         }
 
