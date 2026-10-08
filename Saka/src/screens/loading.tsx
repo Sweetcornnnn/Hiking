@@ -285,33 +285,65 @@ export default function LoadingScreen({
     };
 
     const preloadData = async () => {
+      // ── Step 1: fetch mountains (independent of video preload) ──
       try {
         animateTo(fetchCeiling, 5000);
         const mountains = await fetchMountainsWithRetry();
-        mountainService.setCachedMountains(mountains);
+        // Guard: some backends return null on error instead of throwing
+        mountainService.setCachedMountains(
+          Array.isArray(mountains) ? mountains : []
+        );
         animateTo(afterFetch, 500);
+      } catch (error) {
+        const err = error as Error | undefined;
+        console.warn(
+          '[Loading] mountains step failed:',
+          err?.message ?? error,
+          '\nStack:',
+          err?.stack ?? '(no stack)'
+        );
+        animateTo(afterFetch, 400);
+      }
 
-        if (shouldPreloadHomeVideos) {
+      // ── Step 2: preload home video posters (independent) ──
+      if (shouldPreloadHomeVideos) {
+        try {
           await preloadHomeVideoPosters((completed, total) => {
-            const ratio = total > 0 ? completed / total : 1;
+            const safeTotal =
+              typeof total === 'number' && total > 0 ? total : 0;
+            const safeCompleted =
+              typeof completed === 'number' && Number.isFinite(completed)
+                ? completed
+                : 0;
+            const ratio =
+              safeTotal > 0 ? Math.min(safeCompleted / safeTotal, 1) : 1;
             animateTo(afterFetch + (0.95 - afterFetch) * ratio, 400);
           });
-        }
-      } catch (error) {
-        console.warn('[Loading] preloading failed:', error);
-      } finally {
-        if (mountedRef.current) {
-          // Honor the minimum display time and finish the bar right as we leave
-          const remaining = Math.max(loadingDuration - (Date.now() - startedAt), 0);
-          const fillDuration = Math.max(700, remaining);
-          animateTo(1, fillDuration, Easing.inOut(Easing.quad));
-          timers.push(
-            setTimeout(() => {
-              if (mountedRef.current) swapLine(() => setShowFinal(true));
-            }, fillDuration * 0.75)
+        } catch (error) {
+          const err = error as Error | undefined;
+          console.warn(
+            '[Loading] video preload step failed:',
+            err?.message ?? error,
+            '\nStack:',
+            err?.stack ?? '(no stack)'
           );
-          timers.push(setTimeout(goNext, fillDuration + 3000));
         }
+      }
+
+      // ── Step 3: finish (always runs, no matter what failed above) ──
+      if (mountedRef.current) {
+        const remaining = Math.max(
+          loadingDuration - (Date.now() - startedAt),
+          0
+        );
+        const fillDuration = Math.max(700, remaining);
+        animateTo(1, fillDuration, Easing.inOut(Easing.quad));
+        timers.push(
+          setTimeout(() => {
+            if (mountedRef.current) swapLine(() => setShowFinal(true));
+          }, fillDuration * 0.75)
+        );
+        timers.push(setTimeout(goNext, fillDuration + 3000));
       }
     };
 
