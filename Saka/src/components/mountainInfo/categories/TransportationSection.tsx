@@ -1,10 +1,21 @@
 import React from 'react';
 import InfoSection from '../InfoSection';
+import { ACCENT_GREEN } from '../../../theme/designTokens';
 
 export interface TransportationSectionProps {
   items: string[];
 }
 
 export default function TransportationSection({ items }: TransportationSectionProps) {
-  return <InfoSection title="Transportation Guide" icon="bus-outline" items={items} />;
+  return (
+    <InfoSection
+      title="Transportation Guide"
+      subtitle="Get there without the stress."
+      icon="bus-outline"
+      iconColor={ACCENT_GREEN}
+      items={items}
+      compact
+      showArrow={false}
+    />
+  );
 }

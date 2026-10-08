@@ -1,7 +1,10 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useEffect } from 'react';
 import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
+import { useHikeSafetyStore } from '../src/store/hikeSafetyStore';
+import HomeCheckPrompt from '../src/components/safety/HomeCheckPrompt';
 
 type LandscapeStackOptions = NativeStackNavigationOptions & {
   orientation?: 'portrait' | 'landscape';
@@ -19,10 +22,14 @@ const screenOptionsNoHeader: LandscapeStackOptions = {
 };
 
 export default function RootLayout() {
+  const bootstrap = useHikeSafetyStore((s) => s.bootstrap);
+  useEffect(() => { bootstrap(); }, [bootstrap]);
+
   return (
     <SafeAreaProvider>
       <StatusBar hidden={true} />
       <Stack screenOptions={stackScreenOptions}>
+        {/* ...unchanged screens... */}
         <Stack.Screen name="Index" options={screenOptionsNoHeader} />
         <Stack.Screen name="Auth" options={screenOptionsNoHeader} />
         <Stack.Screen name="Intro" options={screenOptionsNoHeader} />
@@ -37,6 +44,14 @@ export default function RootLayout() {
         <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
         <Stack.Screen name="Weather" options={screenOptionsNoHeader} />
         <Stack.Screen name="Settings" options={screenOptionsNoHeader} />
+        <Stack.Screen
+          name="mountainInfo/TipsAndTricks"
+          options={{
+            headerShown: false,
+            orientation: 'landscape',
+            contentStyle: { backgroundColor: '#F5E6D3' },
+          }}
+        />
         <Stack.Screen name="organizations/Dashboard" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/BecomeOrganizer" options={screenOptionsNoHeader} />
         <Stack.Screen name="organizations/Events" options={screenOptionsNoHeader} />
@@ -48,6 +63,7 @@ export default function RootLayout() {
         <Stack.Screen name="events/EventDetail" options={screenOptionsNoHeader} />
         <Stack.Screen name="journal" options={screenOptionsNoHeader} />
       </Stack>
+      <HomeCheckPrompt />
     </SafeAreaProvider>
   );
 }

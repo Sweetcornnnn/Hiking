@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { VIEWPOINTS_DATA, ViewpointsDataType } from '../data/viewpointsData';
+import { MOUNTAINS_INFO } from '../data/mountains';
 
 export type ViewpointDetailRecord = {
   id: string;
@@ -67,4 +68,46 @@ export async function fetchViewpointDetail(viewpointId: string): Promise<Viewpoi
     trailStatus: data.trail_status || 'Open',
     crowdLevel: data.crowd_level || 'Low',
   };
+}
+
+const normalizeMountainName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+export async function fetchMeetingPoints(
+  mountainId: string,
+  mountainName?: string,
+  mountainViewpoints?: Array<{ name: string }> | null
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('viewpoints')
+    .select('name')
+    .eq('mountain_id', mountainId)
+    .order('name', { ascending: true });
+
+  if (error) {
+    console.warn('[viewpointService] Failed to load meeting points by mountain ID:', error.message);
+  } else if (data?.length) {
+    return data.map((point) => point.name);
+  }
+
+  const legacyMountain = mountainName
+    ? MOUNTAINS_INFO.find(
+        (mountain) => normalizeMountainName(mountain.name) === normalizeMountainName(mountainName)
+      )
+    : undefined;
+
+  if (legacyMountain && legacyMountain.id !== mountainId) {
+    const { data: legacyData, error: legacyError } = await supabase
+      .from('viewpoints')
+      .select('name')
+      .eq('mountain_id', legacyMountain.id)
+      .order('name', { ascending: true });
+
+    if (legacyError) {
+      console.warn('[viewpointService] Failed to load meeting points by legacy ID:', legacyError.message);
+    } else if (legacyData?.length) {
+      return legacyData.map((point) => point.name);
+    }
+  }
+
+  return [...new Set((mountainViewpoints ?? []).map((point) => point.name).filter(Boolean))];
 }
