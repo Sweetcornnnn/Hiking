@@ -4,20 +4,27 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import JournalImageGrid from '../../components/journal/JournalImageGrid';
+import MyJournalFeed from '../../components/journal/MyJournalFeed';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import { useJournalStore } from '../../store/journalStore';
-import type { JournalImage } from '../../types/journal';
-import { ACCENT_GOLD, BG_CARD, BG_DANGER_SUBTLE, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_DANGER, BORDER_GOLD, BORDER_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_DANGER, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
+import { useProfileCardStore } from '../../store/profileCardStore';
+import type { JournalEntry, JournalImage } from '../../types/journal';
+import { ACCENT_GOLD, BG_CARD, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_GOLD, BORDER_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
+
+type Mode = 'feed' | 'form';
 
 export default function JournalScreen() {
   const router = useRouter();
-  const { viewpointId, mountainId } = useLocalSearchParams<{
+  const { viewpointId, mountainId, fromProfile } = useLocalSearchParams<{
     viewpointId?: string | string[];
     mountainId?: string | string[];
+    fromProfile?: string | string[];
   }>();
   const preselectedViewpointId = typeof viewpointId === 'string' ? viewpointId : null;
   const preselectedMountainId = typeof mountainId === 'string' ? mountainId : null;
+  const cameFromProfile = fromProfile === '1';
   const { entries, fetchEntries, saveEntry, deleteEntry, isLoading, error, clearError } = useJournalStore();
+  const [mode, setMode] = useState<Mode>('feed');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [images, setImages] = useState<JournalImage[]>([]);
@@ -29,11 +36,20 @@ export default function JournalScreen() {
   const [mountainsError, setMountainsError] = useState<string | null>(null);
   const saveInProgress = useRef(false);
 
-  useEffect(() => {
-    if (preselectedMountainId) {
-      setSelectedMountainId(preselectedMountainId);
+  const goBackToProfile = () => {
+    if (cameFromProfile) {
+      useProfileCardStore.getState().requestReopen();
     }
-  }, [preselectedMountainId]);
+    router.back();
+  };
+
+  const handleBack = () => {
+    if (mode === 'form') {
+      setMode('feed');
+    } else {
+      goBackToProfile();
+    }
+  };
 
   const normalizeLocalUri = (uri: string): string => {
     let normalized = uri;
@@ -68,6 +84,24 @@ export default function JournalScreen() {
       clearError();
     };
   }, [clearError, fetchEntries]);
+
+  const confirmDelete = (entry: JournalEntry) => {
+    Alert.alert(
+      'Delete journal entry?',
+      'This also removes its photos from your profile showcase.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await deleteEntry(entry);
+            if (result.error) Alert.alert('Delete failed', result.error);
+          },
+        },
+      ],
+    );
+  };
 
   const pickImages = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -122,13 +156,17 @@ export default function JournalScreen() {
         return;
       }
 
-      Alert.alert('Journal saved', 'Your photos are now part of your profile showcase.', [{ text: 'View profile', onPress: () => router.back() }]);
       setTitle('');
       setContent('');
       setImages([]);
       setRating(0);
       setIsPublic(false);
       setSelectedMountainId(preselectedMountainId);
+      setMode('feed');
+
+      Alert.alert('Journal saved', 'Your photos are now part of your profile showcase.', [
+        { text: 'View journal', onPress: () => {} },
+      ]);
     } finally {
       saveInProgress.current = false;
     }
@@ -137,17 +175,46 @@ export default function JournalScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
           <Ionicons name="chevron-back" size={20} color={TEXT_PRIMARY} />
         </TouchableOpacity>
-        <View>
+        <View style={styles.headerTextWrap}>
           <Text style={styles.eyebrow}>YOUR TRAIL NOTES</Text>
-          <Text style={styles.title}>New journal entry</Text>
+          <Text style={styles.title}>
+            {mode === 'feed' ? 'My Journal' : 'New journal entry'}
+          </Text>
         </View>
         <View style={styles.headerSpacer} />
+        {mode === 'feed' && (
+          <TouchableOpacity
+            onPress={() => setMode('form')}
+            style={styles.newEntryButton}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="New journal entry"
+          >
+            <Ionicons name="add" size={15} color={BG_PANEL} />
+            <Text style={styles.newEntryButtonText}>New</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {mode === 'feed' ? (
+        <ScrollView
+          contentContainerStyle={styles.feedContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {error && <Text style={styles.error}>{error}</Text>}
+          <MyJournalFeed
+            entries={entries}
+            mountains={mountains}
+            isLoading={isLoading && !entries.length}
+            onDelete={confirmDelete}
+            onNewEntry={() => setMode('form')}
+          />
+        </ScrollView>
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
         <TextInput value={title} onChangeText={setTitle} placeholder="A day above the clouds" placeholderTextColor={TEXT_FAINT} style={styles.input} />
 
@@ -230,41 +297,8 @@ export default function JournalScreen() {
           <Ionicons name="book-outline" size={17} color={BG_PANEL} />
           <Text style={styles.saveText}>{isLoading ? 'Saving...' : 'Save to journal'}</Text>
         </TouchableOpacity>
-
-        <Text style={styles.savedTitle}>Saved entries</Text>
-        {entries.length === 0 ? (
-          <Text style={styles.helper}>Your saved experiences will appear here.</Text>
-        ) : entries.map((entry) => (
-          <View key={entry.id} style={styles.entryCard}>
-            <Text style={styles.entryTitle}>{entry.title}</Text>
-            <Text style={styles.entryContent} numberOfLines={3}>{entry.content}</Text>
-            <View style={styles.entryFooter}>
-              <Text style={styles.entryDate}>{new Date(entry.created_at).toLocaleDateString()}</Text>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => Alert.alert(
-                  'Delete journal entry?',
-                  'This also removes its photos from your profile showcase.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: async () => {
-                        const result = await deleteEntry(entry);
-                        if (result.error) Alert.alert('Delete failed', result.error);
-                      },
-                    },
-                  ],
-                )}
-              >
-                <Ionicons name="trash-outline" size={14} color={TEXT_DANGER} />
-                <Text style={styles.deleteText}>Delete</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
       </ScrollView>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -272,10 +306,14 @@ export default function JournalScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG_PANEL },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: BORDER_DEFAULT },
+  headerTextWrap: { flexShrink: 1, minWidth: 0 },
   iconButton: { width: 34, height: 34, borderRadius: RADIUS_BTN, alignItems: 'center', justifyContent: 'center', backgroundColor: BG_SUBTLE, marginRight: 12 },
   headerSpacer: { flex: 1 },
   eyebrow: { color: ACCENT_GOLD, fontSize: 9, fontWeight: '700', letterSpacing: 1.2 },
   title: { color: TEXT_PRIMARY, fontSize: 21, fontWeight: '700', marginTop: 3 },
+  newEntryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, backgroundColor: ACCENT_GOLD },
+  newEntryButtonText: { color: BG_PANEL, fontSize: 12, fontWeight: '800' },
+  feedContent: { padding: 20, paddingBottom: 60, maxWidth: 680, width: '100%', alignSelf: 'center' },
   content: { padding: 24, paddingBottom: 40, maxWidth: 680, width: '100%', alignSelf: 'center' },
   label: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, marginTop: 16 },
   input: { color: TEXT_PRIMARY, backgroundColor: BG_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
@@ -297,12 +335,4 @@ const styles = StyleSheet.create({
   saveButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: ACCENT_GOLD, borderRadius: RADIUS_CARD, paddingVertical: 14, marginTop: 28 },
   saveText: { color: BG_PANEL, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.55 },
-  savedTitle: { color: TEXT_PRIMARY, fontSize: 15, fontWeight: '700', marginTop: 32, marginBottom: 4 },
-  entryCard: { backgroundColor: BG_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_CARD, padding: 14, marginTop: 12 },
-  entryTitle: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '700' },
-  entryContent: { color: TEXT_MUTED, fontSize: 11, lineHeight: 16, marginTop: 6 },
-  entryFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
-  entryDate: { color: TEXT_FAINT, fontSize: 10 },
-  deleteButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: RADIUS_BTN, backgroundColor: BG_DANGER_SUBTLE, borderWidth: 1, borderColor: BORDER_DANGER },
-  deleteText: { color: TEXT_DANGER, fontSize: 10, fontWeight: '700' },
 });

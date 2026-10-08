@@ -75,18 +75,18 @@ const PC = {
   radiusBtn:     8,
 };
 
-// ── Image map ─────────────────────────────────────────────────────────────
+// ── Mt. Madja-as viewpoint image map ───────────────────────────────────────
 const IMAGE_MAP: Record<string, ImageSourcePropType> = {
-  trailhead:     require('../../assets/images/TrailHead.jpg'),
-  bantang_river: require('../../assets/images/Bantang River.jpg'),
-  camp1:         require('../../assets/images/Camp1.png'),
-  waterfall:     require('../../assets/images/Waterfalss.jpg'),
-  mossy_forest:  require('../../assets/images/MossyForest.jpg'),
-  camp2:         require('../../assets/images/Camp1.jpg'),
-  camp3:         require('../../assets/images/Camp2$3.jpg'),
-  crown_shyness: require('../../assets/images/CrownShines.png'),
-  summit_ridge:  require('../../assets/images/SummitRidge.jpg'),
-  summit:        require('../../assets/images/Summit.png'),
+  v1:  require('../../assets/Viewpoints/mt-madjaas/v1-barangay-flores-trailhead/TrailHead.jpg'),
+  v2:  require('../../assets/Viewpoints/mt-madjaas/v2-first-water-source/Waterfalss.jpg'),
+  v3:  require('../../assets/Viewpoints/mt-madjaas/v3-camp-1-mamay-camp/Camp1.png'),
+  v4:  require('../../assets/Viewpoints/mt-madjaas/v4-ridge-trail-section/CrownShines.png'),
+  v5:  require('../../assets/Viewpoints/mt-madjaas/v5-lake-viewpoint/Waterfalss.jpg'),
+  v6:  require('../../assets/Viewpoints/mt-madjaas/v6-camp-2-upper-camp/Camp1.jpg'),
+  v7:  require('../../assets/Viewpoints/mt-madjaas/v7-hidden-spring/Waterfalss.jpg'),
+  v8:  require('../../assets/Viewpoints/mt-madjaas/v8-grassy-meadow/MossyForest.jpg'),
+  v9:  require('../../assets/Viewpoints/mt-madjaas/v9-mt-madjaas-summit/Summit.png'),
+  v10: require('../../assets/Viewpoints/mt-madjaas/v10-summit-ridge/SummitRidge.jpg'),
 };
 
 interface StatChipProps {
@@ -97,7 +97,7 @@ interface StatChipProps {
 
 interface MediaItem {
   type: 'image' | 'video';
-  key?: string;   // local IMAGE_MAP key (images only)
+  key?: string;   // local viewpoint ID in IMAGE_MAP (images only)
   uri?: string;   // remote source (images or videos)
 }
 
@@ -237,11 +237,9 @@ export default function ViewpointScreen() {
       return data.media as MediaItem[];
     }
     if (data?.imageKey) {
-      // TEMP / DEMO: the backend only gives us one imageKey per viewpoint right
-      // now, so we repeat it to populate the stack and preview the carousel
-      // effect. Once fetchViewpointDetail returns a real `media` array, this
-      // fallback (and the repetition) can be removed.
-      return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.imageKey }));
+      // The image assets are organized by viewpoint, so use its ID rather than
+      // the shared image_key value to resolve the local asset.
+      return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.id }));
     }
     return [];
   }, [data]);
