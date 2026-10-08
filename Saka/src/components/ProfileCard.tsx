@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../store/authStore';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useWildTrackStore } from '../store/wildtrackStore';
+import { useProfileCardStore } from '../store/profileCardStore';
 import { mountainService, Mountain } from '../services/mountainService';
 import weatherService, { WeatherCondition } from '../services/weatherService';
 import { useLocationTracking } from '../hooks/useLocationTracking';
@@ -82,6 +83,7 @@ export default function ProfileCard({
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [emergencyPlan, setEmergencyPlan] = useState<EmergencyPlan>(createEmptyPlan);
+  const [forceVisible, setForceVisible] = useState(false);
   const {
     entries: journalEntries,
     isLoading: journalLoading,
@@ -98,6 +100,19 @@ export default function ProfileCard({
     permissions: locationPerms,
     requestPermissions,
   } = useLocationTracking();
+
+  const closeCard = useCallback(() => {
+    setForceVisible(false);
+    onClose();
+  }, [onClose]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (useProfileCardStore.getState().consumeReopen()) {
+        setForceVisible(true);
+      }
+    }, [])
+  );
 
   // Responsive sizing driven by the device's font scale.
   const clampedScale = Math.min(Math.max(fontScale, 1), BODY_FONT_CAP);
@@ -153,12 +168,12 @@ export default function ProfileCard({
   }, [visible]);
 
   const handleLogoutPress = () => {
-    onClose();
+    closeCard();
     onRequestLogout();
   };
 
   const handleSettings = () => {
-    onClose();
+    closeCard();
     router.push('/Settings');
   };
 
@@ -171,7 +186,7 @@ export default function ProfileCard({
   };
 
   const openScreen = (screen: 'calendar' | 'wildtrack' | 'journal' | 'weather' | 'location') => {
-    onClose();
+    closeCard();
     if (screen === 'calendar') {
       router.push({
         pathname: '/Calendar',
@@ -180,7 +195,7 @@ export default function ProfileCard({
     } else if (screen === 'wildtrack') {
       router.push('/wildtrack/WildTrack');
     } else if (screen === 'journal') {
-      router.push('/journal');
+      router.push({ pathname: '/journal', params: { fromProfile: '1' } });
     } else if (screen === 'weather') {
       router.push('/Weather');
     } else {
@@ -239,7 +254,7 @@ export default function ProfileCard({
       : 'Paused';
 
   const handleBecomeOrganizer = () => {
-    onClose();
+    closeCard();
     router.push('/organizations/BecomeOrganizer');
   };
 
@@ -273,9 +288,9 @@ export default function ProfileCard({
   return (
     <Modal
       transparent
-      visible={visible}
+      visible={visible || forceVisible}
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={closeCard}
       statusBarTranslucent={true}
       presentationStyle="overFullScreen"
     >
@@ -350,7 +365,7 @@ export default function ProfileCard({
                 </Text>
               </View>
               <TouchableOpacity
-                onPress={onClose}
+                onPress={closeCard}
                 style={styles.closeBtn}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
@@ -540,7 +555,7 @@ export default function ProfileCard({
                 )}
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { onClose(); router.push('/Weather'); }}
+                  onPress={() => { closeCard(); router.push('/Weather'); }}
                 >
                   <Text style={styles.tabPaneBtnText} maxFontSizeMultiplier={TIGHT_FONT_CAP}>Open Full Weather</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
@@ -587,7 +602,7 @@ export default function ProfileCard({
                 )}
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { onClose(); router.push('/Location'); }}
+                  onPress={() => { closeCard(); router.push('/Location'); }}
                 >
                   <Text style={styles.tabPaneBtnText} maxFontSizeMultiplier={TIGHT_FONT_CAP}>Open Location</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />
