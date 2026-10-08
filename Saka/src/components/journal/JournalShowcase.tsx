@@ -33,8 +33,9 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
   const [selectedPhoto, setSelectedPhoto] = React.useState<SelectedPhoto | null>(null);
   const [photoAspectRatio, setPhotoAspectRatio] = React.useState(1);
   const [detailCardSize, setDetailCardSize] = React.useState({ width: 0, height: 0 });
+  const imagePaneWidth = detailCardSize.width > 0 ? Math.min(detailCardSize.width * 0.58, 420) : 320;
   const { width: detailImageWidth, height: detailImageHeight } = getDetailImageSize(
-    detailCardSize.width,
+    imagePaneWidth,
     detailCardSize.height,
     photoAspectRatio,
   );
@@ -126,14 +127,16 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
                   <Text style={styles.detailMountain}>{selectedPhoto.mountainName}</Text>
                   <Text style={styles.detailDate}>{new Date(selectedPhoto.entry.created_at).toLocaleDateString()}</Text>
                 </View>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Close journal entry"
-                  onPress={() => setSelectedPhoto(null)}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={20} color={TEXT_PRIMARY} />
-                </TouchableOpacity>
+                <View style={styles.detailActions}>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Close journal entry"
+                    onPress={() => setSelectedPhoto(null)}
+                    style={styles.closeButton}
+                  >
+                    <Ionicons name="close" size={20} color={TEXT_PRIMARY} />
+                  </TouchableOpacity>
+                </View>
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Title:</Text>
@@ -168,22 +171,27 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
   </>;
 }
 
-const DETAIL_MIN_TEXT_WIDTH = 240;
-
 const getDetailImageSize = (
   cardWidth: number,
   cardHeight: number,
   aspectRatio: number,
 ) => {
-  const textWidth = Math.min(DETAIL_MIN_TEXT_WIDTH, cardWidth * 0.42);
-  const availableWidth = Math.max(1, cardWidth - textWidth);
-  const height = Math.min(cardHeight, availableWidth / aspectRatio);
-  return { width: height * aspectRatio, height };
+  if (!cardWidth || !cardHeight) {
+    return { width: 320, height: 220 };
+  }
+
+  const maxHeight = Math.max(1, cardHeight);
+  const height = Math.min(maxHeight, cardWidth / aspectRatio);
+
+  return {
+    width: Math.min(cardWidth, Math.max(1, height * aspectRatio)),
+    height: Math.max(1, height),
+  };
 };
 
 const CAROUSEL_IMAGE_WIDTH = 180;
 const CAROUSEL_IMAGE_HEIGHT = 125;
-const CAROUSEL_IMAGE_GAP = 8;
+const CAROUSEL_IMAGE_GAP = 2;
 
 function MountainPhotoCarousel({
   mountainName,
@@ -284,13 +292,14 @@ const styles = StyleSheet.create({
   emptySection: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   detailCard: { width: '86%', maxWidth: 800, height: '74%', maxHeight: 560, flexDirection: 'row', backgroundColor: BG_PANEL, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: BORDER_SUBTLE, elevation: 18 },
-  detailImageFrame: { height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: BG_PANEL },
-  detailScroll: { flex: 1, backgroundColor: BG_PANEL },
+  detailImageFrame: { height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: BG_PANEL, borderRightWidth: 1, borderRightColor: BORDER_SUBTLE, flexShrink: 0 },
+  detailScroll: { flex: 1, minWidth: 0, backgroundColor: BG_PANEL },
   detailContent: { padding: 20, gap: 14 },
-  detailHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  detailHeading: { gap: 4 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  detailHeading: { gap: 4, flex: 1 },
   detailMountain: { color: ACCENT_GOLD, fontSize: 12, fontWeight: '700' },
   detailDate: { color: TEXT_FAINT, fontSize: 11 },
+  detailActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: BG_SUBTLE },
   detailSection: { gap: 5 },
   detailLabel: { color: TEXT_FAINT, fontSize: 11, fontWeight: '700' },

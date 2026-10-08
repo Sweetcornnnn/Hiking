@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { createJournalEntry, deleteJournalEntry, fetchMyJournalEntries } from '../services/journalService';
+import { createJournalEntry, deleteJournalEntry, fetchMyJournalEntries, updateJournalEntry } from '../services/journalService';
 import type { CreateJournalEntryInput, JournalEntry } from '../types/journal';
 
 interface JournalState {
@@ -8,6 +8,7 @@ interface JournalState {
   error: string | null;
   fetchEntries: () => Promise<void>;
   saveEntry: (input: CreateJournalEntryInput) => Promise<{ error: string | null }>;
+  updateEntry: (entryId: string, input: CreateJournalEntryInput) => Promise<{ error: string | null }>;
   deleteEntry: (entry: JournalEntry) => Promise<{ error: string | null }>;
   clearError: () => void;
 }
@@ -34,6 +35,22 @@ export const useJournalStore = create<JournalState>((set, get) => ({
       return { error: null };
     } catch (error: any) {
       const message = error.message || 'Unable to save journal entry.';
+      set({ isLoading: false, error: message });
+      return { error: message };
+    }
+  },
+
+  updateEntry: async (entryId, input) => {
+    set({ isLoading: true, error: null });
+    try {
+      const entry = await updateJournalEntry(entryId, input);
+      set({
+        entries: get().entries.map((item) => item.id === entryId ? entry : item),
+        isLoading: false,
+      });
+      return { error: null };
+    } catch (error: any) {
+      const message = error.message || 'Unable to update journal entry.';
       set({ isLoading: false, error: message });
       return { error: message };
     }

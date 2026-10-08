@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,8 +17,6 @@ import AlertsSection from './categories/AlertsSection';
 import {
   ACCENT_GOLD,
   BG_CARD,
-  BG_PANEL,
-  BG_SUBTLE,
   BORDER_DEFAULT,
   FONT,
   RADIUS_BTN,
@@ -42,29 +39,26 @@ export default function TipsAndTricks({ mountainTips, onBack }: TipsAndTricksPro
             style={styles.backButton}
             onPress={onBack}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel="Close tips and tricks"
           >
-            <Ionicons name="chevron-back" size={22} color={ACCENT_GOLD} />
+            <Ionicons name="close" size={22} color={ACCENT_GOLD} />
           </TouchableOpacity>
         ) : null}
         <View style={styles.headerText}>
           <Text style={styles.mountainName} numberOfLines={2}>{mountainTips.mountainName}</Text>
           <Text style={styles.subtitle}>Information, Tips & Tricks</Text>
+          <View style={styles.goldLine} />
         </View>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <PreparationSection items={mountainTips.preparation} />
+      <View style={styles.categoryGrid}>
         <SafetySection items={mountainTips.safety} />
         <TransportationSection items={mountainTips.transportation} />
+        <PreparationSection items={mountainTips.preparation} />
         <TrailTipsSection items={mountainTips.trailTips} />
         <EtiquetteSection items={mountainTips.etiquette} />
         <AlertsSection alerts={mountainTips.alerts} />
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -80,17 +74,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.gapLg,
     paddingVertical: SPACING.gapLg,
-    backgroundColor: BG_PANEL,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: BORDER_DEFAULT,
   },
   backButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: RADIUS_BTN,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: BG_SUBTLE,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
     marginRight: SPACING.gapLg,
@@ -101,19 +92,28 @@ const styles = StyleSheet.create({
   mountainName: {
     color: TEXT_PRIMARY,
     fontSize: FONT.nameSize,
-    fontWeight: FONT.namWeight,
+    fontWeight: '700',
   },
   subtitle: {
     color: TEXT_MUTED,
     fontSize: FONT.itemSize,
     marginTop: SPACING.gap / 2,
   },
-  scrollView: {
-    flex: 1,
+  goldLine: {
+    height: 3,
+    width: 40,
+    backgroundColor: ACCENT_GOLD,
+    marginTop: SPACING.gap,
+    borderRadius: 2,
   },
-  content: {
+  categoryGrid: {
+    flex: 1,
     paddingHorizontal: SPACING.gapLg,
     paddingTop: SPACING.gapLg,
     paddingBottom: SPACING.cardPadB,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignContent: 'flex-start',
   },
 });

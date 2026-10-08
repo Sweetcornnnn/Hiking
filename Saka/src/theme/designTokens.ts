@@ -47,8 +47,13 @@ export const TEXT_SECONDARY  = 'rgba(255,255,255,0.7)';
 export const TEXT_DANGER     = '#E07070';
 // avatarInitials.color + progressFill.backgroundColor → '#C9A96E'
 export const ACCENT_GOLD     = '#C9A96E';
+// additional category accent shades used by mountain tips cards
+export const ACCENT_GREEN    = '#4CAF50';
+export const ACCENT_BLUE     = '#2196F3';
+export const ACCENT_ORANGE   = '#FF5722';
+export const ACCENT_PURPLE   = '#9C27B0';
 // summitedTag.color → '#6FAF8A'
-export const ACCENT_GREEN    = '#6FAF8A';
+export const ACCENT_GREEN_ALT = '#6FAF8A';
 // cardTitle.color (TrailMap) → '#76FF03'
 export const ACCENT_TRAIL    = '#76FF03';
 
