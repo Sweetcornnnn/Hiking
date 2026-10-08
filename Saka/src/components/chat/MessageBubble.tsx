@@ -23,6 +23,18 @@ import {
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 
+export type ReactionType = 'heart' | 'like' | 'haha' | 'wow' | 'sad' | 'angry';
+
+// Emoji map — kept here so the picker and the badge stay in sync.
+export const REACTION_EMOJI: Record<ReactionType, string> = {
+  heart: '❤️',
+  like: '👍',
+  haha: '😂',
+  wow: '😮',
+  sad: '😢',
+  angry: '😡',
+};
+
 export type MessageBubbleProps = {
   content: string;
   time: string;
@@ -40,6 +52,9 @@ export type MessageBubbleProps = {
   replyCaption?: string;
   replyPreview?: string;
 
+  // ── optional: reaction badge ──
+  reaction?: ReactionType | null;
+
   // ── optional: left avatar (DMs, other user only) ──
   avatarUri?: string | null;
   avatarLabel?: string;
@@ -51,9 +66,10 @@ export type MessageBubbleProps = {
   senderColorSeed?: string;
   showSenderHeader?: boolean;
 
-  // ── optional: press handlers (world chat: open profile card) ──
+  // ── optional: press handlers ──
   onPressSender?: () => void;
   onPressBubble?: () => void;
+  onLongPressBubble?: () => void;
 };
 
 function MessageBubbleBase({
@@ -66,6 +82,7 @@ function MessageBubbleBase({
   hasReply = false,
   replyCaption = '',
   replyPreview = '',
+  reaction = null,
   avatarUri,
   avatarLabel = '?',
   avatarColorSeed = '',
@@ -75,6 +92,7 @@ function MessageBubbleBase({
   showSenderHeader = false,
   onPressSender,
   onPressBubble,
+  onLongPressBubble,
 }: MessageBubbleProps) {
   const { width } = useWindowDimensions();
 
@@ -172,29 +190,49 @@ function MessageBubbleBase({
           </>
         )}
 
-        <TouchableOpacity
-          activeOpacity={onPressBubble ? 0.9 : 1}
-          onPress={onPressBubble}
-          disabled={!onPressBubble}
-        >
-          <View
-            style={[
-              styles.bubble,
-              isMe ? styles.bubbleMe : styles.bubbleOther,
-              { maxWidth: bubbleMaxWidth },
-            ]}
+        {/* Bubble + optional reaction badge */}
+        <View style={styles.bubbleWrap}>
+          <TouchableOpacity
+            activeOpacity={onPressBubble || onLongPressBubble ? 0.9 : 1}
+            onPress={onPressBubble}
+            onLongPress={onLongPressBubble}
+            delayLongPress={350}
+            disabled={!onPressBubble && !onLongPressBubble}
           >
-            <Text
+            <View
               style={[
-                styles.text,
-                { color: isMe ? CHAT_BG : TEXT_PRIMARY },
-                isMe && styles.textMe,
+                styles.bubble,
+                isMe ? styles.bubbleMe : styles.bubbleOther,
+                { maxWidth: bubbleMaxWidth },
+                reaction && styles.bubbleWithReaction,
               ]}
             >
-              {content}
-            </Text>
-          </View>
-        </TouchableOpacity>
+              <Text
+                style={[
+                  styles.text,
+                  { color: isMe ? CHAT_BG : TEXT_PRIMARY },
+                  isMe && styles.textMe,
+                ]}
+              >
+                {content}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {reaction && (
+            <View
+              style={[
+                styles.reactionBadge,
+                isMe ? styles.reactionBadgeMe : styles.reactionBadgeOther,
+              ]}
+              pointerEvents="none"
+            >
+              <Text style={styles.reactionEmoji}>
+                {REACTION_EMOJI[reaction]}
+              </Text>
+            </View>
+          )}
+        </View>
 
         <View
           style={[
@@ -250,7 +288,7 @@ const styles = StyleSheet.create({
   stackMe: { alignItems: 'flex-end' },
   stackOther: { alignItems: 'flex-start', flexGrow: 1 },
 
-  // ── Sender header (group / world chat) ──
+  // ── Sender header ──
   senderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -311,11 +349,15 @@ const styles = StyleSheet.create({
   },
 
   // ── Bubble ──
+  bubbleWrap: { position: 'relative' },
   bubble: {
     paddingVertical: 7,
     paddingHorizontal: 11,
     borderRadius: CHAT_RADIUS_BUBBLE,
     marginVertical: 1,
+  },
+  bubbleWithReaction: {
+    paddingBottom: 10,
   },
   bubbleMe: {
     backgroundColor: ACCENT_GOLD,
@@ -333,6 +375,32 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   textMe: { fontWeight: '600' },
+
+  // ── Reaction badge ──
+  reactionBadge: {
+    position: 'absolute',
+    bottom: -6,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 3,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: CHAT_BG,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  reactionBadgeMe: { right: -2 },
+  reactionBadgeOther: { right: -2 },
+  reactionEmoji: {
+    fontSize: 11,
+    lineHeight: 13,
+  },
 
   // ── Footer ──
   footer: {

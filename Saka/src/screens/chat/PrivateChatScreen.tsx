@@ -289,7 +289,7 @@ export default function PrivateChatScreen() {
       setSelectedConversation(null);
       Alert.alert(
         'Success',
-        wasGroup ? 'You have left the group' : 'Conversation deleted'
+        wasGroup ? 'You have left the group.' : 'Conversation deleted'
       );
     } catch {
       Alert.alert('Error', 'Action failed. Please try again.');
