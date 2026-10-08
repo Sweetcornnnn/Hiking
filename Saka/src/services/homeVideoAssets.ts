@@ -5,6 +5,7 @@ export const MOUNTAIN_VIDEOS: Record<string, number> = {
   'd39ff04a-069b-4d90-b448-f66e6ae05772': require('../../assets/HomeScreenVideo/Mount. M Home.mp4'), // Mt. M
   '219d0ca0-dba5-41cd-b6cd-414c5d7e98e6': require('../../assets/HomeScreenVideo/Madjaas Home.mp4'), // Mt. Madjaas
   'f2173971-80bf-40dd-96e9-c6b015be194b': require('../../assets/HomeScreenVideo/Pandan Hills Home.mp4'), // Pandan Hills
+  'e8dbcdf2-2120-4ed4-a677-69f9a2c7dc65': require('../../assets/HomeScreenVideo/Mt. Nangtud.mp4'), // Mt. Nangtud
 };
 
 const videoPosters: Record<string, VideoThumbnail> = {};

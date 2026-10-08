@@ -21,7 +21,29 @@ export interface Mountain {
   viewpoints: Viewpoint[] | null;  // <-- add this
 }
 
-const formatElevation = (meters: number): string => `${meters.toLocaleString()} m`;
+/**
+ * Safely format an elevation value. Supabase can return `null` for
+ * `elevation`, and calling `.toLocaleString()` on `null` throws
+ * "Cannot read property 'toLocaleString' of null".
+ */
+const formatElevation = (meters: number | null | undefined): string => {
+  if (meters == null || !Number.isFinite(Number(meters))) {
+    return '—';
+  }
+  return `${Number(meters).toLocaleString()} m`;
+};
+
+/**
+ * Coerce a possibly-null numeric column into a number (or a safe default).
+ */
+const toNumberOr = (
+  value: number | string | null | undefined,
+  fallback = 0
+): number => {
+  if (value == null) return fallback;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 export const mountainService = {
   setCachedMountains(mountains: Mountain[]) {
@@ -72,21 +94,24 @@ export const mountainService = {
       throw new Error('Failed to load mountains');
     }
 
-    const mountains = (data || []).map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      location: item.location || '',
-      description: item.description || '',
-      difficulty: item.difficulty as Mountain['difficulty'],
-      elevation: item.elevation,
-      latitude: item.latitude,
-      longitude: item.longitude,
-      image_url: item.image_url,
-      video_url: item.video_url,
-      funny_warning: item.funny_warning || null,
-      elevationDisplay: formatElevation(item.elevation),
-      viewpoints: item.viewpoints || null,  // <-- add this
-    }));
+    const mountains = (data || []).map((item: any) => {
+      const elevation = toNumberOr(item.elevation, 0);
+      return {
+        id: item.id,
+        name: item.name,
+        location: item.location || '',
+        description: item.description || '',
+        difficulty: item.difficulty as Mountain['difficulty'],
+        elevation,
+        latitude: toNumberOr(item.latitude, 0),
+        longitude: toNumberOr(item.longitude, 0),
+        image_url: item.image_url,
+        video_url: item.video_url,
+        funny_warning: item.funny_warning || null,
+        elevationDisplay: formatElevation(item.elevation),
+        viewpoints: item.viewpoints || null,  // <-- add this
+      };
+    });
 
     this.setCachedMountains(mountains);
     return mountains;
@@ -112,9 +137,9 @@ export const mountainService = {
       location: data.location || '',
       description: data.description || '',
       difficulty: data.difficulty as Mountain['difficulty'],
-      elevation: data.elevation,
-      latitude: data.latitude,
-      longitude: data.longitude,
+      elevation: toNumberOr(data.elevation, 0),
+      latitude: toNumberOr(data.latitude, 0),
+      longitude: toNumberOr(data.longitude, 0),
       image_url: data.image_url,
       video_url: data.video_url,
       funny_warning: data.funny_warning || null,
