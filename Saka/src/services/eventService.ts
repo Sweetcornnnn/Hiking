@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { HikingEvent } from './organizationService';
+import { isISODate } from '../utils/dateRange';
 
 export interface EventOrganizationSummary {
   id: string;
@@ -37,22 +38,26 @@ export type MyRsvpWithSafetyCheck = MyRsvp & { safety_check_id: string | null };
 
 export function eventPlannedFinish(event: {
   event_date: string;
+  end_date?: string | null;
   start_time: string;
   end_time?: string | null;
   duration_hours?: number | null;
 }): Date | null {
-  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(event.event_date);
+  const finishDate = event.end_date ?? event.event_date;
+  const dateMatch = isISODate(event.event_date);
+  const finishDateMatch = isISODate(finishDate);
   const timeMatch = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(event.start_time);
-  if (!dateMatch || !timeMatch) return null;
+  if (!dateMatch || !finishDateMatch || !timeMatch || finishDate < event.event_date) return null;
 
-  const [, year, month, day] = dateMatch;
+  const [startYear, startMonth, startDay] = event.event_date.split('-');
+  const [finishYear, finishMonth, finishDay] = finishDate.split('-');
   const [, hour, minute, second = '0'] = timeMatch;
   const start = new Date(`${event.event_date}T${hour}:${minute}:${second}`);
   if (
     Number.isNaN(start.getTime()) ||
-    start.getFullYear() !== Number(year) ||
-    start.getMonth() !== Number(month) - 1 ||
-    start.getDate() !== Number(day) ||
+    start.getFullYear() !== Number(startYear) ||
+    start.getMonth() !== Number(startMonth) - 1 ||
+    start.getDate() !== Number(startDay) ||
     start.getHours() !== Number(hour) ||
     start.getMinutes() !== Number(minute) ||
     start.getSeconds() !== Number(second)
@@ -65,16 +70,22 @@ export function eventPlannedFinish(event: {
     const endMatch = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/.exec(event.end_time);
     if (!endMatch) return null;
     const [, endHour, endMinute, endSecond = '0'] = endMatch;
-    finish = new Date(`${event.event_date}T${endHour}:${endMinute}:${endSecond}`);
+    finish = new Date(`${finishDate}T${endHour}:${endMinute}:${endSecond}`);
     if (
       Number.isNaN(finish.getTime()) ||
+      finish.getFullYear() !== Number(finishYear) ||
+      finish.getMonth() !== Number(finishMonth) - 1 ||
+      finish.getDate() !== Number(finishDay) ||
       finish.getHours() !== Number(endHour) ||
       finish.getMinutes() !== Number(endMinute) ||
       finish.getSeconds() !== Number(endSecond)
     ) {
       return null;
     }
-    if (finish <= start) finish.setDate(finish.getDate() + 1);
+    if (finish <= start) {
+      if (event.end_date) return null;
+      finish.setDate(finish.getDate() + 1);
+    }
   } else {
     if (!Number.isFinite(event.duration_hours) || !event.duration_hours || event.duration_hours <= 0) {
       return null;
@@ -96,7 +107,9 @@ export const eventService = {
 
     if (filters?.mountainId) query = query.eq('mountain_id', filters.mountainId);
     if (filters?.difficulty) query = query.eq('difficulty', filters.difficulty);
-    if (filters?.dateFrom)   query = query.gte('event_date', filters.dateFrom);
+    if (filters?.dateFrom) {
+      query = query.or(`event_date.gte.${filters.dateFrom},end_date.gte.${filters.dateFrom}`);
+    }
 
     const { data, error } = await query;
     if (error) {

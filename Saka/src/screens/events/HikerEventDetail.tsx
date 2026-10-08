@@ -241,6 +241,7 @@ export default function HikerEventDetail() {
   useEffect(() => {
     if (!event || !mountain) return;
 
+    // Weather is intentionally anchored to the event's start date and trailhead.
     const days = daysUntil(event.event_date);
 
     // Past event — nothing meaningful to show.
@@ -526,7 +527,13 @@ export default function HikerEventDetail() {
       {/* Info blocks, two per row */}
       <Grid>
         <InfoRow icon="trail-sign-outline" label="Mountain" value={mountain?.name ?? '—'} />
-        <InfoRow icon="calendar-outline" label="Date" value={formatDate(event.event_date)} />
+        <InfoRow
+          icon="calendar-outline"
+          label="Date"
+          value={event.end_date && event.end_date !== event.event_date
+            ? `${formatDate(event.event_date)} – ${formatDate(event.end_date)}`
+            : formatDate(event.event_date)}
+        />
         <InfoRow
           icon="time-outline"
           label="Time"

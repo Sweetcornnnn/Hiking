@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Modal } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   organizationService,
@@ -10,6 +9,14 @@ import {
 import { mountainService, type Mountain } from '../../services/mountainService';
 import { fetchMeetingPoints } from '../../services/viewpointService';
 import { useRequireOrganization } from '../../hooks/useRoleGuard';
+import { isISODate } from '../../utils/dateRange';
+import {
+  DatePickerModal,
+  TimePickerModal,
+  formatDisplayDate,
+  formatDisplayTime,
+  todayISO,
+} from '../../components/PickerModals';
 import {
   OrgLandscapeShell,
   RailButton,
@@ -28,38 +35,9 @@ import {
 
 const DIFFICULTIES = ['Easy', 'Moderate', 'Hard', 'Expert'] as const;
 
-// Local date (toISOString is UTC and is off by a day for early-morning UTC+8 users).
-const todayISO = () => {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
-};
-
-const dateFromISO = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-
-const dateToISO = (value: Date) => {
-  const mm = String(value.getMonth() + 1).padStart(2, '0');
-  const dd = String(value.getDate()).padStart(2, '0');
-  return `${value.getFullYear()}-${mm}-${dd}`;
-};
-
-const timeFromValue = (value: string) => {
-  const [hours, minutes] = value.split(':').map(Number);
-  const result = new Date();
-  result.setHours(hours, minutes, 0, 0);
-  return result;
-};
-
-const timeToValue = (value: Date) =>
-  `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
-
 const OTHER_MEETING_POINT = '__other__';
 
-const isDateLike = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+const isDateLike = (v: string) => isISODate(v);
 const isTimeLike = (v: string) => /^\d{2}:\d{2}$/.test(v);
 
 export default function OrgCreateEvent() {
@@ -78,11 +56,12 @@ export default function OrgCreateEvent() {
   const [mountainPickerOpen, setMountainPickerOpen] = useState(false);
   const [meetingPointPickerOpen, setMeetingPointPickerOpen] = useState(false);
   const [date, setDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [meetingPoint, setMeetingPoint] = useState('');
   const [customMeetingPoint, setCustomMeetingPoint] = useState(false);
-  const [activePicker, setActivePicker] = useState<'date' | 'start' | 'end' | null>(null);
+  const [activePicker, setActivePicker] = useState<'date' | 'endDate' | 'start' | 'end' | null>(null);
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>('Moderate');
   const [capacity, setCapacity] = useState('');
   const [isPublic, setIsPublic] = useState(true);
@@ -152,9 +131,18 @@ export default function OrgCreateEvent() {
     if (!mountainId) return 'Please select a mountain';
     if (!isDateLike(date)) return 'Date must be in YYYY-MM-DD format';
     if (date < todayISO()) return 'Date must be today or later';
+    if (endDate) {
+      if (!isDateLike(endDate)) return 'End date must be in YYYY-MM-DD format';
+      if (endDate < date) return 'End date cannot be before start date';
+    }
     if (!isTimeLike(time)) return 'Choose a start time';
     if (!isTimeLike(endTime)) return 'Choose an end time';
-    if (time === endTime) return 'End time must be different from start time';
+    if (time === endTime && (!endDate || endDate === date)) {
+      return 'End time must be different from start time';
+    }
+    if (endDate === date && endTime <= time) {
+      return 'For an overnight event, choose an end date after the start date';
+    }
     if (!meetingPoint.trim()) return 'Meeting point is required';
     if (capacity && (Number.isNaN(Number(capacity)) || Number(capacity) < 1)) {
       return 'Capacity must be at least 1';
@@ -184,11 +172,12 @@ export default function OrgCreateEvent() {
       title: title.trim(),
       description: description.trim() || undefined,
       event_date: date,
+      end_date: endDate || null,
       start_time: time,
       end_time: endTime,
       meeting_point: meetingPoint.trim(),
       difficulty,
-      duration_hours: durationFromTimes(time, endTime),
+      duration_hours: durationFromRange(date, time, endDate || date, endTime),
       capacity: capacity ? Number(capacity) : null,
       is_public: isPublic,
       allow_walkins: allowWalkins,
@@ -287,21 +276,30 @@ export default function OrgCreateEvent() {
           />
         </Field>
 
-        {/* Date and times use native pickers instead of manual text entry. */}
+        {/* Date and times use the shared styled pickers instead of manual text entry. */}
         <FormRow>
           <Field label="DATE">
             <SelectField
               icon="calendar-outline"
-              text={date ? dateFromISO(date).toLocaleDateString() : 'Event Date'}
+              text={date ? formatDisplayDate(date) : 'Event Date'}
               selected={!!date}
               disabled={submitting}
               onPress={() => setActivePicker('date')}
             />
           </Field>
+          <Field label="END DATE">
+            <SelectField
+              icon="calendar-outline"
+              text={endDate ? formatDisplayDate(endDate) : 'Same day'}
+              selected={!!endDate}
+              disabled={submitting}
+              onPress={() => setActivePicker('endDate')}
+            />
+          </Field>
           <Field label="START TIME">
             <SelectField
               icon="time-outline"
-              text={time ? timeFromValue(time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Starting time'}
+              text={time ? formatDisplayTime(time) : 'Starting time'}
               selected={!!time}
               disabled={submitting}
               onPress={() => setActivePicker('start')}
@@ -310,7 +308,7 @@ export default function OrgCreateEvent() {
           <Field label="END TIME">
             <SelectField
               icon="time-outline"
-              text={endTime ? timeFromValue(endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Ending time'}
+              text={endTime ? formatDisplayTime(endTime) : 'Ending time'}
               selected={!!endTime}
               disabled={submitting}
               onPress={() => setActivePicker('end')}
@@ -439,70 +437,62 @@ export default function OrgCreateEvent() {
         onClose={() => setMeetingPointPickerOpen(false)}
       />
 
-      {activePicker && (
-        <>
-          {Platform.OS === 'ios' ? (
-            <Modal transparent animationType="fade" onRequestClose={() => setActivePicker(null)}>
-              <View style={styles.pickerOverlay}>
-                <View style={styles.pickerCard}>
-                  <DateTimePicker
-                    value={activePicker === 'date'
-                      ? (date ? dateFromISO(date) : new Date())
-                      : (activePicker === 'start' ? time : endTime)
-                        ? timeFromValue(activePicker === 'start' ? time : endTime)
-                        : new Date()}
-                    mode={activePicker === 'date' ? 'date' : 'time'}
-                    display="spinner"
-                    minimumDate={activePicker === 'date' ? new Date() : undefined}
-                    onValueChange={(_, selected) => handlePickerValue(selected)}
-                    onDismiss={handlePickerDismiss}
-                    onNeutralButtonPress={handlePickerDismiss}
-                  />
-                  <TouchableOpacity style={styles.pickerDone} onPress={() => setActivePicker(null)}>
-                    <Text style={styles.pickerDoneText}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Modal>
-          ) : (
-            <DateTimePicker
-              value={activePicker === 'date'
-                ? (date ? dateFromISO(date) : new Date())
-                : (activePicker === 'start' ? time : endTime)
-                  ? timeFromValue(activePicker === 'start' ? time : endTime)
-                  : new Date()}
-              mode={activePicker === 'date' ? 'date' : 'time'}
-              display="default"
-              is24Hour={false}
-              minimumDate={activePicker === 'date' ? new Date() : undefined}
-              onValueChange={(_, selected) => handlePickerValue(selected)}
-              onDismiss={handlePickerDismiss}
-              onNeutralButtonPress={handlePickerDismiss}
-            />
-          )}
-        </>
-      )}
+      <DatePickerModal
+        visible={activePicker === 'date'}
+        title="Event date"
+        value={date}
+        minDate={todayISO()}
+        onSelect={(iso) => {
+          setDate(iso);
+          if (endDate && endDate < iso) setEndDate('');
+        }}
+        onClose={() => setActivePicker(null)}
+      />
+      <DatePickerModal
+        visible={activePicker === 'endDate'}
+        title="End date"
+        value={endDate}
+        minDate={date || todayISO()}
+        rangeStart={date || undefined}
+        clearLabel="Same day"
+        onSelect={setEndDate}
+        onClear={() => setEndDate('')}
+        onClose={() => setActivePicker(null)}
+      />
+      <TimePickerModal
+        visible={activePicker === 'start'}
+        title="Start time"
+        value={time}
+        onSelect={setTime}
+        onClose={() => setActivePicker(null)}
+      />
+      <TimePickerModal
+        visible={activePicker === 'end'}
+        title="End time"
+        value={endTime}
+        onSelect={setEndTime}
+        onClose={() => setActivePicker(null)}
+      />
     </>
   );
-
-  function handlePickerValue(selected: Date) {
-    if (!activePicker) return;
-    if (activePicker === 'date') setDate(dateToISO(selected));
-    if (activePicker === 'start') setTime(timeToValue(selected));
-    if (activePicker === 'end') setEndTime(timeToValue(selected));
-    if (Platform.OS !== 'ios') setActivePicker(null);
-  }
-
-  function handlePickerDismiss() {
-    setActivePicker(null);
-  }
 }
 
 
-function durationFromTimes(start: string, end: string): number {
-  const [startHour, startMinute] = start.split(':').map(Number);
-  const [endHour, endMinute] = end.split(':').map(Number);
-  let minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+function durationFromRange(
+  startDate: string,
+  startTime: string,
+  endDate: string,
+  endTime: string,
+): number {
+  const startDay = Date.parse(`${startDate}T00:00:00.000Z`);
+  const endDay = Date.parse(`${endDate}T00:00:00.000Z`);
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const [endHour, endMinute] = endTime.split(':').map(Number);
+  let minutes =
+    (endDay - startDay) / 60_000 +
+    endHour * 60 +
+    endMinute -
+    (startHour * 60 + startMinute);
   if (minutes <= 0) minutes += 24 * 60;
   return minutes / 60;
 }
@@ -542,21 +532,6 @@ function ToggleRow({
 
 const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  pickerOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: SP.xl,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-  },
-  pickerCard: {
-    backgroundColor: PC.bgPanel,
-    borderColor: PC.border,
-    borderWidth: 1,
-    borderRadius: PC.radius,
-    padding: SP.md,
-  },
-  pickerDone: { alignSelf: 'flex-end', paddingHorizontal: SP.lg, paddingVertical: SP.sm },
-  pickerDoneText: { color: PC.gold, fontSize: FS.base, fontWeight: '700' },
 
   toggleRow: {
     minHeight: 54,

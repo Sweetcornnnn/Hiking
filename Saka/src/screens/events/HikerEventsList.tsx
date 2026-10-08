@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { eventService, type PublicEvent, type EventRsvpCounts } from '../../services/eventService';
+import { effectiveEnd } from '../../utils/dateRange';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import { useRequireAuth } from '../../hooks/useRoleGuard';
 import {
@@ -131,10 +132,16 @@ export default function HikerEventsList() {
 
     if (dateRange === 'week') {
       const cutoff = plusDaysISO(7);
-      result = result.filter((e) => e.event_date <= cutoff);
+      const today = todayISO();
+      result = result.filter(
+        (e) => e.event_date <= cutoff && effectiveEnd(e.event_date, e.end_date) >= today
+      );
     } else if (dateRange === 'month') {
       const cutoff = plusDaysISO(30);
-      result = result.filter((e) => e.event_date <= cutoff);
+      const today = todayISO();
+      result = result.filter(
+        (e) => e.event_date <= cutoff && effectiveEnd(e.event_date, e.end_date) >= today
+      );
     }
 
     if (searchText.trim()) {
@@ -299,7 +306,9 @@ export default function HikerEventsList() {
                   <MetaRow icon="trail-sign-outline" text={mountainNameFor(event.mountain_id)} />
                   <MetaRow
                     icon="calendar-outline"
-                    text={`${formatDate(event.event_date)} · ${formatTime(event.start_time)}`}
+                    text={event.end_date && event.end_date !== event.event_date
+                      ? `${formatDate(event.event_date)} – ${formatDate(event.end_date)} · ${formatTime(event.start_time)}`
+                      : `${formatDate(event.event_date)} · ${formatTime(event.start_time)}`}
                   />
 
                   <View style={styles.footerRow}>

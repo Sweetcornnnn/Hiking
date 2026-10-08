@@ -165,7 +165,14 @@ export default function OrgEventsList() {
                 </View>
 
                 <MetaRow icon="trail-sign-outline" text={mountainName(event.mountain_id)} />
-                <MetaRow icon="calendar-outline" text={`${event.event_date} · ${event.start_time}`} />
+                <MetaRow
+                  icon="calendar-outline"
+                  text={
+                    event.end_date && event.end_date !== event.event_date
+                      ? `${event.event_date} – ${event.end_date} · ${event.start_time}`
+                      : `${event.event_date} · ${event.start_time}`
+                  }
+                />
 
                 <View style={styles.footerRow}>
                   <MetaRow icon="people-outline" text={`${capacityLabel} attending`} />
