@@ -19,7 +19,6 @@ import {
   Modal,
   ScrollView,
   Animated,
-  Easing,
   NativeScrollEvent,
   NativeSyntheticEvent,
   StyleSheet,
@@ -39,18 +38,6 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const LEFT_COLUMN_WIDTH = SCREEN_WIDTH * 0.35;
 const RIGHT_COLUMN_WIDTH = SCREEN_WIDTH - LEFT_COLUMN_WIDTH;
-
-// ── Sakagram focus mode ───────────────────────────────────────────────────
-// When the Sakagram section scrolls into view, the media rail slides out to the
-// left, the info panel widens to the full screen, and the feed grows into a
-// centered, larger column so it's the only thing to focus on.
-const FOCUS_MS = 700;                      // slide / widen duration (slow + gentle)
-const FOCUS_EASING = Easing.inOut(Easing.cubic); // soft start, soft landing
-const FOCUS_COOLDOWN_MS = FOCUS_MS + 500;   // ignore focus toggles while settling
-const FOCUS_ENTER_VISIBLE = .01;           // fraction of viewport showing Sakagram to enter
-const FOCUS_EXIT_VISIBLE = 0;             // scrolling up past this leaves focus mode
-const SAKAGRAM_FOCUSED_WIDTH = Math.min(SCREEN_WIDTH - 32, 560); // Instagram-like centered feed
-const SAKAGRAM_CONTENT_FADE_MS = 600;
 
 // ── ProfileCard design tokens ─────────────────────────────────────────────
 const PC = {
@@ -113,90 +100,6 @@ export default function ViewpointScreen() {
   const [activeImageReady, setActiveImageReady] = React.useState(false);
   const [imageModalVisible, setImageModalVisible] = React.useState(false);
   const [modalMedia, setModalMedia] = React.useState<MediaItem | null>(null);
-
-  // Sakagram focus mode (0 = normal split layout, 1 = Sakagram fills the screen)
-  const [sakagramFocused, setSakagramFocused] = React.useState(false);
-  // Type size inside Sakagram swaps mid-transition, hidden by a brief fade dip.
-  const [sakagramSized, setSakagramSized] = React.useState(false);
-  const contentFade = React.useRef(new Animated.Value(1)).current;
-  const focusAnim = React.useRef(new Animated.Value(0)).current;
-  const sakagramY = React.useRef(0);
-  const lastScrollY = React.useRef(0);
-  const focusedRef = React.useRef(false);
-  const lastToggleAt = React.useRef(0);
-
-  React.useEffect(() => {
-    return () => {
-      focusAnim.stopAnimation();
-      contentFade.stopAnimation();
-    };
-  }, [focusAnim, contentFade]);
-
-  const setFocus = React.useCallback((next: boolean) => {
-    if (focusedRef.current === next) {
-      return;
-    }
-    focusedRef.current = next;
-    lastToggleAt.current = Date.now();
-    setSakagramFocused(next);
-
-    // Hide Sakagram before changing its layout, then reveal it after the resize.
-    Animated.timing(contentFade, {
-      toValue: 0,
-      duration: SAKAGRAM_CONTENT_FADE_MS,
-      easing: Easing.inOut(Easing.quad),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished) {
-        return;
-      }
-      setSakagramSized(next);
-
-      Animated.timing(focusAnim, {
-        toValue: next ? 1 : 0,
-        duration: FOCUS_MS,
-        easing: FOCUS_EASING,
-        useNativeDriver: false,
-      }).start(({ finished: layoutFinished }) => {
-        if (!layoutFinished) {
-          return;
-        }
-        Animated.timing(contentFade, {
-          toValue: 1,
-          duration: SAKAGRAM_CONTENT_FADE_MS,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }).start();
-      });
-    });
-  }, [focusAnim, contentFade]);
-
-  const handleRightScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = e.nativeEvent.contentOffset.y;
-    const viewportH = e.nativeEvent.layoutMeasurement.height;
-    const goingDown = y > lastScrollY.current;
-    lastScrollY.current = y;
-
-    if (sakagramY.current <= 0) {
-      return;
-    }
-    // Layout changes while animating shift the offsets; wait until it settles.
-    if (Date.now() - lastToggleAt.current < FOCUS_COOLDOWN_MS) {
-      return;
-    }
-
-    // How much of the viewport Sakagram currently occupies (0..1+).
-    const visible = (y + viewportH - sakagramY.current) / viewportH;
-    if (!focusedRef.current && goingDown && visible > FOCUS_ENTER_VISIBLE) {
-      setFocus(true);
-    } else if (focusedRef.current && !goingDown && visible < FOCUS_EXIT_VISIBLE) {
-      setFocus(false);
-    }
-  };
-
-  const exitFocus = () => {
-    setFocus(false);
-  };
 
   React.useEffect(() => {
     let active = true;
@@ -294,24 +197,7 @@ export default function ViewpointScreen() {
 
       <View style={styles.bodyRow}>
         {/* ── LEFT: card-stack media carousel (~35%) ──────────────────── */}
-        <Animated.View
-          pointerEvents={sakagramFocused ? 'none' : 'auto'}
-          style={[
-            styles.leftColumn,
-            {
-              opacity: focusAnim.interpolate({
-                inputRange: [0, 0.7, 1],
-                outputRange: [1, 0.55, 0],
-              }),
-              transform: [{
-                translateX: focusAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -LEFT_COLUMN_WIDTH],
-                }),
-              }],
-            },
-          ]}
-        >
+        <View style={styles.leftColumn}>
           <VerticalMediaCarousel
             media={mediaList}
             height={SCREEN_HEIGHT}
@@ -323,231 +209,173 @@ export default function ViewpointScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.mapBackBtn}>
             <Ionicons name="map-outline" size={17} color={PC.textSecondary} />
           </TouchableOpacity>
-        </Animated.View>
+        </View>
 
         {/* ── RIGHT: compact info panel (~65%), own scroll ────────────── */}
-        <Animated.View
-          style={[
-            styles.rightWrap,
-            {
-              marginLeft: focusAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [LEFT_COLUMN_WIDTH, 0],
-              }),
-            },
-          ]}
-        >
-        <ScrollView
-          style={styles.rightColumn}
-          contentContainerStyle={styles.rightColumnContent}
-          showsVerticalScrollIndicator={false}
-          onScroll={handleRightScroll}
-          scrollEventThrottle={16}
-        >
-          {/* Header card — title, elevation, stats, tags all in one place */}
-          <View style={styles.headerCard}>
-            <View style={styles.headerTopRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.subtitleText} numberOfLines={1}>{data.subtitle}</Text>
-                <Text style={styles.titleText} numberOfLines={2}>{data.name}</Text>
-              </View>
-              <View style={styles.elevBadge}>
-                <Ionicons name="trending-up-outline" size={10} color={PC.bgCard} />
-                <Text style={styles.elevText}>{data.elevation}</Text>
-              </View>
-            </View>
-
-            <View style={styles.statsGridInline}>
-              <StatChip icon="walk-outline" label="Distance" value={data.distanceFromStart} />
-              <StatChip icon="time-outline" label="Est. hike" value={data.estimatedHike} />
-              <StatChip icon="trending-up-outline" label="Elevation" value={data.elevation ?? '—'} />
-              <StatChip icon="sunny-outline" label="Best time" value={data.bestTime.split(' ')[0]} />
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.tagsScrollInline}
-              contentContainerStyle={styles.tagsContent}
-            >
-              {data.tags.map((tag: string) => (
-                <View key={tag} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
+        <View style={styles.rightWrap}>
+          <ScrollView
+            style={styles.rightColumn}
+            contentContainerStyle={styles.rightColumnContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Header card — title, elevation, stats, tags all in one place */}
+            <View style={styles.headerCard}>
+              <View style={styles.headerTopRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.subtitleText} numberOfLines={1}>{data.subtitle}</Text>
+                  <Text style={styles.titleText} numberOfLines={2}>{data.name}</Text>
                 </View>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Overview card — about + best time + difficulty/status/crowd */}
-          <View style={styles.panel}>
-            <View style={styles.panelHeader}>
-              <View style={styles.panelAccent} />
-              <Text style={styles.panelTitle}>About this Stop</Text>
-            </View>
-            <Text style={styles.description}>{data.description}</Text>
-
-            <View style={styles.innerDivider} />
-
-            <View style={styles.bestTimeInline}>
-              <Ionicons name="alarm-outline" size={13} color={PC.gold} />
-              <Text style={styles.bestTimeInlineText}>{data.bestTime}</Text>
-            </View>
-
-            <View style={styles.innerDivider} />
-
-            <View style={styles.difficultyRowInline}>
-              <View style={styles.difficultyChip}>
-                <Ionicons name="flag-outline" size={12} color={PC.gold} />
-                <Text style={styles.difficultyLabel}>Difficulty</Text>
-                <Text style={styles.difficultyValue}>{data.difficulty ?? 'Moderate'}</Text>
-              </View>
-              <View style={styles.statDividerV} />
-              <View style={styles.difficultyChip}>
-                <Ionicons name="shield-checkmark-outline" size={12} color={PC.green} />
-                <Text style={styles.difficultyLabel}>Status</Text>
-                <Text style={[styles.difficultyValue, { color: PC.green }]}>{data.trailStatus ?? 'Open'}</Text>
-              </View>
-              <View style={styles.statDividerV} />
-              <View style={styles.difficultyChip}>
-                <Ionicons name="people-outline" size={12} color={PC.textMuted} />
-                <Text style={styles.difficultyLabel}>Crowd</Text>
-                <Text style={styles.difficultyValue}>{data.crowdLevel ?? 'Low'}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Trail info card — features + trail notes */}
-          <View style={styles.panel}>
-            <View style={styles.panelHeader}>
-              <View style={styles.panelAccent} />
-              <Text style={styles.panelTitle}>What to Expect</Text>
-            </View>
-            <View style={styles.featuresList}>
-              {data.features.map((f: any, i: number) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.featureRow,
-                    i === data.features.length - 1 && !data.trailNotes?.length && styles.featureRowLast,
-                  ]}
-                >
-                  <View style={[
-                    styles.featureIcon,
-                    { backgroundColor: f.safe ? 'rgba(111,175,138,0.12)' : PC.bgDangerSubtle },
-                  ]}>
-                    <Ionicons
-                      name={f.icon as any}
-                      size={12}
-                      color={f.safe ? PC.green : PC.danger}
-                    />
-                  </View>
-                  <Text style={[styles.featureText, !f.safe && { color: PC.danger }]}>
-                    {f.text}
-                  </Text>
+                <View style={styles.elevBadge}>
+                  <Ionicons name="trending-up-outline" size={10} color={PC.bgCard} />
+                  <Text style={styles.elevText}>{data.elevation}</Text>
                 </View>
-              ))}
-            </View>
+              </View>
 
-            {data.trailNotes && data.trailNotes.length > 0 && (
-              <>
-                <View style={styles.innerDivider} />
-                <View style={styles.panelHeader}>
-                  <View style={styles.panelAccent} />
-                  <Text style={styles.panelTitle}>Trail Notes</Text>
-                </View>
-                {data.trailNotes.map((note: string, i: number) => (
-                  <View key={i} style={styles.noteRow}>
-                    <Ionicons name="chevron-forward-outline" size={11} color={PC.gold} style={{ marginTop: 2 }} />
-                    <Text style={styles.noteText}>{note}</Text>
+              <View style={styles.statsGridInline}>
+                <StatChip icon="walk-outline" label="Distance" value={data.distanceFromStart} />
+                <StatChip icon="time-outline" label="Est. hike" value={data.estimatedHike} />
+                <StatChip icon="trending-up-outline" label="Elevation" value={data.elevation ?? '—'} />
+                <StatChip icon="sunny-outline" label="Best time" value={data.bestTime.split(' ')[0]} />
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.tagsScrollInline}
+                contentContainerStyle={styles.tagsContent}
+              >
+                {data.tags.map((tag: string) => (
+                  <View key={tag} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
                   </View>
                 ))}
-              </>
-            )}
-          </View>
+              </ScrollView>
+            </View>
 
-          {/* Actions — compact side-by-side row */}
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => {
-                if (!mountainId) {
-                  return;
-                }
-                router.push({
-                  pathname: '/Calendar',
-                  params: { mountainId },
-                });
-              }}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="calendar-outline" size={14} color={PC.bgCard} />
-              <Text style={styles.primaryBtnText}>Schedule Hike</Text>
-            </TouchableOpacity>
+            {/* Overview card — about + best time + difficulty/status/crowd */}
+            <View style={styles.panel}>
+              <View style={styles.panelHeader}>
+                <View style={styles.panelAccent} />
+                <Text style={styles.panelTitle}>About this Stop</Text>
+              </View>
+              <Text style={styles.description}>{data.description}</Text>
 
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => router.back()}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="map-outline" size={14} color={PC.textSecondary} />
-              <Text style={styles.secondaryBtnText}>Back to Map</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.innerDivider} />
 
-          {/* Sakagram grows into a larger, centered column in focus mode */}
-          <Animated.View
-            onLayout={(e) => { sakagramY.current = e.nativeEvent.layout.y; }}
-            style={{
-              alignSelf: 'center',
-              width: focusAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [RIGHT_COLUMN_WIDTH, SAKAGRAM_FOCUSED_WIDTH],
-              }),
-            }}
-          >
-            <Animated.View style={{ opacity: contentFade }}>
-              <SakagramSection
-                viewpointId={data.id}
-                viewpointName={data.name}
-                mountainId={mountainId}
-                focused={sakagramSized}
-              />
-            </Animated.View>
-          </Animated.View>
-        </ScrollView>
+              <View style={styles.bestTimeInline}>
+                <Ionicons name="alarm-outline" size={13} color={PC.gold} />
+                <Text style={styles.bestTimeInlineText}>{data.bestTime}</Text>
+              </View>
 
-        {/* Floating controls: the media rail (and its map button) are gone in focus mode */}
-        <Animated.View
-          pointerEvents={sakagramFocused ? 'box-none' : 'none'}
-          style={[
-            styles.focusBar,
-            {
-              opacity: focusAnim,
-              transform: [{
-                translateY: focusAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }),
-              }],
-            },
-          ]}
-        >
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.focusBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Back to map"
-          >
-            <Ionicons name="map-outline" size={16} color={PC.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={exitFocus}
-            style={styles.focusBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Back to viewpoint details"
-          >
-            <Ionicons name="chevron-up" size={15} color={PC.textSecondary} />
-            <Text style={styles.focusBtnText}>Details</Text>
-          </TouchableOpacity>
-        </Animated.View>
-        </Animated.View>
+              <View style={styles.innerDivider} />
+
+              <View style={styles.difficultyRowInline}>
+                <View style={styles.difficultyChip}>
+                  <Ionicons name="flag-outline" size={12} color={PC.gold} />
+                  <Text style={styles.difficultyLabel}>Difficulty</Text>
+                  <Text style={styles.difficultyValue}>{data.difficulty ?? 'Moderate'}</Text>
+                </View>
+                <View style={styles.statDividerV} />
+                <View style={styles.difficultyChip}>
+                  <Ionicons name="shield-checkmark-outline" size={12} color={PC.green} />
+                  <Text style={styles.difficultyLabel}>Status</Text>
+                  <Text style={[styles.difficultyValue, { color: PC.green }]}>{data.trailStatus ?? 'Open'}</Text>
+                </View>
+                <View style={styles.statDividerV} />
+                <View style={styles.difficultyChip}>
+                  <Ionicons name="people-outline" size={12} color={PC.textMuted} />
+                  <Text style={styles.difficultyLabel}>Crowd</Text>
+                  <Text style={styles.difficultyValue}>{data.crowdLevel ?? 'Low'}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Trail info card — features + trail notes */}
+            <View style={styles.panel}>
+              <View style={styles.panelHeader}>
+                <View style={styles.panelAccent} />
+                <Text style={styles.panelTitle}>What to Expect</Text>
+              </View>
+              <View style={styles.featuresList}>
+                {data.features.map((f: any, i: number) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.featureRow,
+                      i === data.features.length - 1 && !data.trailNotes?.length && styles.featureRowLast,
+                    ]}
+                  >
+                    <View style={[
+                      styles.featureIcon,
+                      { backgroundColor: f.safe ? 'rgba(111,175,138,0.12)' : PC.bgDangerSubtle },
+                    ]}>
+                      <Ionicons
+                        name={f.icon as any}
+                        size={12}
+                        color={f.safe ? PC.green : PC.danger}
+                      />
+                    </View>
+                    <Text style={[styles.featureText, !f.safe && { color: PC.danger }]}>
+                      {f.text}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {data.trailNotes && data.trailNotes.length > 0 && (
+                <>
+                  <View style={styles.innerDivider} />
+                  <View style={styles.panelHeader}>
+                    <View style={styles.panelAccent} />
+                    <Text style={styles.panelTitle}>Trail Notes</Text>
+                  </View>
+                  {data.trailNotes.map((note: string, i: number) => (
+                    <View key={i} style={styles.noteRow}>
+                      <Ionicons name="chevron-forward-outline" size={11} color={PC.gold} style={{ marginTop: 2 }} />
+                      <Text style={styles.noteText}>{note}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+
+            {/* Actions — compact side-by-side row */}
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => {
+                  if (!mountainId) {
+                    return;
+                  }
+                  router.push({
+                    pathname: '/Calendar',
+                    params: { mountainId },
+                  });
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="calendar-outline" size={14} color={PC.bgCard} />
+                <Text style={styles.primaryBtnText}>Schedule Hike</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => router.back()}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="map-outline" size={14} color={PC.textSecondary} />
+                <Text style={styles.secondaryBtnText}>Back to Map</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sakagram — same column width as the info panel, no focus mode */}
+            <SakagramSection
+              viewpointId={data.id}
+              viewpointName={data.name}
+              mountainId={mountainId}
+            />
+          </ScrollView>
+        </View>
       </View>
 
       {/* ── Full-screen media modal (images + videos) ───────────────────── */}
@@ -609,7 +437,6 @@ function getModalDimensions(item: MediaItem | null): { width: number; height: nu
     return { width: SCREEN_WIDTH * 0.92, height: SCREEN_HEIGHT * 0.72 };
   }
 
-  // Local bundled image: we know its real dimensions synchronously.
   if (item.type === 'image' && item.key && IMAGE_MAP[item.key]) {
     const src = Image.resolveAssetSource(IMAGE_MAP[item.key]);
     const ratio = src.width / src.height;
@@ -618,22 +445,15 @@ function getModalDimensions(item: MediaItem | null): { width: number; height: nu
     return { width: w, height: h };
   }
 
-  // Remote image or video: dimensions aren't known up front, assume 16:9.
   const w = SCREEN_WIDTH * 0.92;
   const h = Math.min(SCREEN_HEIGHT * 0.7, w * (9 / 16));
   return { width: w, height: h };
 }
 
 // ── Card-stack vertical carousel (left column) ──────────────────────────────
-// Cards render one after another; the focused card is full scale/opacity while
-// the next/previous cards peek in at the edges, scaled down and faded, so the
-// whole rail reads as a stack you flip through rather than a flat slideshow.
-const CARD_HEIGHT_RATIO = 0.5; // each card is ~half the column height
-const CARD_GAP = -10;            // vertical gap between cards
-const CARD_INSET = 10;          // horizontal margin so cards don't touch the column edges
-
-// Keep one copy on each side of the starting copy. When scrolling reaches an
-// outer copy, recenter on the matching item in the middle copy without animation.
+const CARD_HEIGHT_RATIO = 0.5;
+const CARD_GAP = -10;
+const CARD_INSET = 10;
 const LOOP_REPEATS = 3;
 
 function VerticalMediaCarousel({
@@ -655,8 +475,6 @@ function VerticalMediaCarousel({
 
   const CARD_HEIGHT = height * CARD_HEIGHT_RATIO;
   const ITEM_HEIGHT = CARD_HEIGHT + CARD_GAP;
-  // Padding top/bottom equal to half the leftover space centers the resting
-  // card vertically in the column instead of snapping it to the top.
   const VERTICAL_PADDING = (height - CARD_HEIGHT) / 2;
 
   const loopedMedia = React.useMemo(() => {
@@ -855,7 +673,7 @@ function StatChip({ icon, label, value }: StatChipProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: PC.bgCard,   // ProfileCard: '#0E1520'
+    backgroundColor: PC.bgCard,
   },
 
   // ── Error ──────────────────────────────────────────────────────────────
@@ -912,7 +730,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
 
-  // LEFT — card-stack carousel column (~35%)
+  // LEFT — card-stack carousel column (~35%), fixed on screen
   leftColumn: {
     position: 'absolute',
     top: 0,
@@ -954,7 +772,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Card stack — one item
   cardShadowWrap: {
     flex: 1,
     borderRadius: 20,
@@ -1000,48 +817,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // RIGHT — compact info column (~65%)
+  // RIGHT — compact info column (~65%), its own scroll
   rightWrap: {
     flex: 1,
+    marginLeft: LEFT_COLUMN_WIDTH,
     zIndex: 1,
   },
   rightColumn: {
     flex: 1,
-  },
-  focusBar: {
-    position: 'absolute',
-    top: 22,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 5,
-  },
-  focusBtn: {
-    height: 32,
-    minWidth: 32,
-    paddingHorizontal: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    borderRadius: PC.radiusBtn,
-    backgroundColor: 'rgba(14,21,32,0.85)',
-    borderWidth: 1,
-    borderColor: PC.border,
-  },
-  focusBtnText: {
-    color: PC.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
   },
   rightColumnContent: {
     paddingTop: 20,
     paddingBottom: 20,
   },
 
-  // Header card — title, elevation badge, stats, tags combined
+  // Header card
   headerCard: {
     marginHorizontal: 12,
     marginTop: 0,
@@ -1086,7 +876,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ── Stats — compact 2x2 grid, nested inside headerCard ──────────────────
+  // Stats
   statsGridInline: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1115,7 +905,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ── Tags ───────────────────────────────────────────────────────────────
+  // Tags
   tagsScrollInline: { marginTop: 8 },
   tagsContent: { gap: 5, paddingRight: 4 },
   tag: {
@@ -1132,7 +922,7 @@ const styles = StyleSheet.create({
     color: PC.gold,
   },
 
-  // ── Panel — ProfileCard leftPanel style ────────────────────────────────
+  // Panel
   panel: {
     marginHorizontal: 12,
     marginTop: 10,
@@ -1171,7 +961,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // ── Best time — inline row inside overview panel ─────────────────────────
+  // Best time
   bestTimeInline: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1184,7 +974,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // ── Features ─────────────────────────────────────────────────────────────
+  // Features
   featuresList: { gap: 0 },
   featureRow: {
     flexDirection: 'row',
@@ -1213,7 +1003,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // ── Actions — compact side-by-side row ───────────────────────────────────
+  // Actions
   actionsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -1253,7 +1043,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ── Trail Notes ────────────────────────────────────────────────────────
+  // Trail notes
   noteRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1267,7 +1057,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // ── Difficulty / Status / Crowd row — inline inside overview panel ──────
+  // Difficulty row
   difficultyRowInline: {
     flexDirection: 'row',
     gap: 6,
@@ -1296,7 +1086,7 @@ const styles = StyleSheet.create({
     backgroundColor: PC.borderSubtle,
   },
 
-  // ── Media modal ──────────────────────────────────────────────────────────
+  // Media modal
   imageModalBackdrop: {
     flex: 1,
     backgroundColor: 'transparent',
