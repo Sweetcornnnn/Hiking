@@ -36,6 +36,10 @@ export default function MountainTopScreen() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number }[]>([]);
   const [viewpointList, setViewpointList] = useState<TableViewpoint[]>([]);
+  // NEW: viewpoints have their own loading lifecycle. The map is the feature,
+  // and its dots/trail come from this query, so `ready` must wait for it.
+  const [viewpointsLoading, setViewpointsLoading] = useState(true);
+  const [viewpointsError, setViewpointsError] = useState<string | null>(null);
   const router = useRouter();
 
   // ─── Load mountain data ────────────────────────────────────────────────
@@ -65,17 +69,38 @@ export default function MountainTopScreen() {
 
   // ─── Load viewpoints from Supabase ─────────────────────────────────────
   useEffect(() => {
-    if (!mountainId) return;
+    if (!mountainId) {
+      setViewpointsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setViewpointsLoading(true);
+    setViewpointsError(null);
+
     (async () => {
-      const { data, error } = await supabase
+      const { data, error: qError } = await supabase
         .from('viewpoints')
         .select('id, name, sort_order, map_x, map_y')
         .eq('mountain_id', mountainId)
         .not('sort_order', 'is', null)
         .order('sort_order');
-      if (error) console.error('[MountainTop] viewpoints fetch failed:', error);
-      else setViewpointList((data ?? []) as TableViewpoint[]);
+
+      if (!active) return;
+
+      if (qError) {
+        console.error('[MountainTop] viewpoints fetch failed:', qError);
+        setViewpointsError(qError.message);
+        setViewpointList([]);
+      } else {
+        setViewpointList((data ?? []) as TableViewpoint[]);
+      }
+      setViewpointsLoading(false);
     })();
+
+    return () => {
+      active = false;
+    };
   }, [mountainId]);
 
   // ─── Map points (draft in placement mode, saved coords otherwise) ──────
@@ -140,7 +165,16 @@ export default function MountainTopScreen() {
     );
   }
 
-  const loadingReady = !loading && mountain !== null && (imageLoaded || imageError);
+  // NEW: viewpoints must be done loading (success OR error) before we reveal
+  // the map, because the dots/trail are the feature. An error still flips
+  // this to `false` so the user is not trapped; the "No trail data yet"
+  // message surfaces it once the map is visible.
+  const loadingReady =
+    !loading &&
+    mountain !== null &&
+    (imageLoaded || imageError) &&
+    !viewpointsLoading;
+
   const total = viewpointList.length;
   const nextViewpoint = viewpointList[draft.length];
   const allPlaced = total > 0 && draft.length >= total;
@@ -161,7 +195,9 @@ export default function MountainTopScreen() {
               );
               setImageError(true);
             }}
-            onImagePress={handleImagePress}
+            // Only pass a press handler when placement is on — otherwise it
+            // can steal taps from the viewpoint dots.
+            onImagePress={PLACEMENT_MODE ? handleImagePress : undefined}
             onPointPress={p => {
               if (PLACEMENT_MODE || !mountainId) return;
               router.push({
@@ -222,7 +258,9 @@ export default function MountainTopScreen() {
           {!PLACEMENT_MODE && points.length < 2 && (
             <View style={styles.fallbackMessage} pointerEvents="none">
               <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.fallbackText}>No trail data yet</Text>
+              <Text style={styles.fallbackText}>
+                {viewpointsError ? 'Trail data unavailable' : 'No trail data yet'}
+              </Text>
             </View>
           )}
         </>
