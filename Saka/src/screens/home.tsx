@@ -14,7 +14,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
-import { useVideoPlayer, VideoView, type VideoPlayer, type VideoThumbnail } from 'expo-video';
+import { useVideoPlayer, VideoView, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
@@ -32,32 +32,69 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-/** Renders Home's single native player over the slide's frozen poster frame. */
-function VideoViewPlayer({ player }: { player: VideoPlayer }) {
+function MountainVideo({
+  source,
+  poster,
+  isActive,
+}: {
+  source: number;
+  poster?: VideoThumbnail;
+  isActive: boolean;
+}) {
+  const player = useVideoPlayer(source, (videoPlayer) => {
+    videoPlayer.loop = true;
+    videoPlayer.muted = true;
+  });
+  const [firstFrameRendered, setFirstFrameRendered] = useState(false);
+
+  useEffect(() => {
+    if (isActive) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isActive, player]);
+
+  useEffect(() => {
+    const subscription = player.addListener('statusChange', ({ status, error }) => {
+      if (status === 'error') {
+        console.error('[Home] Mountain video failed to load:', error?.message ?? 'Unknown player error');
+      } else if (status === 'readyToPlay' && isActive && !player.playing) {
+        player.play();
+      }
+    });
+    return () => subscription.remove();
+  }, [isActive, player]);
+
   return (
-    <View style={styles.videoOverlay} pointerEvents="none">
-      <VideoView
-        style={StyleSheet.absoluteFill}
-        player={player}
-        nativeControls={false}
-        contentFit="cover"
-        surfaceType="textureView"
-      />
-    </View>
+    <>
+      <View style={styles.videoOverlay} pointerEvents="none">
+        <VideoView
+          style={StyleSheet.absoluteFill}
+          player={player}
+          nativeControls={false}
+          contentFit="cover"
+          surfaceType="textureView"
+          onFirstFrameRender={() => setFirstFrameRendered(true)}
+        />
+      </View>
+      {!firstFrameRendered && (
+        poster ? (
+          <ExpoImage source={poster} style={StyleSheet.absoluteFill} contentFit="cover" />
+        ) : (
+          <View style={styles.fullScreenVideoPlaceholder}>
+            <Ionicons name="videocam-outline" size={80} color="#8B7355" />
+          </View>
+        )
+      )}
+    </>
   );
 }
 
-// Memoized slide component.
-//
-// Note: no `isActive` prop. Because the slide doesn't care about the active
-// index anymore, `memo` can short-circuit every carousel swipe — no slide
-// re-renders when `activeIndex` changes.
 const MountainSlide = memo(function MountainSlide({
   mountain,
   isActive,
   poster,
-  videoPlayer,
-  videoReady,
   width,
   height,
   isPortrait,
@@ -67,8 +104,6 @@ const MountainSlide = memo(function MountainSlide({
   mountain: Mountain;
   isActive: boolean;
   poster: VideoThumbnail | undefined;
-  videoPlayer: VideoPlayer;
-  videoReady: boolean;
   width: number;
   height: number;
   isPortrait: boolean;
@@ -85,16 +120,7 @@ const MountainSlide = memo(function MountainSlide({
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
         {localVideo ? (
-          <>
-            {poster ? (
-              <ExpoImage source={poster} style={StyleSheet.absoluteFill} contentFit="cover" />
-            ) : (
-              <View style={styles.fullScreenVideoPlaceholder}>
-                <Ionicons name="videocam-outline" size={80} color="#8B7355" />
-              </View>
-            )}
-            {isActive && videoReady && <VideoViewPlayer player={videoPlayer} />}
-          </>
+          <MountainVideo source={localVideo} poster={poster} isActive={isActive} />
         ) : (
           <View style={styles.fullScreenVideoPlaceholder}>
             <Ionicons name="videocam-outline" size={80} color="#8B7355" />
@@ -166,16 +192,6 @@ export default function HomeScreen() {
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
-  const initialVideoMountainId = mountains[0] && MOUNTAIN_VIDEOS[mountains[0].id]
-    ? mountains[0].id
-    : null;
-  const initialVideoSource = initialVideoMountainId
-    ? MOUNTAIN_VIDEOS[initialVideoMountainId]
-    : Object.values(MOUNTAIN_VIDEOS)[0];
-  const videoPlayer = useVideoPlayer(initialVideoSource, (player) => {
-    player.loop = true;
-    player.muted = true;
-  });
   const handleProfileImageSelect = async (uri: string) => {
     if (!user) {
       Alert.alert('Sign in required', 'Sign in to save a profile photo.');
@@ -195,98 +211,14 @@ export default function HomeScreen() {
     }
   };
 
-  const [videoPosters, setVideoPosters] = useState<Record<string, VideoThumbnail>>(
+  const [videoPosters] = useState<Record<string, VideoThumbnail>>(
     () => getHomeVideoPosters()
   );
-  const [videoReady, setVideoReady] = useState(false);
-  const activeMountainId = useRef<string | null>(mountains[0]?.id ?? null);
-  const loadedMountainId = useRef<string | null>(initialVideoMountainId);
-  const videoPositions = useRef<Record<string, number>>({});
-  const switchRequest = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
-
-  const capturePoster = useCallback(async (mountainId: string, time: number) => {
-    try {
-      const [poster] = await videoPlayer.generateThumbnailsAsync(time, {
-        maxWidth: 640,
-        maxHeight: 360,
-      });
-      if (poster) {
-        setVideoPosters((current) => ({ ...current, [mountainId]: poster }));
-      }
-    } catch (posterError) {
-      console.warn(`[Home] Could not create video poster for ${mountainId}:`, posterError);
-    }
-  }, [videoPlayer]);
-
-  useEffect(() => {
-    const mountain = mountains[activeIndex];
-    const mountainId = mountain?.id ?? null;
-    const source = mountainId ? MOUNTAIN_VIDEOS[mountainId] : undefined;
-    const currentLoadedId = loadedMountainId.current;
-    const requestId = ++switchRequest.current;
-    activeMountainId.current = mountainId;
-
-    if (!mountainId || !source) {
-      videoPlayer.pause();
-      setVideoReady(false);
-      return;
-    }
-
-    if (currentLoadedId === mountainId) {
-      setVideoReady(videoPlayer.status === 'readyToPlay');
-      videoPlayer.play();
-      if (!videoPosters[mountainId]) {
-        void capturePoster(mountainId, 0);
-      }
-      return;
-    }
-
-    if (currentLoadedId) {
-      videoPositions.current[currentLoadedId] = videoPlayer.currentTime;
-    }
-
-    videoPlayer.pause();
-    setVideoReady(false);
-    let cancelled = false;
-
-    videoPlayer.replaceAsync(source).then(() => {
-      if (cancelled || requestId !== switchRequest.current) return;
-
-      const savedPosition = videoPositions.current[mountainId] ?? 0;
-      if (savedPosition > 0 && savedPosition < videoPlayer.duration) {
-        videoPlayer.currentTime = savedPosition;
-      }
-
-      loadedMountainId.current = mountainId;
-      setVideoReady(videoPlayer.status === 'readyToPlay');
-      videoPlayer.play();
-      if (!videoPosters[mountainId]) {
-        void capturePoster(mountainId, 0);
-      }
-    }).catch((loadError) => {
-      if (!cancelled && requestId === switchRequest.current) {
-        console.warn('[Home] Failed to load mountain video:', loadError);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeIndex, capturePoster, mountains, videoPlayer, videoPosters]);
-
-  useEffect(() => {
-    const subscription = videoPlayer.addListener('statusChange', ({ status }) => {
-      setVideoReady(
-        status === 'readyToPlay' && loadedMountainId.current === activeMountainId.current
-      );
-    });
-    return () => subscription.remove();
-  }, [videoPlayer]);
 
   useEffect(() => {
     if (mountains.length === 0) {
@@ -416,14 +348,6 @@ export default function HomeScreen() {
         )}
         onMomentumScrollEnd={(event) => {
           const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
-          const outgoingMountain = mountains[activeIndex];
-          if (outgoingMountain && loadedMountainId.current === outgoingMountain.id) {
-            const time = videoPlayer.currentTime;
-            videoPositions.current[outgoingMountain.id] = time;
-            void capturePoster(outgoingMountain.id, time);
-          }
-
-          activeMountainId.current = mountains[newIndex]?.id ?? null;
           setActiveIndex(newIndex);
 
           if (mountains[newIndex]) {
@@ -438,8 +362,6 @@ export default function HomeScreen() {
             mountain={mountain}
             isActive={index === activeIndex}
             poster={videoPosters[mountain.id]}
-            videoPlayer={videoPlayer}
-            videoReady={videoReady}
             width={dimensions.width}
             height={dimensions.height}
             isPortrait={isPortrait}

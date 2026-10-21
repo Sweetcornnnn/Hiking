@@ -64,8 +64,6 @@ const HIKING_LINES = [
   'Wondering where all the water went and trying not to panic...',
   'Saying “short cut” while discovering the shortcut was a cliff...',
 ];
-const FINAL_LINE = 'Summit reached. Enjoy the view.';
-
 // Slow, gentle transitions
 const LINE_ROTATE_MS = 7000;
 const LINE_FADE_OUT_MS = 1800;
@@ -110,7 +108,6 @@ export default function LoadingScreen({
 
   const [lines] = useState(() => shuffled(HIKING_LINES));
   const [lineIndex, setLineIndex] = useState(0);
-  const [showFinal, setShowFinal] = useState(false);
   const mountedRef = useRef(true);
 
   // Always-latest values so the loading effect runs ONCE and is never restarted
@@ -167,12 +164,11 @@ export default function LoadingScreen({
 
   // Rotate lines
   useEffect(() => {
-    if (showFinal) return;
     const interval = setInterval(() => {
       swapLine(() => setLineIndex((i) => (i + 1) % lines.length));
     }, LINE_ROTATE_MS);
     return () => clearInterval(interval);
-  }, [showFinal, swapLine, lines.length]);
+  }, [swapLine, lines.length]);
 
   // Main loading effect (runs once)
   useEffect(() => {
@@ -338,12 +334,7 @@ export default function LoadingScreen({
         );
         const fillDuration = Math.max(700, remaining);
         animateTo(1, fillDuration, Easing.inOut(Easing.quad));
-        timers.push(
-          setTimeout(() => {
-            if (mountedRef.current) swapLine(() => setShowFinal(true));
-          }, fillDuration * 0.75)
-        );
-        timers.push(setTimeout(goNext, fillDuration + 3000));
+        timers.push(setTimeout(goNext, fillDuration + 300));
       }
     };
 
@@ -428,7 +419,7 @@ export default function LoadingScreen({
                 },
               ]}
             >
-              {showFinal ? FINAL_LINE : lines[lineIndex]}
+              {lines[lineIndex]}
             </Animated.Text>
           </View>
         </View>
