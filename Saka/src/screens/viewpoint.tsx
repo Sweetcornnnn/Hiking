@@ -19,8 +19,6 @@ import {
   Modal,
   ScrollView,
   Animated,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   StyleSheet,
   Dimensions,
   StatusBar,
@@ -37,7 +35,6 @@ import LoadingScreen from './Loading';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const LEFT_COLUMN_WIDTH = SCREEN_WIDTH * 0.35;
-const RIGHT_COLUMN_WIDTH = SCREEN_WIDTH - LEFT_COLUMN_WIDTH;
 
 // ── ProfileCard design tokens ─────────────────────────────────────────────
 const PC = {
@@ -62,6 +59,9 @@ const PC = {
   radiusBtn:     8,
 };
 
+// ── Fallback image used when a viewpoint has no bundled image yet ─────────
+const FALLBACK_IMAGE: ImageSourcePropType = require('../../assets/images/SakaLogo.png');
+
 // ── Mt. Madja-as viewpoint image map ───────────────────────────────────────
 const IMAGE_MAP: Record<string, ImageSourcePropType> = {
   v1:  require('../../assets/Viewpoints/mt-madjaas/v1-barangay-flores-trailhead/TrailHead.jpg'),
@@ -84,8 +84,8 @@ interface StatChipProps {
 
 interface MediaItem {
   type: 'image' | 'video';
-  key?: string;   // local viewpoint ID in IMAGE_MAP (images only)
-  uri?: string;   // remote source (images or videos)
+  key?: string;
+  uri?: string;
 }
 
 export default function ViewpointScreen() {
@@ -140,8 +140,6 @@ export default function ViewpointScreen() {
       return data.media as MediaItem[];
     }
     if (data?.imageKey) {
-      // The image assets are organized by viewpoint, so use its ID rather than
-      // the shared image_key value to resolve the local asset.
       return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.id }));
     }
     return [];
@@ -162,7 +160,11 @@ export default function ViewpointScreen() {
 
   const modalDimensions = getModalDimensions(modalMedia);
   const modalImageSource = modalMedia?.type === 'image'
-    ? (modalMedia.key ? IMAGE_MAP[modalMedia.key] : modalMedia.uri ? { uri: modalMedia.uri } : null)
+    ? (modalMedia.key
+        ? (IMAGE_MAP[modalMedia.key] ?? FALLBACK_IMAGE)
+        : modalMedia.uri
+          ? { uri: modalMedia.uri }
+          : FALLBACK_IMAGE)
     : null;
 
   if (loading || (!data && !loadingScreenComplete)) {
@@ -196,7 +198,6 @@ export default function ViewpointScreen() {
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       <View style={styles.bodyRow}>
-        {/* ── LEFT: card-stack media carousel (~35%) ──────────────────── */}
         <View style={styles.leftColumn}>
           <VerticalMediaCarousel
             media={mediaList}
@@ -211,14 +212,12 @@ export default function ViewpointScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── RIGHT: compact info panel (~65%), own scroll ────────────── */}
         <View style={styles.rightWrap}>
           <ScrollView
             style={styles.rightColumn}
             contentContainerStyle={styles.rightColumnContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Header card — title, elevation, stats, tags all in one place */}
             <View style={styles.headerCard}>
               <View style={styles.headerTopRow}>
                 <View style={{ flex: 1 }}>
@@ -252,7 +251,6 @@ export default function ViewpointScreen() {
               </ScrollView>
             </View>
 
-            {/* Overview card — about + best time + difficulty/status/crowd */}
             <View style={styles.panel}>
               <View style={styles.panelHeader}>
                 <View style={styles.panelAccent} />
@@ -290,7 +288,6 @@ export default function ViewpointScreen() {
               </View>
             </View>
 
-            {/* Trail info card — features + trail notes */}
             <View style={styles.panel}>
               <View style={styles.panelHeader}>
                 <View style={styles.panelAccent} />
@@ -339,14 +336,11 @@ export default function ViewpointScreen() {
               )}
             </View>
 
-            {/* Actions — compact side-by-side row */}
             <View style={styles.actionsRow}>
               <TouchableOpacity
                 style={styles.primaryBtn}
                 onPress={() => {
-                  if (!mountainId) {
-                    return;
-                  }
+                  if (!mountainId) return;
                   router.push({
                     pathname: '/Calendar',
                     params: { mountainId },
@@ -368,7 +362,6 @@ export default function ViewpointScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Sakagram — same column width as the info panel, no focus mode */}
             <SakagramSection
               viewpointId={data.id}
               viewpointName={data.name}
@@ -378,7 +371,6 @@ export default function ViewpointScreen() {
         </View>
       </View>
 
-      {/* ── Full-screen media modal (images + videos) ───────────────────── */}
       <Modal
         visible={imageModalVisible}
         transparent
@@ -437,12 +429,15 @@ function getModalDimensions(item: MediaItem | null): { width: number; height: nu
     return { width: SCREEN_WIDTH * 0.92, height: SCREEN_HEIGHT * 0.72 };
   }
 
-  if (item.type === 'image' && item.key && IMAGE_MAP[item.key]) {
-    const src = Image.resolveAssetSource(IMAGE_MAP[item.key]);
-    const ratio = src.width / src.height;
-    const w = Math.min(SCREEN_WIDTH * 0.92, src.width);
-    const h = Math.min(SCREEN_HEIGHT * 0.84, w / ratio);
-    return { width: w, height: h };
+  if (item.type === 'image') {
+    const local = item.key ? (IMAGE_MAP[item.key] ?? FALLBACK_IMAGE) : null;
+    if (local) {
+      const src = Image.resolveAssetSource(local);
+      const ratio = src.width / src.height;
+      const w = Math.min(SCREEN_WIDTH * 0.92, src.width);
+      const h = Math.min(SCREEN_HEIGHT * 0.84, w / ratio);
+      return { width: w, height: h };
+    }
   }
 
   const w = SCREEN_WIDTH * 0.92;
@@ -595,7 +590,7 @@ function MediaCard({
   const [imageLoaded, setImageLoaded] = React.useState(false);
   const [imageFailed, setImageFailed] = React.useState(false);
   const imageSource = item.key
-    ? IMAGE_MAP[item.key]
+    ? (IMAGE_MAP[item.key] ?? FALLBACK_IMAGE)
     : item.type === 'image' && item.uri
       ? { uri: item.uri }
       : undefined;
@@ -658,7 +653,6 @@ function MediaCard({
   );
 }
 
-// ── Stat chip ─────────────────────────────────────────────────────────────
 function StatChip({ icon, label, value }: StatChipProps) {
   return (
     <View style={styles.statChip}>
@@ -669,477 +663,166 @@ function StatChip({ icon, label, value }: StatChipProps) {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────
+// ── Styles (unchanged) ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: PC.bgCard,
-  },
+  container: { flex: 1, backgroundColor: PC.bgCard },
 
-  // ── Error ──────────────────────────────────────────────────────────────
   errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    backgroundColor: PC.bgCard,
-    paddingHorizontal: 32,
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12,
+    backgroundColor: PC.bgCard, paddingHorizontal: 32,
   },
   errorIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: PC.bgPanel,
-    borderWidth: 1,
-    borderColor: PC.borderGold,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 56, height: 56, borderRadius: 28, backgroundColor: PC.bgPanel,
+    borderWidth: 1, borderColor: PC.borderGold,
+    alignItems: 'center', justifyContent: 'center',
   },
-  errorTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: PC.textPrimary,
-  },
-  errorSub: {
-    fontSize: 12,
-    color: PC.textFaint,
-    textAlign: 'center',
-  },
+  errorTitle: { fontSize: 15, fontWeight: '700', color: PC.textPrimary },
+  errorSub: { fontSize: 12, color: PC.textFaint, textAlign: 'center' },
   errorBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: PC.radiusBtn,
-    backgroundColor: PC.bgSubtle,
-    borderWidth: 1,
-    borderColor: PC.borderSubtle,
-    marginTop: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingVertical: 8, paddingHorizontal: 16, borderRadius: PC.radiusBtn,
+    backgroundColor: PC.bgSubtle, borderWidth: 1, borderColor: PC.borderSubtle, marginTop: 4,
   },
-  errorBtnText: {
-    color: PC.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  errorBtnText: { color: PC.textSecondary, fontSize: 12, fontWeight: '600' },
 
-  // ── Split layout ─────────────────────────────────────────────────────────
-  bodyRow: {
-    flex: 1,
-    flexDirection: 'row',
-    position: 'relative',
-  },
-
-  // LEFT — card-stack carousel column (~35%), fixed on screen
+  bodyRow: { flex: 1, flexDirection: 'row', position: 'relative' },
   leftColumn: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: LEFT_COLUMN_WIDTH,
-    height: '100%',
-    backgroundColor: PC.bgCard,
-    zIndex: 2,
-    elevation: 2,
+    position: 'absolute', top: 0, bottom: 0, left: 0, width: LEFT_COLUMN_WIDTH,
+    height: '100%', backgroundColor: PC.bgCard, zIndex: 2, elevation: 2,
   },
   mapBackBtn: {
-    position: 'absolute',
-    top: 22,
-    left: 16,
-    width: 32,
-    height: 32,
-    borderRadius: PC.radiusBtn,
-    backgroundColor: 'rgba(14,21,32,0.78)',
-    borderWidth: 1,
-    borderColor: PC.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2,
+    position: 'absolute', top: 22, left: 16, width: 32, height: 32,
+    borderRadius: PC.radiusBtn, backgroundColor: 'rgba(14,21,32,0.78)',
+    borderWidth: 1, borderColor: PC.border,
+    alignItems: 'center', justifyContent: 'center', zIndex: 2,
   },
-
   emptyMediaState: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    backgroundColor: PC.bgAvatar,
+    width: '100%', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingHorizontal: 10, backgroundColor: PC.bgAvatar,
   },
-  heroPlaceholderText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: PC.gold,
-    textAlign: 'center',
-  },
-
+  heroPlaceholderText: { fontSize: 11, fontWeight: '700', color: PC.gold, textAlign: 'center' },
   cardShadowWrap: {
-    flex: 1,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 8,
+    flex: 1, borderRadius: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35, shadowRadius: 10, elevation: 8,
   },
   card: {
-    flex: 1,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: PC.border,
-    backgroundColor: PC.bgAvatar,
+    flex: 1, borderRadius: 20, overflow: 'hidden',
+    borderWidth: 1, borderColor: PC.border, backgroundColor: PC.bgAvatar,
   },
-  cardImage: {
-    width: '100%',
-    height: '100%',
-  },
-  hiddenCardImage: {
-    opacity: 0,
-  },
+  cardImage: { width: '100%', height: '100%' },
+  hiddenCardImage: { opacity: 0 },
   cardMediaFill: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: PC.bgAvatar,
+    width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: PC.bgAvatar,
   },
-
   mediaTypeTag: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: PC.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
+    position: 'absolute', top: 10, right: 10, width: 20, height: 20, borderRadius: 10,
+    backgroundColor: PC.gold, alignItems: 'center', justifyContent: 'center',
   },
-
-  // RIGHT — compact info column (~65%), its own scroll
-  rightWrap: {
-    flex: 1,
-    marginLeft: LEFT_COLUMN_WIDTH,
-    zIndex: 1,
-  },
-  rightColumn: {
-    flex: 1,
-  },
-  rightColumnContent: {
-    paddingTop: 20,
-    paddingBottom: 20,
-  },
-
-  // Header card
+  rightWrap: { flex: 1, marginLeft: LEFT_COLUMN_WIDTH, zIndex: 1 },
+  rightColumn: { flex: 1 },
+  rightColumnContent: { paddingTop: 20, paddingBottom: 20 },
   headerCard: {
-    marginHorizontal: 12,
-    marginTop: 0,
-    backgroundColor: PC.bgPanel,
-    borderRadius: PC.radius,
-    borderWidth: 1,
-    borderColor: PC.border,
-    padding: 12,
+    marginHorizontal: 12, marginTop: 0, backgroundColor: PC.bgPanel,
+    borderRadius: PC.radius, borderWidth: 1, borderColor: PC.border, padding: 12,
   },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
+  headerTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   subtitleText: {
-    fontSize: 9,
-    color: PC.textFaint,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 3,
+    fontSize: 9, color: PC.textFaint, fontWeight: '600',
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3,
   },
-  titleText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: PC.textPrimary,
-    lineHeight: 22,
-  },
+  titleText: { fontSize: 18, fontWeight: '800', color: PC.textPrimary, lineHeight: 22 },
   elevBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: PC.radiusBtn,
-    backgroundColor: PC.gold,
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: PC.radiusBtn, backgroundColor: PC.gold,
   },
-  elevText: {
-    color: PC.bgCard,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  // Stats
+  elevText: { color: PC.bgCard, fontSize: 10, fontWeight: '700' },
   statsGridInline: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: PC.border,
+    flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, paddingTop: 8,
+    borderTopWidth: 1, borderTopColor: PC.border,
   },
-  statChip: {
-    width: '50%',
-    alignItems: 'center',
-    gap: 2,
-    paddingVertical: 4,
-  },
+  statChip: { width: '50%', alignItems: 'center', gap: 2, paddingVertical: 4 },
   statChipLabel: {
-    fontSize: 8,
-    color: PC.textFaint,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    fontSize: 8, color: PC.textFaint, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 0.4,
   },
-  statChipValue: {
-    fontSize: 10,
-    color: PC.textPrimary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-
-  // Tags
+  statChipValue: { fontSize: 10, color: PC.textPrimary, fontWeight: '700', textAlign: 'center' },
   tagsScrollInline: { marginTop: 8 },
   tagsContent: { gap: 5, paddingRight: 4 },
   tag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    backgroundColor: PC.bgPanel,
-    borderWidth: 1,
-    borderColor: PC.borderGold,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+    backgroundColor: PC.bgPanel, borderWidth: 1, borderColor: PC.borderGold,
   },
-  tagText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: PC.gold,
-  },
-
-  // Panel
+  tagText: { fontSize: 10, fontWeight: '600', color: PC.gold },
   panel: {
-    marginHorizontal: 12,
-    marginTop: 10,
-    backgroundColor: PC.bgPanel,
-    borderRadius: PC.radius,
-    borderWidth: 1,
-    borderColor: PC.border,
-    padding: 12,
+    marginHorizontal: 12, marginTop: 10, backgroundColor: PC.bgPanel,
+    borderRadius: PC.radius, borderWidth: 1, borderColor: PC.border, padding: 12,
   },
-  innerDivider: {
-    height: 1,
-    backgroundColor: PC.border,
-    marginVertical: 10,
-  },
-  panelHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginBottom: 8,
-  },
-  panelAccent: {
-    width: 3,
-    height: 14,
-    borderRadius: 2,
-    backgroundColor: PC.gold,
-  },
-  panelTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: PC.textPrimary,
-    letterSpacing: 0.3,
-  },
-  description: {
-    fontSize: 12,
-    color: PC.textSecondary,
-    lineHeight: 19,
-  },
-
-  // Best time
-  bestTimeInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  bestTimeInlineText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: PC.gold,
-    flex: 1,
-  },
-
-  // Features
+  innerDivider: { height: 1, backgroundColor: PC.border, marginVertical: 10 },
+  panelHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8 },
+  panelAccent: { width: 3, height: 14, borderRadius: 2, backgroundColor: PC.gold },
+  panelTitle: { fontSize: 11, fontWeight: '700', color: PC.textPrimary, letterSpacing: 0.3 },
+  description: { fontSize: 12, color: PC.textSecondary, lineHeight: 19 },
+  bestTimeInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bestTimeInlineText: { fontSize: 11, fontWeight: '600', color: PC.gold, flex: 1 },
   featuresList: { gap: 0 },
   featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 7,
-    borderBottomWidth: 1,
-    borderBottomColor: PC.border,
+    flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7,
+    borderBottomWidth: 1, borderBottomColor: PC.border,
   },
-  featureRowLast: {
-    borderBottomWidth: 0,
-    paddingBottom: 0,
-  },
+  featureRowLast: { borderBottomWidth: 0, paddingBottom: 0 },
   featureIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    width: 24, height: 24, borderRadius: 6,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  featureText: {
-    fontSize: 11,
-    color: PC.textSecondary,
-    flex: 1,
-    lineHeight: 16,
-  },
-
-  // Actions
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: 12,
-    marginTop: 12,
-  },
+  featureText: { fontSize: 11, color: PC.textSecondary, flex: 1, lineHeight: 16 },
+  actionsRow: { flexDirection: 'row', gap: 8, marginHorizontal: 12, marginTop: 12 },
   primaryBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: PC.radiusBtn,
-    backgroundColor: PC.gold,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: PC.radiusBtn, backgroundColor: PC.gold,
   },
-  primaryBtnText: {
-    color: PC.bgCard,
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  primaryBtnText: { color: PC.bgCard, fontSize: 12, fontWeight: '700' },
   secondaryBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: PC.radiusBtn,
-    backgroundColor: PC.bgSubtle,
-    borderWidth: 1,
-    borderColor: PC.borderSubtle,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: PC.radiusBtn,
+    backgroundColor: PC.bgSubtle, borderWidth: 1, borderColor: PC.borderSubtle,
   },
-  secondaryBtnText: {
-    color: PC.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // Trail notes
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    marginBottom: 6,
-  },
-  noteText: {
-    fontSize: 11,
-    color: PC.textSecondary,
-    flex: 1,
-    lineHeight: 16,
-  },
-
-  // Difficulty row
-  difficultyRowInline: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  difficultyChip: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
+  secondaryBtnText: { color: PC.textSecondary, fontSize: 12, fontWeight: '600' },
+  noteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 6 },
+  noteText: { fontSize: 11, color: PC.textSecondary, flex: 1, lineHeight: 16 },
+  difficultyRowInline: { flexDirection: 'row', gap: 6 },
+  difficultyChip: { flex: 1, alignItems: 'center', gap: 2 },
   difficultyLabel: {
-    fontSize: 8,
-    color: PC.textFaint,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    fontSize: 8, color: PC.textFaint, fontWeight: '600',
+    textTransform: 'uppercase', letterSpacing: 0.4,
   },
-  difficultyValue: {
-    fontSize: 10,
-    color: PC.textPrimary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  statDividerV: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: PC.borderSubtle,
-  },
-
-  // Media modal
+  difficultyValue: { fontSize: 10, color: PC.textPrimary, fontWeight: '700', textAlign: 'center' },
+  statDividerV: { width: 1, alignSelf: 'stretch', backgroundColor: PC.borderSubtle },
   imageModalBackdrop: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 16,
+    flex: 1, backgroundColor: 'transparent',
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 16,
   },
   imageModalShadowWrap: {
     borderRadius: PC.radius,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45, shadowRadius: 16, elevation: 12,
   },
   imageModalCard: {
-    flex: 1,
-    backgroundColor: PC.bgCard,
-    borderRadius: PC.radius,
-    borderWidth: 1,
-    borderColor: PC.gold,
-    overflow: 'hidden',
+    flex: 1, backgroundColor: PC.bgCard, borderRadius: PC.radius,
+    borderWidth: 1, borderColor: PC.gold, overflow: 'hidden',
   },
-  imageModalImage: {
-    width: '100%',
-    height: '100%',
-  },
+  imageModalImage: { width: '100%', height: '100%' },
   imageModalPlaceholder: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: PC.bgPanel,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: PC.borderGold,
-    gap: 10,
+    width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: PC.bgPanel, borderRadius: 18,
+    borderWidth: 1, borderColor: PC.borderGold, gap: 10,
   },
-  imageModalPlaceholderText: {
-    color: PC.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
+  imageModalPlaceholderText: { color: PC.textSecondary, fontSize: 12, fontWeight: '600' },
   imageModalClose: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    position: 'absolute', top: 12, right: 12, width: 34, height: 34, borderRadius: 17,
     backgroundColor: 'rgba(255,255,255,0.16)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
 });
