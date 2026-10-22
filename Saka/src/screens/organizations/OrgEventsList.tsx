@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -18,10 +18,9 @@ import {
   Card,
   Pill,
   StatusPill,
-  MetaRow,
-  Grid,
   PC,
   SP,
+  FS,
 } from '../../components/organizations/OrgLandscapeShell';
 
 type FilterTab = 'all' | 'draft' | 'published' | 'cancelled';
@@ -141,67 +140,104 @@ export default function OrgEventsList() {
           }
         />
       ) : (
-        <Grid>
-          {filtered.map((event) => {
+        <Card padded={false} style={styles.table}>
+          <View style={styles.thead}>
+            <Text style={[styles.th, styles.cMain]}>Event</Text>
+            <Text style={[styles.th, styles.cCount]}>Attending</Text>
+            <Text style={[styles.th, styles.cStatus]}>Status</Text>
+            <View style={{ width: 12 }} />
+          </View>
+
+          {filtered.map((event, i) => {
             const c = counts[event.id] ?? { confirmed: 0, waitlist: 0, total: 0 };
             const capacityLabel = event.capacity ? `${c.confirmed} / ${event.capacity}` : `${c.confirmed}`;
+            const dates =
+              event.end_date && event.end_date !== event.event_date
+                ? `${event.event_date} – ${event.end_date}`
+                : event.event_date;
 
             return (
-              <Card
+              <TouchableOpacity
                 key={event.id}
-                style={styles.eventCard}
+                activeOpacity={0.75}
+                style={[styles.row, i === filtered.length - 1 && { borderBottomWidth: 0 }]}
                 onPress={() =>
                   router.push({
                     pathname: '/organizations/EventDetail',
                     params: { eventId: event.id },
                   } as any)
                 }
+                accessibilityRole="button"
+                accessibilityLabel={event.title}
               >
-                <View style={styles.eventHeader}>
+                <View style={styles.cMain}>
                   <Text style={styles.eventTitle} numberOfLines={1}>
                     {event.title}
                   </Text>
-                  <StatusPill status={event.status} />
+                  <Text style={styles.eventMeta} numberOfLines={1}>
+                    {mountainName(event.mountain_id)}  ·  {dates}  ·  {event.start_time}
+                  </Text>
                 </View>
 
-                <MetaRow icon="trail-sign-outline" text={mountainName(event.mountain_id)} />
-                <MetaRow
-                  icon="calendar-outline"
-                  text={
-                    event.end_date && event.end_date !== event.event_date
-                      ? `${event.event_date} – ${event.end_date} · ${event.start_time}`
-                      : `${event.event_date} · ${event.start_time}`
-                  }
-                />
-
-                <View style={styles.footerRow}>
-                  <MetaRow icon="people-outline" text={`${capacityLabel} attending`} />
+                <View style={[styles.cCount, styles.countCell]}>
+                  <Ionicons name="people-outline" size={12} color="rgba(255,255,255,0.45)" />
+                  <Text style={styles.countText}>{capacityLabel}</Text>
                   {c.waitlist > 0 && (
                     <Pill
-                      label={`${c.waitlist} waitlist`}
+                      label={`+${c.waitlist}`}
                       bg="rgba(201,169,110,0.12)"
                       color={PC.gold}
                       border="rgba(201,169,110,0.25)"
                       uppercase={false}
                     />
                   )}
-                  <View style={{ flex: 1 }} />
-                  <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.3)" />
                 </View>
-              </Card>
+
+                <View style={styles.cStatus}>
+                  <StatusPill status={event.status} />
+                </View>
+
+                <Ionicons name="chevron-forward" size={12} color="rgba(255,255,255,0.3)" />
+              </TouchableOpacity>
             );
           })}
-        </Grid>
+        </Card>
       )}
     </OrgLandscapeShell>
   );
 }
 
 const styles = StyleSheet.create({
-  filterList: { gap: 6 },
+  filterList: { gap: 4 },
 
-  eventCard: { gap: 6 },
-  eventHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SP.sm },
-  eventTitle: { color: '#FFF', fontSize: 14, fontWeight: '700', flex: 1 },
-  footerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  table: { overflow: 'hidden' },
+  thead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SP.md,
+    height: 26,
+    paddingHorizontal: SP.md,
+    borderBottomWidth: 1,
+    borderBottomColor: PC.border,
+  },
+  th: { color: PC.textFaint, fontSize: FS.micro, fontWeight: '600', letterSpacing: 0.4 },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SP.md,
+    minHeight: 42,
+    paddingHorizontal: SP.md,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+  },
+  cMain: { flex: 1, minWidth: 0 },
+  cCount: { width: 96 },
+  cStatus: { width: 78 },
+  countCell: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+
+  eventTitle: { color: PC.textPrimary, fontSize: FS.base, fontWeight: '700' },
+  eventMeta: { color: PC.textMuted, fontSize: FS.small, marginTop: 2 },
+  countText: { color: PC.textBody, fontSize: FS.body, fontWeight: '600' },
 });

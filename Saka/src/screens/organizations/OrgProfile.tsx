@@ -224,9 +224,9 @@ export default function OrgProfile() {
 }
 
 const styles = StyleSheet.create({
-  footnote: { color: 'rgba(255,255,255,0.45)', fontSize: FS.small, lineHeight: 16 },
+  footnote: { color: PC.textMuted, fontSize: FS.small, lineHeight: 14 },
   readonlyInput: {
-    minHeight: 42,
+    minHeight: 32,
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.03)',
     borderRadius: PC.radiusControl,
@@ -234,5 +234,5 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.05)',
     paddingHorizontal: 12,
   },
-  readonlyText: { color: 'rgba(255,255,255,0.45)', fontSize: FS.base },
+  readonlyText: { color: PC.textMuted, fontSize: FS.body },
 });

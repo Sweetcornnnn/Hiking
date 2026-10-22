@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Modal,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { useAuthStore } from '../store/authStore';
 import HikeFormModal from '../components/HikeFormModal';
 import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
 import { inclusiveDates } from '../utils/dateRange';
+import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
 const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
 
@@ -43,7 +43,7 @@ export default function CalendarScreen() {
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [infoVisible, setInfoVisible] = useState(false);
+  const tutorial = useTutorial('calendar');
   const permit = useHikePermit(SAKA_LOGO);
   const [forecastByDate, setForecastByDate] = useState<Record<string, { icon: string; description: string; tempMin: number; tempMax: number }>>({});
   const [forecastLoading, setForecastLoading] = useState(false);
@@ -313,14 +313,7 @@ export default function CalendarScreen() {
                   <Ionicons name="home-outline" size={13} color="#C9A96E" />
                 </TouchableOpacity>
                 <Text style={styles.monthHeaderText}>{date ? date.toString('MMMM yyyy') : ''}</Text>
-                <TouchableOpacity
-                  style={styles.infoBtn}
-                  onPress={() => setInfoVisible(true)}
-                  accessibilityLabel="How to use the calendar"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.infoBtnText}>i</Text>
-                </TouchableOpacity>
+                <TutorialHelpButton onPress={tutorial.open} />
               </View>
             )}
             theme={{
@@ -380,25 +373,7 @@ export default function CalendarScreen() {
       />
       {permit.element}
 
-      {/* How-to-use popover, opened from the small "i" circle in the month header */}
-      <Modal animationType="fade" transparent visible={infoVisible} onRequestClose={() => setInfoVisible(false)}>
-        <View style={styles.infoOverlay}>
-          <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>How to use the calendar</Text>
-            <View style={styles.infoRow}>
-              <Ionicons name="finger-print-outline" size={14} color="#C9A96E" />
-              <Text style={styles.infoText}>Tap a date to schedule a new hike.</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Ionicons name="time-outline" size={14} color="#C9A96E" />
-              <Text style={styles.infoText}>Hold a date to see the hikes already planned that day.</Text>
-            </View>
-            <TouchableOpacity style={styles.infoCloseBtn} onPress={() => setInfoVisible(false)}>
-              <Text style={styles.infoCloseBtnText}>Got it</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {tutorial.element}
     </View>
   );
 }
@@ -525,70 +500,6 @@ const styles = StyleSheet.create({
   },
   monthHeaderText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  infoBtn: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  infoBtnText: {
-    color: '#C9A96E',
-    fontSize: 11,
-    fontWeight: '700',
-    fontStyle: 'italic',
-  },
-
-  // ── How-to-use popover ───────────────────────
-  infoOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    backgroundColor: 'rgba(10,17,26,0.4)',
-  },
-  infoCard: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: '#0E1520',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    padding: 16,
-    gap: 10,
-  },
-  infoTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  infoText: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  infoCloseBtn: {
-    marginTop: 6,
-    alignSelf: 'flex-end',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#C9A96E',
-  },
-  infoCloseBtnText: {
-    color: '#0E1520',
     fontSize: 12,
     fontWeight: '700',
   },

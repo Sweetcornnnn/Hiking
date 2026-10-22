@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import ResponsiveMapImage, { MapPoint } from '../components/ResponsiveMapImage';
 import { getMountainMap } from '../data/mountainMaps';
 import LoadingScreen from './Loading';
+import ZoomableView from '../components/ZoomableView';
 
 type TableViewpoint = {
   id: string;
@@ -183,29 +184,33 @@ export default function MountainTopScreen() {
     <View style={styles.container}>
       {mountain && mapInfo && (
         <>
-          <ResponsiveMapImage
-            source={mapInfo.source}
-            fit="cover"
-            points={points}
-            trail={trail}
-            onLoad={() => setImageLoaded(true)}
-            onError={() => {
-              console.error(
-                `[MountainTop] Failed to load map image for ${mountain.name}`
-              );
-              setImageError(true);
-            }}
-            // Only pass a press handler when placement is on — otherwise it
-            // can steal taps from the viewpoint dots.
-            onImagePress={PLACEMENT_MODE ? handleImagePress : undefined}
-            onPointPress={p => {
-              if (PLACEMENT_MODE || !mountainId) return;
-              router.push({
-                pathname: '/Viewpoint',
-                params: { viewpointId: p.id, mountainId },
-              });
-            }}
-          />
+          {/* Pinch / drag / double-tap to zoom. Off in placement mode so tap
+              coordinates stay exact while calibrating. */}
+          <ZoomableView enabled={!PLACEMENT_MODE}>
+            <ResponsiveMapImage
+              source={mapInfo.source}
+              fit="cover"
+              points={points}
+              trail={trail}
+              onLoad={() => setImageLoaded(true)}
+              onError={() => {
+                console.error(
+                  `[MountainTop] Failed to load map image for ${mountain.name}`
+                );
+                setImageError(true);
+              }}
+              // Only pass a press handler when placement is on — otherwise it
+              // can steal taps from the viewpoint dots.
+              onImagePress={PLACEMENT_MODE ? handleImagePress : undefined}
+              onPointPress={p => {
+                if (PLACEMENT_MODE || !mountainId) return;
+                router.push({
+                  pathname: '/Viewpoint',
+                  params: { viewpointId: p.id, mountainId },
+                });
+              }}
+            />
+          </ZoomableView>
 
           {imageError && loadingScreenComplete && (
             <View style={styles.mapError} pointerEvents="none">
@@ -213,18 +218,34 @@ export default function MountainTopScreen() {
             </View>
           )}
 
-          {/* Floating Header */}
-          <SafeAreaView style={styles.headerSafeArea} pointerEvents="box-none">
-            <View style={styles.header}>
-              <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          {/* Floating header: two small pills instead of a full-width bar, so the map stays the focus */}
+          <SafeAreaView
+            edges={['top', 'left', 'right']}
+            style={styles.headerSafeArea}
+            pointerEvents="box-none"
+          >
+            <View style={styles.header} pointerEvents="box-none">
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => router.back()}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+              >
+                <Ionicons name="chevron-back" size={18} color="#FFFFFF" />
               </TouchableOpacity>
-              <Ionicons name="location-outline" size={18} color="#C9A96E" />
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {mountain.name}
-              </Text>
-              <View style={styles.headerBadge}>
-                <Text style={styles.headerBadgeText}>{mountain.difficulty}</Text>
+
+              <View style={styles.titlePill}>
+                <Text style={styles.titleText} numberOfLines={1}>
+                  {mountain.name}
+                </Text>
+                {mountain.difficulty ? (
+                  <>
+                    <View style={styles.titleDivider} />
+                    <Text style={styles.difficultyText} numberOfLines={1}>
+                      {mountain.difficulty}
+                    </Text>
+                  </>
+                ) : null}
               </View>
             </View>
           </SafeAreaView>
@@ -293,51 +314,45 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(18, 26, 38, 0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    paddingTop: 6,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  headerTitle: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 6,
-    letterSpacing: 0.3,
-  },
-  headerBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 12,
-    backgroundColor: 'rgba(201, 169, 110, 0.15)',
+    backgroundColor: 'rgba(14, 21, 32, 0.78)',
     borderWidth: 1,
-    borderColor: 'rgba(201, 169, 110, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  headerBadgeText: {
-    color: '#C9A96E',
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
+  titlePill: {
+    flexShrink: 1,
+    height: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 17,
+    backgroundColor: 'rgba(14, 21, 32, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
+  titleText: {
+    flexShrink: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  titleDivider: {
+    width: 1,
+    height: 12,
+    marginHorizontal: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  difficultyText: { color: '#C9A96E', fontSize: 11, fontWeight: '600' },
 
   placeBar: {
     position: 'absolute',

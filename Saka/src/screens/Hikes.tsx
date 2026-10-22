@@ -21,6 +21,7 @@ import HikeFormModal from '../components/HikeFormModal';
 import Toast, { ToastHandle } from '../components/Toast';
 import { dateInRange, effectiveEnd, formatRangeShort } from '../utils/dateRange';
 import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
+import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
 const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
 
@@ -368,6 +369,8 @@ export default function HikesScreen() {
     [mountainHikes, deletedIds, date]
   );
   const mountainName = resolvedMountain?.name ?? hikesOnDate[0]?.mountain_name;
+  // Only auto-open once there's a card to try it on; the "i" button always works
+  const tutorial = useTutorial('hikes', { ready: hikesOnDate.length > 0 });
 
   // Resolve the mountain (for its name and lat/long) — cache first, same as
   // Calendar.tsx, then a network fetch as fallback.
@@ -522,6 +525,8 @@ export default function HikesScreen() {
             </View>
           </View>
         </View>
+
+        <TutorialHelpButton onPress={tutorial.open} />
       </View>
 
       {hikesOnDate.length === 0 ? (
@@ -555,6 +560,7 @@ export default function HikesScreen() {
       />
       <Toast ref={toastRef} />
       {permit.element}
+      {tutorial.element}
     </View>
   );
 }

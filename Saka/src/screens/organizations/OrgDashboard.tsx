@@ -104,7 +104,7 @@ export default function OrgDashboard() {
       title={org.name}
       badge={
         org.is_verified ? (
-          <Pill label="Verified" icon="shield-checkmark" bg="#6FAF8A" color="#0E1520" uppercase={false} />
+          <Pill label="Verified" icon="shield-checkmark" bg="rgba(63,214,157,0.12)" color={PC.green} border="rgba(63,214,157,0.28)" uppercase={false} />
         ) : (
           <Pill
             label="Pending verification"
@@ -202,7 +202,7 @@ export default function OrgDashboard() {
                 <Text style={styles.eventTitle} numberOfLines={1}>
                   {event.title}
                 </Text>
-                <Pill label="Open" bg="#1D8F6A" color="#FFFFFF" />
+                <Pill label="Open" bg="rgba(29,143,106,0.2)" color={PC.green} />
               </View>
               <MetaRow
                 icon="calendar-outline"
@@ -226,10 +226,10 @@ export default function OrgDashboard() {
 
 const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { color: '#F3F6FA', fontSize: 16, fontWeight: '700' },
-  sectionCount: { color: PC.gold, fontWeight: '700', fontSize: FS.body },
+  sectionTitle: { color: PC.textPrimary, fontSize: FS.title - 1, fontWeight: '700' },
+  sectionCount: { color: PC.gold, fontWeight: '700', fontSize: FS.small },
 
-  eventCard: { gap: 6 },
+  eventCard: { gap: 5 },
   eventHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SP.sm },
-  eventTitle: { color: '#FFF', fontSize: 14, fontWeight: '700', flex: 1 },
+  eventTitle: { color: PC.textPrimary, fontSize: FS.base, fontWeight: '700', flex: 1 },
 });

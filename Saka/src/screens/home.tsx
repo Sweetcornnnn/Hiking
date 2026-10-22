@@ -31,6 +31,7 @@ import {
   MOUNTAIN_VIDEOS,
 } from '../services/homeVideoAssets';
 import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
+import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
@@ -273,6 +274,8 @@ export default function HomeScreen() {
   }, []);
 
   const [error, setError] = useState<string | null>(null);
+  // Above the early returns. Skipped when arriving straight into the profile card.
+  const tutorial = useTutorial('home', { ready: mountains.length > 0 && returnToProfile !== 'true' });
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
@@ -510,6 +513,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerRightButtons}>
+          <TutorialHelpButton onPress={tutorial.open} style={styles.helpButton} />
           {profile?.role === 'organization' && (
             <TouchableOpacity
               onPress={() => router.push('/organizations/Dashboard')}
@@ -529,6 +533,8 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {tutorial.element}
 
       <ProfileCard
         visible={profileCardVisible}
@@ -838,6 +844,32 @@ const styles = StyleSheet.create({
   logoutToastConfirm: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8, backgroundColor: '#BF6A6A' },
   logoutToastConfirmText: { color: '#0E1520', fontSize: 12, fontWeight: '700' },
   headerRightButtons: { flexDirection: 'row', alignItems: 'center' },
+  logoutToastCancelText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  logoutToastConfirm: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#BF6A6A',
+  },
+  logoutToastConfirmText: {
+    color: '#0E1520',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  headerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  // Backdrop so the 18px help circle stays readable over video
+  helpButton: {
+    marginRight: 4,
+    backgroundColor: 'rgba(10,16,26,0.6)',
+  },
   chatButton: {
     padding: 8,
     marginLeft: 8,
