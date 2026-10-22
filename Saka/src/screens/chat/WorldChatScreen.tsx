@@ -370,7 +370,7 @@ export default function WorldChatScreen({
                 senderAvatarUrl={senderAvatar}
                 avatarUri={senderAvatar}
                 avatarLabel={senderName}
-                disableAvatarLift={true} // <-- ADDED THIS
+                disableAvatarLift={true}
                 onPressSender={
                   canOpenProfile ? () => openProfile(item.user_id) : undefined
                 }
@@ -421,7 +421,8 @@ export default function WorldChatScreen({
     return (
       <View style={{ flex: 1, flexDirection: 'row' }}>
         <View style={{ flex: 1 }}>{chatContent}</View>
-        <OnlineUsersList onSelectUser={onSelectUser} />
+        {/* Removed onSelectUser prop entirely */}
+        <OnlineUsersList />
       </View>
     );
   }
