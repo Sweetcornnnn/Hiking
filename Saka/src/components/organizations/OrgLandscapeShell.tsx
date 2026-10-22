@@ -1,17 +1,15 @@
 /**
- * Shared landscape layout + small UI kit for the organizer AND hiker event screens.
+ * Shared landscape layout + small UI kit for the organizer screens.
+ * Desktop-app styling to match ChatScreen / Calendar:
  *
- *   - LEFT RAIL (~34% width, clamped 210–320): back button, identity (icon / eyebrow /
- *     title / badge) and summary/filter content in a scroll area, with the screen's
- *     main actions in a footer that is FIXED to the bottom (it never scrolls away).
- *   - RIGHT PANEL (the rest): its own scroll view holding the screen's content.
+ *   - SIDEBAR (~24% width, clamped 188-232): back pill, identity (eyebrow / title /
+ *     badge) and summary/filter content in a scroll area, with the screen's main
+ *     actions in a footer FIXED to the bottom.
+ *   - MAIN PANEL (the rest): its own scroll view holding the screen's content.
  *
- * Spacing scale (SP): 4 / 8 / 12 / 16 / 24 — use these instead of ad-hoc numbers.
- * Type scale (FS): 10 labels · 11 captions · 12 body · 13 controls · 18 titles.
- * Touch targets: rail buttons 42, inputs 42, chips 32 (+hitSlop), icon buttons 34 (+hitSlop).
- *
- * There is intentionally no portrait fallback. Put this file at
- * src/components/organizations/OrgLandscapeShell.tsx.
+ * Type scale (FS): 9 labels / 10 captions / 11 body / 12 controls / 14 titles.
+ * Same exports and props as before, so existing screens keep working unchanged.
+ * Put this file at src/components/organizations/OrgLandscapeShell.tsx.
  */
 
 import React, { useState } from 'react';
@@ -37,37 +35,39 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CHAT_BG, CHAT_BORDER, TEXT_PRIMARY } from '../../theme/designTokens';
 
 // ── Design tokens ───────────────────────────────────────────────────────────
 export const PC = {
-  bgScreen:      '#0A121A',
-  bgRail:        '#0E1520',
-  bgPanel:       '#111C27',
+  bgScreen:      CHAT_BG,
+  bgRail:        CHAT_BG,
+  bgPanel:       '#0E1520',
   bgSubtle:      'rgba(255,255,255,0.05)',
-  border:        'rgba(255,255,255,0.07)',
-  borderSoft:    'rgba(255,255,255,0.06)',
-  borderGold:    'rgba(201,169,110,0.28)',
+  border:        CHAT_BORDER,
+  borderSoft:    'rgba(255,255,255,0.07)',
+  borderCtrl:    'rgba(255,255,255,0.08)',
+  borderGold:    'rgba(201,169,110,0.3)',
   gold:          '#C9A96E',
   goldSoft:      'rgba(201,169,110,0.12)',
   green:         '#3FD69D',
   danger:        '#E07070',
   orange:        '#E67E22',
-  textPrimary:   '#FFFFFF',
+  textPrimary:   TEXT_PRIMARY,
   textSecondary: 'rgba(255,255,255,0.72)',
-  textMuted:     '#9FB0C0',
-  textBody:      '#DCE6EF',
-  textMeta:      '#B7C7D6',
-  textFaint:     'rgba(255,255,255,0.5)',
+  textMuted:     'rgba(255,255,255,0.5)',
+  textBody:      'rgba(255,255,255,0.78)',
+  textMeta:      'rgba(255,255,255,0.6)',
+  textFaint:     'rgba(255,255,255,0.4)',
   radius:        12,
-  radiusBtn:     12,
-  radiusControl: 10,
+  radiusBtn:     10,
+  radiusControl: 9,
 };
 
-export const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 } as const;
-export const FS = { micro: 10, small: 11, body: 12, base: 13, title: 18 } as const;
+export const SP = { xs: 4, sm: 6, md: 10, lg: 14, xl: 20 } as const;
+export const FS = { micro: 9, small: 10, body: 11, base: 12, title: 14 } as const;
 export const HIT = { top: 6, bottom: 6, left: 6, right: 6 };
 
-export const RAIL_WIDTH_RATIO = 0.34;
+export const RAIL_WIDTH_RATIO = 0.24;
 
 /** Status colors shared by event + RSVP pills. */
 export const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
@@ -123,13 +123,13 @@ export function OrgLandscapeShell({
   const top = Math.max(insets.top, 0);
   const bottom = Math.max(insets.bottom, 0);
   const railWidth =
-    Math.min(Math.max(Math.round(width * RAIL_WIDTH_RATIO), 210), 320) + insets.left;
+    Math.min(Math.max(Math.round(width * RAIL_WIDTH_RATIO), 188), 232) + insets.left;
 
   return (
     <View style={s.screen}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* ── LEFT RAIL ───────────────────────────────────────────────────── */}
+      {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
       <View style={[s.rail, { width: railWidth }]}>
         <ScrollView
           style={s.railScroll}
@@ -151,12 +151,12 @@ export function OrgLandscapeShell({
                 <TouchableOpacity
                   onPress={onBack}
                   style={s.backBtn}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                   hitSlop={HIT}
                   accessibilityRole="button"
                   accessibilityLabel={`Back to ${backLabel}`}
                 >
-                  <Ionicons name="chevron-back" size={15} color={PC.gold} />
+                  <Ionicons name="chevron-back" size={13} color={PC.textPrimary} />
                   <Text style={s.backText} numberOfLines={1}>{backLabel}</Text>
                 </TouchableOpacity>
               ) : (
@@ -169,7 +169,7 @@ export function OrgLandscapeShell({
           <View style={s.identity}>
             {icon ? (
               <View style={s.iconBox}>
-                <Ionicons name={icon} size={20} color={PC.gold} />
+                <Ionicons name={icon} size={15} color={PC.gold} />
               </View>
             ) : null}
             {eyebrow ? <Text style={s.eyebrow} numberOfLines={1}>{eyebrow}</Text> : null}
@@ -193,7 +193,7 @@ export function OrgLandscapeShell({
         ) : null}
       </View>
 
-      {/* ── RIGHT PANEL ─────────────────────────────────────────────────── */}
+      {/* ── MAIN PANEL ──────────────────────────────────────────────────── */}
       <KeyboardAvoidingView
         style={s.panel}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -203,7 +203,7 @@ export function OrgLandscapeShell({
           contentContainerStyle={[
             s.panelContent,
             {
-              paddingRight: insets.right + SP.lg,
+              paddingRight: insets.right + SP.md,
               paddingTop: top + SP.md,
               paddingBottom: bottom + SP.xl,
             },
@@ -225,7 +225,7 @@ type Variant = 'primary' | 'secondary' | 'gold' | 'danger';
 
 const VARIANTS: Record<Variant, { bg: string; border: string; fg: string }> = {
   primary:   { bg: PC.gold,                  border: PC.gold,                  fg: '#0E1520' },
-  secondary: { bg: PC.bgPanel,               border: 'rgba(255,255,255,0.12)', fg: '#F4E7C5' },
+  secondary: { bg: PC.bgSubtle,              border: PC.borderCtrl,            fg: PC.textPrimary },
   gold:      { bg: 'rgba(201,169,110,0.08)', border: PC.borderGold,             fg: PC.gold },
   danger:    { bg: 'rgba(224,112,112,0.06)', border: 'rgba(224,112,112,0.32)', fg: PC.danger },
 };
@@ -264,7 +264,7 @@ export function RailButton({
         <ActivityIndicator size="small" color={v.fg} />
       ) : (
         <>
-          <Ionicons name={icon} size={16} color={v.fg} />
+          <Ionicons name={icon} size={14} color={v.fg} />
           <Text style={[s.btnText, { color: v.fg }]} numberOfLines={1}>{label}</Text>
         </>
       )}
@@ -292,7 +292,7 @@ export function RailIconButton({
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Ionicons name={icon} size={17} color={color} />
+      <Ionicons name={icon} size={15} color={color} />
     </TouchableOpacity>
   );
 }
@@ -368,7 +368,7 @@ export function CenteredState({
       {loading ? (
         <ActivityIndicator color={PC.gold} />
       ) : (
-        <Ionicons name="alert-circle-outline" size={32} color={PC.danger} />
+        <Ionicons name="alert-circle-outline" size={24} color={PC.danger} />
       )}
       <Text style={s.centeredText}>{message}</Text>
       {!loading && actionLabel && onAction ? (
@@ -409,7 +409,7 @@ export function Banner({
       style={[s.banner, { backgroundColor: t.bg, borderColor: t.border }, style]}
       accessibilityRole={tone === 'error' ? 'alert' : undefined}
     >
-      <Ionicons name={icon ?? t.icon} size={15} color={t.accent} style={s.bannerIcon} />
+      <Ionicons name={icon ?? t.icon} size={14} color={t.accent} style={s.bannerIcon} />
       <Text style={[s.bannerText, { color: t.fg }]}>{children}</Text>
     </View>
   );
@@ -428,7 +428,7 @@ export function EmptyState({
 }) {
   return (
     <View style={s.empty}>
-      <Ionicons name={icon} size={28} color="rgba(255,255,255,0.25)" />
+      <Ionicons name={icon} size={22} color="rgba(255,255,255,0.25)" />
       <Text style={s.emptyTitle}>{title}</Text>
       {hint ? <Text style={s.emptyHint}>{hint}</Text> : null}
       {children}
@@ -476,7 +476,7 @@ export function Pill({
 }) {
   return (
     <View style={[s.pill, { backgroundColor: bg }, border ? { borderWidth: 1, borderColor: border } : null]}>
-      {icon ? <Ionicons name={icon} size={10} color={color} /> : null}
+      {icon ? <Ionicons name={icon} size={9} color={color} /> : null}
       <Text
         style={[
           s.pillText,
@@ -512,7 +512,7 @@ export function MetaRow({
 }) {
   return (
     <View style={s.metaRow}>
-      <Ionicons name={icon} size={13} color={iconColor} />
+      <Ionicons name={icon} size={12} color={iconColor} />
       {text !== undefined ? (
         <Text style={[s.metaText, { color: textColor }]} numberOfLines={1}>{text}</Text>
       ) : (
@@ -560,7 +560,7 @@ export function InfoRow({
   return (
     <View style={s.infoRow}>
       <View style={s.infoIcon}>
-        <Ionicons name={icon} size={14} color={PC.gold} />
+        <Ionicons name={icon} size={12} color={PC.gold} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={s.infoLabel}>{label}</Text>
@@ -712,14 +712,14 @@ export function SelectField({
       accessibilityRole="button"
       accessibilityLabel={text}
     >
-      <Ionicons name={icon} size={15} color={selected ? PC.gold : 'rgba(255,255,255,0.4)'} />
+      <Ionicons name={icon} size={13} color={selected ? PC.gold : 'rgba(255,255,255,0.4)'} />
       <Text style={[s.selectText, selected && s.selectTextOn]} numberOfLines={1}>{text}</Text>
       {selected && onClear ? (
         <TouchableOpacity onPress={onClear} hitSlop={HIT} accessibilityLabel="Clear selection">
-          <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.4)" />
+          <Ionicons name="close-circle" size={14} color="rgba(255,255,255,0.4)" />
         </TouchableOpacity>
       ) : (
-        <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.3)" />
+        <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.3)" />
       )}
     </TouchableOpacity>
   );
@@ -770,7 +770,7 @@ export function PickerModal({
               accessibilityRole="button"
               accessibilityLabel="Close"
             >
-              <Ionicons name="close" size={16} color="rgba(255,255,255,0.6)" />
+              <Ionicons name="close" size={14} color="rgba(255,255,255,0.6)" />
             </TouchableOpacity>
           </View>
           <FlatList
@@ -795,7 +795,7 @@ export function PickerModal({
                   </View>
                   <Ionicons
                     name={active ? 'checkmark-circle' : 'chevron-forward'}
-                    size={active ? 17 : 14}
+                    size={active ? 15 : 12}
                     color={active ? PC.gold : 'rgba(255,255,255,0.3)'}
                   />
                 </TouchableOpacity>
@@ -813,11 +813,11 @@ export function PickerModal({
 const s = StyleSheet.create({
   screen: { flex: 1, flexDirection: 'row', backgroundColor: PC.bgScreen },
 
-  // Rail
+  // Sidebar
   rail: {
     height: '100%',
     backgroundColor: PC.bgRail,
-    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: 1,
     borderRightColor: PC.border,
   },
   railScroll: { flex: 1 },
@@ -826,96 +826,97 @@ const s = StyleSheet.create({
   backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    height: 32,
+    gap: 3,
+    height: 28,
     paddingLeft: 6,
     paddingRight: SP.md,
-    borderRadius: 10,
-    backgroundColor: PC.goldSoft,
+    borderRadius: 9,
+    backgroundColor: PC.bgSubtle,
+    borderWidth: 1,
+    borderColor: PC.borderCtrl,
     maxWidth: '70%',
   },
-  backText: { color: PC.gold, fontSize: FS.body, fontWeight: '700' },
+  backText: { color: PC.textPrimary, fontSize: FS.body, fontWeight: '600' },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: SP.sm },
   iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#151F2B',
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: PC.bgSubtle,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: PC.borderCtrl,
   },
 
-  identity: { gap: SP.xs },
+  identity: { gap: 3 },
   iconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 30,
+    height: 30,
+    borderRadius: 9,
     backgroundColor: PC.goldSoft,
     borderWidth: 1,
     borderColor: PC.borderGold,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: SP.xs,
+    marginBottom: 2,
   },
-  eyebrow: { color: PC.gold, fontSize: FS.micro, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase' },
-  title: { color: PC.textPrimary, fontSize: FS.title, fontWeight: '800', lineHeight: 23 },
-  subtitle: { color: PC.textMuted, fontSize: FS.body, lineHeight: 17, marginTop: 2 },
+  eyebrow: { color: PC.textFaint, fontSize: FS.small, fontWeight: '500', letterSpacing: 0.2 },
+  title: { color: PC.textPrimary, fontSize: FS.title, fontWeight: '700', lineHeight: 18, letterSpacing: -0.1 },
+  subtitle: { color: PC.textMuted, fontSize: FS.small, lineHeight: 14, marginTop: 2 },
   badgeWrap: { marginTop: SP.sm, alignSelf: 'flex-start' },
 
   railFooter: {
     gap: SP.sm,
     paddingTop: SP.md,
     paddingRight: SP.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
     borderTopColor: PC.border,
     backgroundColor: PC.bgRail,
   },
 
   // Buttons
   btn: {
-    minHeight: 42,
+    minHeight: 34,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
+    gap: 6,
     paddingHorizontal: SP.md,
-    paddingVertical: 9,
+    paddingVertical: 6,
     borderRadius: PC.radiusBtn,
     borderWidth: 1,
   },
-  btnText: { fontSize: FS.base, fontWeight: '800' },
+  btnText: { fontSize: FS.base, fontWeight: '700' },
   btnDisabled: { opacity: 0.4 },
 
   chip: {
-    minHeight: 32,
+    minHeight: 24,
     justifyContent: 'center',
-    paddingHorizontal: SP.md,
-    borderRadius: 999,
+    paddingHorizontal: 9,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: PC.borderCtrl,
+    backgroundColor: PC.bgSubtle,
   },
-  chipActive: { backgroundColor: PC.gold, borderColor: PC.gold },
-  chipText: { color: 'rgba(255,255,255,0.7)', fontSize: FS.body, fontWeight: '600' },
-  chipTextActive: { color: '#0E1520', fontWeight: '800' },
+  chipActive: { backgroundColor: PC.goldSoft, borderColor: PC.borderGold },
+  chipText: { color: PC.textMuted, fontSize: FS.body - 0.5, fontWeight: '600' },
+  chipTextActive: { color: PC.gold },
 
   optionRow: {
-    minHeight: 38,
+    minHeight: 30,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SP.md,
-    borderRadius: PC.radiusControl,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'transparent',
   },
-  optionRowActive: { backgroundColor: PC.gold, borderColor: PC.gold },
-  optionText: { color: 'rgba(255,255,255,0.72)', fontSize: FS.base, fontWeight: '600' },
-  optionTextActive: { color: '#0E1520', fontWeight: '800' },
-  optionCount: { color: 'rgba(255,255,255,0.5)', fontSize: FS.body, fontWeight: '700' },
+  optionRowActive: { backgroundColor: PC.goldSoft, borderColor: PC.borderGold },
+  optionText: { color: PC.textMuted, fontSize: FS.base - 0.5, fontWeight: '600' },
+  optionTextActive: { color: PC.gold },
+  optionCount: { color: PC.textFaint, fontSize: FS.small, fontWeight: '700' },
 
   // States
   centered: {
@@ -926,27 +927,27 @@ const s = StyleSheet.create({
     gap: SP.md,
     paddingHorizontal: SP.xl,
   },
-  centeredText: { color: 'rgba(255,255,255,0.65)', fontSize: FS.base, textAlign: 'center' },
+  centeredText: { color: PC.textMuted, fontSize: FS.base, textAlign: 'center' },
   retryBtn: {
-    minHeight: 40,
+    minHeight: 32,
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     backgroundColor: PC.gold,
     borderRadius: PC.radiusBtn,
   },
-  retryText: { color: '#0E1520', fontWeight: '800', fontSize: FS.base },
+  retryText: { color: '#0E1520', fontWeight: '700', fontSize: FS.body },
 
   banner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: SP.sm,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: SP.md,
-    borderRadius: PC.radius,
+    borderRadius: PC.radiusControl,
     borderWidth: 1,
   },
   bannerIcon: { marginTop: 1 },
-  bannerText: { flex: 1, fontSize: FS.body, lineHeight: 17, fontWeight: '500' },
+  bannerText: { flex: 1, fontSize: FS.body, lineHeight: 15, fontWeight: '500' },
 
   empty: {
     backgroundColor: PC.bgPanel,
@@ -956,10 +957,10 @@ const s = StyleSheet.create({
     paddingVertical: SP.xl,
     paddingHorizontal: SP.lg,
     alignItems: 'center',
-    gap: SP.xs,
+    gap: 3,
   },
-  emptyTitle: { color: PC.textSecondary, fontSize: FS.base, fontWeight: '700', marginTop: SP.xs, textAlign: 'center' },
-  emptyHint: { color: 'rgba(255,255,255,0.45)', fontSize: FS.body, textAlign: 'center', lineHeight: 17 },
+  emptyTitle: { color: PC.textSecondary, fontSize: FS.base, fontWeight: '700', marginTop: 3, textAlign: 'center' },
+  emptyHint: { color: PC.textMuted, fontSize: FS.body, textAlign: 'center', lineHeight: 15 },
 
   // Surfaces
   card: {
@@ -973,15 +974,15 @@ const s = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: SP.sm,
-    paddingVertical: 3,
-    borderRadius: 999,
+    gap: 3,
+    paddingHorizontal: 7,
+    height: 18,
+    borderRadius: 6,
     alignSelf: 'flex-start',
   },
-  pillText: { fontSize: FS.micro, fontWeight: '700' },
+  pillText: { fontSize: FS.micro + 0.5, fontWeight: '700' },
 
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { fontSize: FS.body, flexShrink: 1 },
 
   stat: {
@@ -989,37 +990,37 @@ const s = StyleSheet.create({
     borderRadius: PC.radiusControl,
     borderWidth: 1,
     borderColor: PC.borderSoft,
-    paddingVertical: 9,
-    paddingHorizontal: 10,
-    gap: 3,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    gap: 2,
   },
-  statLabel: { color: '#A9B7C4', fontSize: FS.micro, fontWeight: '600' },
-  statValue: { color: PC.textPrimary, fontSize: FS.title, fontWeight: '800' },
-  statSub: { color: 'rgba(255,255,255,0.45)', fontSize: FS.base, fontWeight: '600' },
+  statLabel: { color: PC.textFaint, fontSize: FS.micro + 0.5, fontWeight: '600' },
+  statValue: { color: PC.textPrimary, fontSize: 16, fontWeight: '800' },
+  statSub: { color: PC.textMuted, fontSize: FS.body, fontWeight: '600' },
 
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: PC.bgPanel,
-    borderRadius: PC.radius,
+    borderRadius: PC.radiusControl,
     borderWidth: 1,
     borderColor: PC.borderSoft,
-    paddingVertical: 10,
+    paddingVertical: 7,
     paddingHorizontal: SP.md,
   },
   infoIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 7,
     backgroundColor: PC.goldSoft,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.2)',
   },
-  infoLabel: { color: PC.textFaint, fontSize: FS.micro, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
-  infoValue: { color: PC.textPrimary, fontSize: FS.base, fontWeight: '600', marginTop: 2 },
+  infoLabel: { color: PC.textFaint, fontSize: FS.micro + 0.5, fontWeight: '600' },
+  infoValue: { color: PC.textPrimary, fontSize: FS.base - 0.5, fontWeight: '600', marginTop: 1 },
 
   block: {
     backgroundColor: PC.bgPanel,
@@ -1027,43 +1028,43 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: PC.borderSoft,
     padding: SP.md,
-    gap: 6,
+    gap: 5,
   },
-  blockLabel: { color: PC.textFaint, fontSize: FS.micro, fontWeight: '700', letterSpacing: 1 },
+  blockLabel: { color: PC.textFaint, fontSize: FS.micro, fontWeight: '700', letterSpacing: 0.6 },
 
   // Forms
-  formRow: { flexDirection: 'row', gap: SP.md },
-  field: { gap: 6 },
-  fieldLabel: { color: PC.textFaint, fontSize: FS.micro, fontWeight: '700', letterSpacing: 0.8 },
-  fieldHint: { color: 'rgba(255,255,255,0.38)', fontSize: FS.micro },
+  formRow: { flexDirection: 'row', gap: SP.sm },
+  field: { gap: 4 },
+  fieldLabel: { color: PC.textFaint, fontSize: FS.micro, fontWeight: '600', letterSpacing: 0.5 },
+  fieldHint: { color: PC.textFaint, fontSize: FS.micro },
   input: {
-    minHeight: 42,
-    backgroundColor: PC.bgPanel,
+    minHeight: 32,
+    backgroundColor: PC.bgSubtle,
     borderRadius: PC.radiusControl,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: PC.borderCtrl,
     paddingHorizontal: SP.md,
-    paddingVertical: 10,
+    paddingVertical: 6,
     color: PC.textPrimary,
-    fontSize: FS.base,
+    fontSize: FS.body,
   },
   inputFocused: { borderColor: PC.gold },
   inputDisabled: { opacity: 0.6 },
-  textarea: { minHeight: 76, textAlignVertical: 'top', paddingTop: 10 },
+  textarea: { minHeight: 58, textAlignVertical: 'top', paddingTop: 8 },
 
   select: {
-    minHeight: 42,
+    minHeight: 32,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: PC.bgPanel,
+    gap: 7,
+    backgroundColor: PC.bgSubtle,
     borderRadius: PC.radiusControl,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: PC.borderCtrl,
     paddingHorizontal: SP.md,
-    paddingVertical: 9,
+    paddingVertical: 5,
   },
-  selectText: { flex: 1, color: 'rgba(255,255,255,0.45)', fontSize: FS.base },
+  selectText: { flex: 1, color: PC.textMuted, fontSize: FS.body },
   selectTextOn: { color: PC.textPrimary, fontWeight: '600' },
 
   // Picker modal
@@ -1077,12 +1078,12 @@ const s = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 440,
+    maxWidth: 360,
     maxHeight: '100%',
-    backgroundColor: '#111927',
-    borderRadius: 16,
+    backgroundColor: PC.bgPanel,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: PC.border,
+    borderColor: PC.borderCtrl,
     overflow: 'hidden',
   },
   modalHeader: {
@@ -1090,34 +1091,34 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SP.lg,
-    paddingVertical: SP.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    height: 40,
+    borderBottomWidth: 1,
     borderBottomColor: PC.border,
   },
-  modalTitle: { color: PC.textPrimary, fontSize: 14, fontWeight: '700' },
+  modalTitle: { color: PC.textPrimary, fontSize: FS.base, fontWeight: '700' },
   modalClose: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: PC.bgSubtle,
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalRow: {
-    minHeight: 48,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: SP.md,
     paddingHorizontal: SP.md,
-    paddingVertical: 10,
-    borderRadius: PC.radiusControl,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   modalRowActive: { backgroundColor: PC.goldSoft },
   modalRowTitle: { color: PC.textPrimary, fontSize: FS.base, fontWeight: '600' },
-  modalRowSub: { color: PC.textFaint, fontSize: FS.small, marginTop: 2 },
-  modalEmpty: { color: PC.textFaint, fontSize: FS.base, textAlign: 'center', padding: SP.xl },
+  modalRowSub: { color: PC.textFaint, fontSize: FS.small, marginTop: 1 },
+  modalEmpty: { color: PC.textFaint, fontSize: FS.body, textAlign: 'center', padding: SP.xl },
 
   // Panel
   panel: { flex: 1 },
-  panelContent: { paddingLeft: SP.lg, gap: SP.md },
+  panelContent: { paddingLeft: SP.md, gap: SP.sm },
 });
