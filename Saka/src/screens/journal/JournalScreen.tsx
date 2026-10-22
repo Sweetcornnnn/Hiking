@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import JournalImageGrid from '../../components/journal/JournalImageGrid';
 import MyJournalFeed from '../../components/journal/MyJournalFeed';
+import PhotoEditor from '../../components/journal/PhotoEditor';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import { useJournalStore } from '../../store/journalStore';
 import { useProfileCardStore } from '../../store/profileCardStore';
@@ -23,8 +24,18 @@ export default function JournalScreen() {
   const preselectedViewpointId = typeof viewpointId === 'string' ? viewpointId : null;
   const preselectedMountainId = typeof mountainId === 'string' ? mountainId : null;
   const cameFromProfile = fromProfile === '1';
-  const { entries, fetchEntries, saveEntry, deleteEntry, isLoading, error, clearError } = useJournalStore();
+  const {
+    entries,
+    fetchEntries,
+    saveEntry,
+    deleteEntry,
+    replaceEntryImage,
+    isLoading,
+    error,
+    clearError,
+  } = useJournalStore();
   const [mode, setMode] = useState<Mode>('feed');
+  const [editingPhoto, setEditingPhoto] = useState<{ entry: JournalEntry; index: number; uri: string } | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [images, setImages] = useState<JournalImage[]>([]);
@@ -101,6 +112,17 @@ export default function JournalScreen() {
         },
       ],
     );
+  };
+
+  const handleEditPhoto = (entry: JournalEntry, index: number, uri: string) => {
+    setEditingPhoto({ entry, index, uri });
+  };
+
+  const handleSaveEditedPhoto = async (editedUri: string): Promise<{ error: string | null }> => {
+    if (!editingPhoto) return { error: null };
+    const result = await replaceEntryImage(editingPhoto.entry, editingPhoto.index, editedUri);
+    if (!result.error) setEditingPhoto(null);
+    return result;
   };
 
   const pickImages = async () => {
@@ -210,6 +232,7 @@ export default function JournalScreen() {
             mountains={mountains}
             isLoading={isLoading && !entries.length}
             onDelete={confirmDelete}
+            onEdit={handleEditPhoto}
             onNewEntry={() => setMode('form')}
           />
         </ScrollView>
@@ -299,6 +322,12 @@ export default function JournalScreen() {
         </TouchableOpacity>
       </ScrollView>
       )}
+      <PhotoEditor
+        visible={Boolean(editingPhoto)}
+        uri={editingPhoto?.uri ?? null}
+        onClose={() => setEditingPhoto(null)}
+        onSave={handleSaveEditedPhoto}
+      />
     </KeyboardAvoidingView>
   );
 }

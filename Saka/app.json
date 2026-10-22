@@ -1,13 +1,14 @@
 {
   "expo": {
     "name": "Saka",
-    "slug": "Saka",
+    "slug": "saka",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "saka",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.yourname.saka",
       "supportsTablet": true,
       "config": {
         "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
@@ -17,9 +18,12 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need continuous location access to provide real-time safety monitoring and emergency assistance.",
         "NSLocationAlwaysUsageDescription": "We need continuous location access for background safety tracking.",
         "UIBackgroundModes": [
-           "location",
-           "remote-notification"
-        ]
+          "location",
+          "remote-notification",
+          "location",
+          "remote-notification"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -35,7 +39,7 @@
         }
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.Saka"
+      "package": "com.yourname.saka"
     },
     "web": {
       "output": "static",
@@ -43,18 +47,22 @@
     },
     "extra": {
       "WEATHER_API_KEY": "8354d134719c19d5c918ac8a014dc925",
-      "API_HOST": "192.168.18.10"
+      "API_HOST": "192.168.18.10",
+      "router": {},
+      "eas": {
+        "projectId": "be6b2c80-2441-412a-b0b0-340d2ad962b8"
+      }
     },
     "plugins": [
       "expo-router",
-       [
-         "expo-notifications",
-         {
-           "icon": "./assets/images/icon.png",
-           "color": "#C9A96E",
-           "defaultChannel": "safety"
-         }
-       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#C9A96E",
+          "defaultChannel": "safety"
+        }
+      ],
       [
         "expo-splash-screen",
         {

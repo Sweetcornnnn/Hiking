@@ -31,6 +31,7 @@ export default function AuthCallback() {
     };
 
     const processUrl = async (rawUrl: string | null) => {
+      let recoverySessionEstablished = false;
       try {
         setStatus(`Raw URL: ${rawUrl ?? 'null'}`);
         if (!rawUrl) return;
@@ -69,6 +70,7 @@ export default function AuthCallback() {
             console.warn('[Auth] Recovery session set failed:', error.message);
             setStatus(`Session set failed: ${error.message}`);
           } else {
+            recoverySessionEstablished = true;
             setStatus('Recovery session set; redirecting...');
           }
         } else if (code) {
@@ -78,6 +80,7 @@ export default function AuthCallback() {
             console.warn('[Auth] Exchange code for session failed:', error.message);
             setStatus(`Exchange failed: ${error.message}`);
           } else {
+            recoverySessionEstablished = true;
             setStatus('Code exchanged; redirecting...');
           }
         } else {
@@ -87,9 +90,12 @@ export default function AuthCallback() {
         console.warn('[Auth] URL processing failed:', error);
         setStatus(`Processing error: ${String(error)}`);
       } finally {
-        if (mounted) {
+        if (mounted && rawUrl) {
           // small delay so user can see status
-          setTimeout(() => router.replace('/Login'), 800);
+          setTimeout(
+            () => router.replace(recoverySessionEstablished ? '/Forgot?reset=1' : '/Login'),
+            800,
+          );
         }
       }
     };

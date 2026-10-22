@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { createJournalEntry, deleteJournalEntry, fetchMyJournalEntries, updateJournalEntry } from '../services/journalService';
+import {
+  createJournalEntry,
+  deleteJournalEntry,
+  fetchMyJournalEntries,
+  replaceJournalImage,
+  updateJournalEntry,
+} from '../services/journalService';
 import type { CreateJournalEntryInput, JournalEntry } from '../types/journal';
 
 interface JournalState {
@@ -9,6 +15,7 @@ interface JournalState {
   fetchEntries: () => Promise<void>;
   saveEntry: (input: CreateJournalEntryInput) => Promise<{ error: string | null }>;
   updateEntry: (entryId: string, input: CreateJournalEntryInput) => Promise<{ error: string | null }>;
+  replaceEntryImage: (entry: JournalEntry, index: number, localUri: string) => Promise<{ error: string | null }>;
   deleteEntry: (entry: JournalEntry) => Promise<{ error: string | null }>;
   clearError: () => void;
 }
@@ -54,6 +61,16 @@ export const useJournalStore = create<JournalState>((set, get) => ({
       set({ isLoading: false, error: message });
       return { error: message };
     }
+  },
+
+  replaceEntryImage: async (entry, index, localEditedUri) => {
+    const result = await replaceJournalImage(entry, index, localEditedUri);
+    if (!result.error && result.entry) {
+      set({
+        entries: get().entries.map((item) => item.id === entry.id ? result.entry! : item),
+      });
+    }
+    return { error: result.error };
   },
 
   deleteEntry: async (entry) => {
