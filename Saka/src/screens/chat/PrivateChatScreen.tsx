@@ -11,6 +11,7 @@ import {
   RefreshControl,
   FlatList,
   Alert,
+  Image, // <-- Imported Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -43,6 +44,7 @@ type Conversation = {
   conversation_id?: string;
   sortTimestamp?: number;
   is_online?: boolean;
+  avatar_url?: string | null; // <-- Added
 };
 
 const rowColorKey = (c: Conversation): string => {
@@ -165,6 +167,7 @@ export default function PrivateChatScreen({
                 ? new Date(effectiveTimestamp).getTime()
                 : 0,
               is_online: profileData?.is_online || false,
+              avatar_url: profileData?.avatar_url || null, // <-- Mapped
             });
           }
         }
@@ -246,6 +249,7 @@ export default function PrivateChatScreen({
                 : group.updated_at
                 ? new Date(group.updated_at).getTime()
                 : 0,
+              avatar_url: group.avatar_url || null, // <-- Mapped group avatar too just in case
             });
           }
         }
@@ -302,7 +306,7 @@ export default function PrivateChatScreen({
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        { event: 'UPDATE', schema: 'public', table: 'profiles' }, // Triggers on avatar update
         () => loadConversations(true)
       )
       .subscribe();
@@ -427,7 +431,7 @@ export default function PrivateChatScreen({
     const hasUnread = (item.unread || 0) > 0;
     const isOnline = item.type === 'private' && item.is_online === true;
     const color = getAvatarColor(rowColorKey(item));
-
+    
     const isActive = activeConversationId === (item.type === 'private' ? item.user_id : item.group_id);
 
     return (
@@ -444,9 +448,15 @@ export default function PrivateChatScreen({
         activeOpacity={0.7}
       >
         <View style={styles.avatarWrap}>
-          <View style={[styles.avatar, { backgroundColor: color }]}>
-            <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
-          </View>
+          {/* Render Image if avatar_url exists, else fallback to initials */}
+          {item.avatar_url ? (
+            <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: color }]}>
+              <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
+            </View>
+          )}
+          
           {isOnline && <View style={styles.onlineIndicator} />}
           {isGroup && (
             <View style={styles.groupBadgeSmall}>

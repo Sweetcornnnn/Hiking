@@ -492,7 +492,14 @@ export default function ProfileCard({
                         <View
                           style={[styles.avatar, { backgroundColor: avatarColor }]}
                         >
-                          <Text style={styles.avatarText}>{initials}</Text>
+                          {profile?.avatar_url ? (
+                            <Image
+                              source={{ uri: profile.avatar_url }}
+                              style={styles.avatarImage}
+                            />
+                          ) : (
+                            <Text style={styles.avatarText}>{initials}</Text>
+                          )}
                         </View>
                       </View>
                       {isOnline && (
@@ -913,6 +920,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden', // <-- ADDED to clip image
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarText: {
     color: '#fff',

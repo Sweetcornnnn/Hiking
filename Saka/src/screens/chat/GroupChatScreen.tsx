@@ -17,6 +17,7 @@ import {
   Animated,
   PanResponder,
   Clipboard,
+  Image,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,6 +27,7 @@ import { useAuthStore } from '../../store/authStore';
 import { MessageBubble, ReactionType } from '../../components/chat/MessageBubble';
 import MessageActionSheet from '../../components/chat/MessageActionSheet';
 import ReactionsList from '../../components/chat/ReactionsList';
+import ProfileCard from '../../components/chat/ProfileCard';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -297,6 +299,8 @@ export default function GroupChatScreen({
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
+
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
 
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -1142,6 +1146,7 @@ export default function GroupChatScreen({
       const isMe = item.sender_id === user?.id;
       const profile = normalizeProfile(item.profiles);
       const senderName = profile?.full_name || profile?.username || 'Member';
+      const senderAvatar = profile?.avatar_url || null;
 
       const time = item.created_at
         ? new Date(item.created_at).toLocaleTimeString([], {
@@ -1192,10 +1197,14 @@ export default function GroupChatScreen({
                   summaries.length > 0 ? () => setReactionsTarget(item.id) : undefined
                 }
                 showReadReceipt={false}
-                showAvatar={false}
-                showSenderHeader={!isMe}
+                showAvatar={true} // <-- CHANGED TO TRUE
+                showSenderHeader={false} // <-- CHANGED TO FALSE
                 senderName={senderName}
                 senderColorSeed={item.sender_id}
+                senderAvatarUrl={senderAvatar}
+                avatarUri={senderAvatar} // <-- ADDED TO RENDER IMAGE
+                avatarLabel={senderName}
+                onPressSender={!isMe ? () => setProfileUserId(item.sender_id) : undefined}
               />
             </Pressable>
           </SwipeableRow>
@@ -1216,14 +1225,25 @@ export default function GroupChatScreen({
     const name = profile?.full_name || profile?.username || 'Unknown';
 
     return (
-      <View style={styles.memberItem}>
+      <TouchableOpacity 
+        style={styles.memberItem}
+        onPress={() => {
+          setShowMembers(false);
+          setProfileUserId(item.user_id);
+        }}
+        activeOpacity={0.7}
+      >
         <View
           style={[
             styles.memberAvatar,
             { backgroundColor: getAvatarColor(item.user_id) },
           ]}
         >
-          <Text style={styles.memberAvatarText}>{getInitials(name)}</Text>
+          {profile?.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.memberAvatarImage} />
+          ) : (
+            <Text style={styles.memberAvatarText}>{getInitials(name)}</Text>
+          )}
         </View>
         <View style={styles.memberInfo}>
           <Text style={styles.memberName}>{name}</Text>
@@ -1235,7 +1255,7 @@ export default function GroupChatScreen({
               : 'Member'}
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -1284,7 +1304,11 @@ export default function GroupChatScreen({
               { backgroundColor: getAvatarColor(groupId || '') },
             ]}
           >
-            <Ionicons name="people" size={16} color="#fff" />
+            {group?.avatar_url ? (
+              <Image source={{ uri: group.avatar_url }} style={styles.headerAvatarImage} />
+            ) : (
+              <Ionicons name="people" size={16} color="#fff" />
+            )}
           </View>
           <View style={styles.headerGroupInfo}>
             <Text style={styles.headerName} numberOfLines={1}>
@@ -1503,7 +1527,11 @@ export default function GroupChatScreen({
                   { backgroundColor: getAvatarColor(groupId || '') },
                 ]}
               >
-                <Ionicons name="people" size={18} color="#fff" />
+                {group?.avatar_url ? (
+                  <Image source={{ uri: group.avatar_url }} style={styles.menuAvatarImage} />
+                ) : (
+                  <Ionicons name="people" size={18} color="#fff" />
+                )}
               </View>
               <View style={styles.menuHeaderInfo}>
                 <Text style={styles.menuTitle} numberOfLines={1}>
@@ -1622,6 +1650,14 @@ export default function GroupChatScreen({
         summaries={reactionsSummaries}
         currentUserId={user?.id}
       />
+      
+      {/* Profile Card */}
+      <ProfileCard
+        userId={profileUserId}
+        visible={!!profileUserId}
+        onClose={() => setProfileUserId(null)}
+      />
+
       <Modal
         visible={notice !== null}
         transparent
@@ -1714,6 +1750,11 @@ const styles = StyleSheet.create({
     borderRadius: 17.5,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   headerGroupInfo: { marginLeft: 9, flex: 1, minWidth: 0 },
   headerName: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
@@ -2045,6 +2086,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  memberAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   memberAvatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   memberInfo: { flex: 1 },
@@ -2080,6 +2126,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  menuAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   menuHeaderInfo: { flex: 1, minWidth: 0 },
   menuTitle: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },

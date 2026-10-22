@@ -347,6 +347,7 @@ export default function WorldChatScreen({
           const isMe = item.user_id === user?.id;
           const profile = item.profiles || item.users || {};
           const senderName = profile.full_name || profile.username || 'Anonymous';
+          const senderAvatar = profile.avatar_url || null;
           const time = item.created_at
             ? new Date(item.created_at).toLocaleTimeString([], {
                 hour: '2-digit',
@@ -362,10 +363,14 @@ export default function WorldChatScreen({
                 time={time}
                 isMe={isMe}
                 showReadReceipt={false}
-                showAvatar={false}
-                showSenderHeader={!isMe}
+                showAvatar={true}
+                showSenderHeader={false}
                 senderName={senderName}
                 senderColorSeed={item.user_id}
+                senderAvatarUrl={senderAvatar}
+                avatarUri={senderAvatar}
+                avatarLabel={senderName}
+                disableAvatarLift={true} // <-- ADDED THIS
                 onPressSender={
                   canOpenProfile ? () => openProfile(item.user_id) : undefined
                 }
@@ -412,7 +417,6 @@ export default function WorldChatScreen({
     </KeyboardAvoidingView>
   );
 
-  // If embedded (landscape), show chat + online users list side-by-side.
   if (embedded) {
     return (
       <View style={{ flex: 1, flexDirection: 'row' }}>
@@ -422,7 +426,6 @@ export default function WorldChatScreen({
     );
   }
 
-  // Portrait mode
   return chatContent;
 }
 
