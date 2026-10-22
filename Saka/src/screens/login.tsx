@@ -8,6 +8,7 @@ import {
   Animated,
   Easing,
   Image,
+  ImageBackground,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -270,41 +271,33 @@ export default function LoginScreen() {
 
         <View style={styles.face}>
           {/* ── LEFT PANEL ── */}
-          <View style={styles.leftPanel}>
+          <ImageBackground
+            source={require('../../assets/images/MountainBg.jpg')}
+            style={[styles.leftPanel, !isAdminLogin && styles.leftPanelLogoOnly]}
+            resizeMode="cover"
+          >
+            {/* Dark overlay so the text stays readable. Change the 0.45 in styles.leftOverlay to adjust. */}
+            <View style={[styles.leftOverlay, { pointerEvents: 'none' }]} />
             <TouchableOpacity
               onPress={handleLogoPress}
               activeOpacity={0.75}
-              style={styles.logoMark}
+              style={[styles.logoMark, !isAdminLogin && styles.logoMarkCentered]}
             >
               <Image
                 source={require('../../assets/images/SakaLogo.png')}
-                style={styles.logoImage}
+                style={[styles.logoImage, !isAdminLogin && styles.logoImageLarge]}
                 resizeMode="contain"
               />
             </TouchableOpacity>
-            {!isAdminLogin ? (
-              <>
-                <Text style={styles.brandTagline}>
-                  Every summit begins{'\n'}with a single step.
-                </Text>
-                <View style={styles.dividerH} />
-                {[
-                  { label: '10 peaks to conquer', gold: false },
-                  { label: 'Track every ascent', gold: true },
-                  { label: 'Built for Filipino hikers', gold: false },
-                ].map((item, i) => (
-                  <View key={i} style={styles.featureRow}>
-                    <View
-                      style={[
-                        styles.featureDot,
-                        item.gold && styles.featureDotGold,
-                      ]}
-                    />
-                    <Text style={styles.featureText}>{item.label}</Text>
-                  </View>
-                ))}
-              </>
-            ) : (
+              {!isAdminLogin && (
+                <View style={styles.loginMessage}>
+                  <Text style={styles.loginHeadline}>Ready for your climb?</Text>
+                  <Text style={styles.loginSupporting}>
+                    Sign in to discover the sublime landscapes of Aklan.
+                  </Text>
+                </View>
+              )}
+            {isAdminLogin && (
               <>
                 <Text style={styles.brandName}>Admin Access</Text>
                 <Text style={styles.brandTagline}>
@@ -314,7 +307,7 @@ export default function LoginScreen() {
                 <Text style={styles.adminHint}>Admin ka Gale?</Text>
               </>
             )}
-          </View>
+          </ImageBackground>
 
           <View style={styles.dividerV} />
 
@@ -449,18 +442,50 @@ const styles = StyleSheet.create({
   },
   leftPanel: {
     width: 168,
+    overflow: 'hidden',
     backgroundColor: '#111927',
     paddingHorizontal: 18,
     paddingTop: 20,
     paddingBottom: 18,
     alignItems: 'center',
   },
+  leftPanelLogoOnly: {
+    justifyContent: 'flex-start',
+  },
+  // Darkens the mountain image. Higher number = darker image.
+  leftOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(8,13,20,0.45)',
+  },
   logoMark: {
     marginBottom: -10,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  logoMarkCentered: {
+    marginBottom: 0,
+  },
   logoImage: { width: 102, height: 102 },
+  logoImageLarge: { width: 128, height: 140 },
+  loginMessage: {
+    alignSelf: 'stretch',
+    marginTop: 7,
+    paddingHorizontal: 2,
+  },
+  loginHeadline: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginBottom: 7,
+    textAlign: 'center',
+  },
+  loginSupporting: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    lineHeight: 14,
+    textAlign: 'center',
+  },
   brandName: {
     color: '#FFFFFF',
     fontSize: 15,
@@ -470,7 +495,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   brandTagline: {
-    color: 'rgba(255,255,255,0.28)',
+    color: 'rgba(255,255,255,0.6)',
     fontSize: 10,
     lineHeight: 16,
     marginBottom: 14,
@@ -482,22 +507,8 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     marginBottom: 12,
   },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginBottom: 8,
-  },
-  featureDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  featureDotGold: { backgroundColor: '#C9A96E' },
-  featureText: { color: 'rgba(255,255,255,0.32)', fontSize: 10 },
   adminHint: {
-    color: 'rgba(255,255,255,0.3)',
+    color: 'rgba(255,255,255,0.55)',
     fontSize: 10,
     lineHeight: 14,
     marginTop: 10,
