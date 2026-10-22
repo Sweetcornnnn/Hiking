@@ -288,10 +288,12 @@ export default function GroupChatScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
 
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  const [pendingUnsend, setPendingUnsend] = useState<Message | null>(null);
 
   // Reactions: message_id -> rows
   const [reactionsByMessage, setReactionsByMessage] = useState<
@@ -779,38 +781,32 @@ export default function GroupChatScreen() {
 
   const confirmDeleteFromSheet = () => {
     if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+    setPendingUnsend(actionTarget);
+    setActionTarget(null);
+  };
 
-    Alert.alert(
-      'Unsend this message?',
-      'This will remove it for everyone in the group.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unsend',
-          style: 'destructive',
-          onPress: async () => {
-            const msgId = actionTarget.id;
-            const backup = messages;
-            setMessages((prev) => prev.filter((m) => m.id !== msgId));
-            setActionTarget(null);
+  const unsendMessage = async () => {
+    if (!pendingUnsend || !user) return;
 
-            try {
-              const { error } = await supabase
-                .from('group_messages')
-                .delete()
-                .eq('id', msgId)
-                .eq('sender_id', user!.id);
+    const messageToUnsend = pendingUnsend;
+    const backup = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== messageToUnsend.id));
+    setPendingUnsend(null);
 
-              if (error) throw error;
-            } catch (err) {
-              console.error('[unsend] caught:', err);
-              setMessages(backup);
-              Alert.alert('Error', 'Failed to unsend. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+    try {
+      const { error } = await supabase
+        .from('group_messages')
+        .delete()
+        .eq('id', messageToUnsend.id)
+        .eq('sender_id', user.id);
+
+      if (error) throw error;
+      setNotice({ title: 'Message unsent', message: 'The message was removed for everyone.' });
+    } catch (err) {
+      console.error('[unsend] caught:', err);
+      setMessages(backup);
+      Alert.alert('Error', 'Failed to unsend. Please try again.');
+    }
   };
 
   const copyMessage = () => {
@@ -1057,7 +1053,10 @@ export default function GroupChatScreen() {
     if (!user || !groupId) return;
 
     if (members.some((m) => m.user_id === selectedUser.id)) {
-      Alert.alert('Already a member', 'This user is already in the group.');
+      setNotice({
+        title: 'Already a member',
+        message: 'This user is already in the group.',
+      });
       return;
     }
 
@@ -1100,7 +1099,10 @@ export default function GroupChatScreen() {
         },
       });
       setShowAddMembers(false);
-      Alert.alert('Success', `${addedName} has been added to the group`);
+      setNotice({
+        title: 'Member added',
+        message: `${addedName} has been added to the group.`,
+      });
     } catch {
       Alert.alert('Error', 'Failed to add member. Please try again.');
     }
@@ -1616,6 +1618,57 @@ export default function GroupChatScreen() {
         summaries={reactionsSummaries}
         currentUserId={user?.id}
       />
+      <Modal
+        visible={notice !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotice(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>{notice?.title}</Text>
+            <Text style={styles.noticeText}>{notice?.message}</Text>
+            <TouchableOpacity
+              style={styles.noticeButton}
+              onPress={() => setNotice(null)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.noticeButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={pendingUnsend !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingUnsend(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>Unsend this message?</Text>
+            <Text style={styles.noticeText}>
+              This will remove it for everyone in the group.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.cancelNoticeButton}
+                onPress={() => setPendingUnsend(null)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.cancelNoticeButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.destructiveNoticeButton}
+                onPress={unsendMessage}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.destructiveNoticeButtonText}>Unsend</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1672,6 +1725,55 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(224,112,112,0.22)',
   },
   errorText: { color: CHAT_DANGER, fontSize: 11, textAlign: 'center' },
+  noticeBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 340,
+    padding: 20,
+    borderRadius: CHAT_RADIUS_MODAL,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_PANEL,
+  },
+  noticeTitle: { color: TEXT_PRIMARY, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  noticeText: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 },
+  noticeButton: {
+    alignItems: 'center',
+    marginTop: 18,
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: ACCENT_GOLD,
+  },
+  noticeButtonText: { color: CHAT_BG, fontSize: 12, fontWeight: '800' },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  cancelNoticeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_SUBTLE,
+  },
+  cancelNoticeButtonText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
+  destructiveNoticeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: CHAT_DANGER,
+  },
+  destructiveNoticeButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
   keyboardContainer: { flex: 1 },
   emptyContainer: {

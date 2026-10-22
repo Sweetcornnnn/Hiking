@@ -68,6 +68,7 @@ export default function PrivateChatScreen({
     useState<Conversation | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
   const user = useAuthStore((state) => state.user);
 
   // Open the create-group modal: prefer the parent's handler if provided,
@@ -345,12 +346,12 @@ export default function PrivateChatScreen({
       setShowActionSheet(false);
       const wasGroup = isGroup;
       setSelectedConversation(null);
-      Alert.alert(
-        'Success',
-        wasGroup
+      setNotice({
+        title: 'Success',
+        message: wasGroup
           ? 'Chat removed from your list. It will reappear when someone posts.'
-          : 'Conversation deleted'
-      );
+          : 'Conversation deleted',
+      });
     } catch {
       Alert.alert('Error', 'Action failed. Please try again.');
     } finally {
@@ -625,6 +626,26 @@ export default function PrivateChatScreen({
           </View>
         </TouchableOpacity>
       </Modal>
+      <Modal
+        visible={notice !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotice(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>{notice?.title}</Text>
+            <Text style={styles.noticeText}>{notice?.message}</Text>
+            <TouchableOpacity
+              style={styles.noticeButton}
+              onPress={() => setNotice(null)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.noticeButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -803,6 +824,43 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(224,112,112,0.22)',
   },
   errorText: { color: '#E07070', fontSize: 11, textAlign: 'center' },
+  noticeBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 340,
+    padding: 20,
+    borderRadius: CHAT_RADIUS_MODAL,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_PANEL,
+  },
+  noticeTitle: {
+    color: TEXT_PRIMARY,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  noticeText: {
+    color: TEXT_MUTED,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  noticeButton: {
+    alignItems: 'center',
+    marginTop: 18,
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: ACCENT_GOLD,
+  },
+  noticeButtonText: { color: CHAT_BG, fontSize: 12, fontWeight: '800' },
 
   // Action sheet
   actionBackdrop: {
