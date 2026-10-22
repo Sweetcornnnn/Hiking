@@ -31,6 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { fetchViewpointDetail } from '../services/viewpointService';
 import SakagramSection from '../components/sakagram/SakagramSection';
 import LoadingScreen from './Loading';
+import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -100,6 +101,8 @@ export default function ViewpointScreen() {
   const [activeImageReady, setActiveImageReady] = React.useState(false);
   const [imageModalVisible, setImageModalVisible] = React.useState(false);
   const [modalMedia, setModalMedia] = React.useState<MediaItem | null>(null);
+  // Hook sits above the early returns; waits until the loading screen is gone
+  const tutorial = useTutorial('viewpoint', { ready: loadingScreenComplete && !!data });
 
   React.useEffect(() => {
     let active = true;
@@ -210,6 +213,8 @@ export default function ViewpointScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.mapBackBtn}>
             <Ionicons name="map-outline" size={17} color={PC.textSecondary} />
           </TouchableOpacity>
+
+          <TutorialHelpButton onPress={tutorial.open} style={styles.tutorialBtn} />
         </View>
 
         <View style={styles.rightWrap}>
@@ -409,6 +414,8 @@ export default function ViewpointScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {tutorial.element}
 
       {!loadingScreenComplete && (
         <View style={StyleSheet.absoluteFillObject}>
@@ -695,6 +702,11 @@ const styles = StyleSheet.create({
     borderRadius: PC.radiusBtn, backgroundColor: 'rgba(14,21,32,0.78)',
     borderWidth: 1, borderColor: PC.border,
     alignItems: 'center', justifyContent: 'center', zIndex: 2,
+  },
+  // Sits beside the map button (32px, top 22), vertically centred on it
+  tutorialBtn: {
+    position: 'absolute', top: 29, left: 56, zIndex: 2,
+    backgroundColor: 'rgba(14,21,32,0.78)',
   },
   emptyMediaState: {
     width: '100%', alignItems: 'center', justifyContent: 'center',
