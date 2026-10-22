@@ -8,7 +8,6 @@ import {
   ScrollView,
   Image,
   Pressable,
-  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -60,7 +59,6 @@ import {
 } from '../../components/events/DesktopKit';
 
 // ── SAKA logo for the permit stamp ─────────────────────────
-// Falls back to the plain "SAKA" text mark when no logo is supplied.
 const sakaLogo = require('../../../assets/images/SakaLogo.png');
 
 const formatDate = (iso: string) =>
@@ -210,20 +208,14 @@ function TextPanel({
   );
 }
 
-// ── Attendee avatar stack ──────────────────────────────────
-const AVATAR_SIZE = 26;
-const AVATAR_OVERLAP = 8;
-const AVATAR_MAX_VISIBLE = 5;
+// ── Attendee card (one per hiker) ─────────────────────────
+const AVATAR_SIZE = 34;
 
-function AttendeeAvatar({
+function AttendeeCard({
   attendee,
-  index,
-  total,
   onPress,
 }: {
   attendee: EventAttendee;
-  index: number;
-  total: number;
   onPress: (userId: string) => void;
 }) {
   const name = attendee.fullName || attendee.username || 'Hiker';
@@ -233,154 +225,47 @@ function AttendeeAvatar({
   return (
     <Pressable
       onPress={() => onPress(attendee.userId)}
-      hitSlop={4}
-      style={({ pressed }) => [
-        styles.attendeeAvatar,
-        {
-          backgroundColor: color,
-          marginLeft: index === 0 ? 0 : -AVATAR_OVERLAP,
-          borderColor: isWaitlist ? D.gold : D.bg,
-          opacity: pressed ? 0.85 : 1,
-          zIndex: total - index,
-        },
-      ]}
+      style={({ pressed }) => [styles.attendeeCard, pressed && { opacity: 0.85 }]}
     >
-      {attendee.avatarUrl ? (
-        <Image source={{ uri: attendee.avatarUrl }} style={styles.attendeeAvatarImage} />
-      ) : (
-        <Text style={styles.attendeeInitials}>{getInitials(name)}</Text>
-      )}
-    </Pressable>
-  );
-}
+      <View style={[styles.attendeeCardAvatar, { backgroundColor: color }]}>
+        {attendee.avatarUrl ? (
+          <Image source={{ uri: attendee.avatarUrl }} style={styles.attendeeCardAvatarImage} />
+        ) : (
+          <Text style={styles.attendeeCardInitials}>{getInitials(name)}</Text>
+        )}
+      </View>
 
-function AttendeeAvatars({
-  attendees,
-  onPressAttendee,
-}: {
-  attendees: EventAttendee[];
-  onPressAttendee: (userId: string) => void;
-}) {
-  const visible = attendees.slice(0, AVATAR_MAX_VISIBLE);
-  const remaining = Math.max(0, attendees.length - AVATAR_MAX_VISIBLE);
+      <View style={styles.attendeeCardBody}>
+        <Text style={styles.attendeeCardName} numberOfLines={1}>
+          {name}
+        </Text>
+        {attendee.username ? (
+          <Text style={styles.attendeeCardUsername} numberOfLines={1}>
+            @{attendee.username}
+          </Text>
+        ) : (
+          <Text style={styles.attendeeCardUsername} numberOfLines={1}>
+            {isWaitlist ? 'On the waitlist' : 'Going'}
+          </Text>
+        )}
+      </View>
 
-  return (
-    <View style={styles.attendeeRow}>
-      {visible.map((a, i) => (
-        <AttendeeAvatar
-          key={a.rsvpId}
-          attendee={a}
-          index={i}
-          total={visible.length}
-          onPress={onPressAttendee}
-        />
-      ))}
-      {remaining > 0 && (
-        <View
-          style={[
-            styles.attendeeAvatar,
-            styles.attendeeMore,
-            { marginLeft: -AVATAR_OVERLAP, zIndex: 0 },
-          ]}
-        >
-          <Text style={styles.attendeeMoreText}>+{remaining}</Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
-// ── Full attendee list modal ───────────────────────────────
-function AttendeeListModal({
-  visible,
-  attendees,
-  onClose,
-  onPressAttendee,
-}: {
-  visible: boolean;
-  attendees: EventAttendee[];
-  onClose: () => void;
-  onPressAttendee: (userId: string) => void;
-}) {
-  const going = attendees.filter((a) => a.status !== 'waitlist');
-  const waiting = attendees.filter((a) => a.status === 'waitlist');
-
-  const renderRow = (a: EventAttendee) => {
-    const name = a.fullName || a.username || 'Hiker';
-    const color = getAvatarColor(a.userId);
-    const isWaitlist = a.status === 'waitlist';
-    return (
-      <Pressable
-        key={a.rsvpId}
-        onPress={() => onPressAttendee(a.userId)}
-        style={({ pressed }) => [styles.listRow, pressed && { opacity: 0.85 }]}
+      <View
+        style={[
+          styles.attendeeCardPill,
+          isWaitlist ? styles.attendeeCardPillWaitlist : styles.attendeeCardPillGoing,
+        ]}
       >
-        <View style={[styles.listAvatar, { backgroundColor: color }]}>
-          {a.avatarUrl ? (
-            <Image source={{ uri: a.avatarUrl }} style={styles.attendeeAvatarImage} />
-          ) : (
-            <Text style={styles.attendeeInitials}>{getInitials(name)}</Text>
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.listName} numberOfLines={1}>
-            {name}
-          </Text>
-          {a.username ? (
-            <Text style={styles.listUsername} numberOfLines={1}>
-              @{a.username}
-            </Text>
-          ) : null}
-        </View>
-        <View
+        <Text
           style={[
-            styles.listStatusPill,
-            isWaitlist ? styles.listStatusWaitlist : styles.listStatusGoing,
+            styles.attendeeCardPillText,
+            { color: isWaitlist ? D.gold : D.green },
           ]}
         >
-          <Text
-            style={[
-              styles.listStatusText,
-              { color: isWaitlist ? D.gold : D.green },
-            ]}
-          >
-            {isWaitlist ? 'WAITLIST' : 'GOING'}
-          </Text>
-        </View>
-      </Pressable>
-    );
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.listBackdrop} onPress={onClose}>
-        <Pressable style={styles.listSheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Attendees</Text>
-            <Pressable onPress={onClose} hitSlop={8} style={styles.listClose}>
-              <Ionicons name="close" size={14} color={D.muted} />
-            </Pressable>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {going.length > 0 && (
-              <>
-                <Text style={styles.listSectionLabel}>GOING · {going.length}</Text>
-                {going.map(renderRow)}
-              </>
-            )}
-            {waiting.length > 0 && (
-              <>
-                <Text style={styles.listSectionLabel}>WAITLIST · {waiting.length}</Text>
-                {waiting.map(renderRow)}
-              </>
-            )}
-            {attendees.length === 0 && (
-              <Text style={styles.listEmpty}>No one has RSVP'd yet.</Text>
-            )}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+          {isWaitlist ? 'WAITLIST' : 'GOING'}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -400,9 +285,8 @@ export default function HikerEventDetail() {
 
   const [weatherState, setWeatherState] = useState<WeatherState>({ mode: 'hidden' });
 
-  // Profile card + full attendee list modals
+  // Profile card modal
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
-  const [showAllAttendees, setShowAllAttendees] = useState(false);
 
   // Hike permit animation — replaces the confirmation Alerts.
   const permit = useHikePermit(sakaLogo);
@@ -512,10 +396,6 @@ export default function HikerEventDetail() {
   const hasActiveRsvp =
     myRsvp && ['confirmed', 'pending', 'waitlist'].includes(myRsvp.status);
 
-  /**
-   * Build the permit details from the current event so the animation can show
-   * the mountain, date, time, and group size.
-   */
   const buildPermitForEvent = useCallback(
     (evt: PublicEvent, mountainName?: string | null): PermitDetails => {
       const hikeLike: SavedHikeLike = {
@@ -542,9 +422,6 @@ export default function HikerEventDetail() {
         return;
       }
 
-      // Fire the permit animation. Approved regardless of waitlist — the
-      // permit still says "Hike scheduled"; the RSVP state is already visible
-      // in the sidebar / attendees panel.
       const details = buildPermitForEvent(event);
       permit.show('approved', details);
 
@@ -594,7 +471,6 @@ export default function HikerEventDetail() {
         return;
       }
 
-      // Fire the torn-permit animation as the confirmation.
       const details = buildPermitForEvent(event);
       permit.show('cancelled', details);
 
@@ -608,34 +484,10 @@ export default function HikerEventDetail() {
     }
   }, [myRsvp, event, buildPermitForEvent, permit]);
 
-  /**
-   * No confirmation dialog — the torn-permit animation IS the confirmation.
-   * If you'd rather keep a safety prompt, uncomment the Alert.alert block below.
-   */
   const handleCancel = () => {
     if (!myRsvp) return;
-    // Alert.alert('Cancel RSVP?', 'You will lose your slot.', [
-    //   { text: 'Keep it', style: 'cancel' },
-    //   { text: 'Cancel RSVP', style: 'destructive', onPress: doCancel },
-    // ]);
     doCancel();
   };
-
-  const openAttendeeList = useCallback(() => {
-    setShowAllAttendees(true);
-  }, []);
-
-  const closeAttendeeList = useCallback(() => {
-    setShowAllAttendees(false);
-  }, []);
-
-  const handlePressAttendeeFromList = useCallback(
-    (userId: string) => {
-      setShowAllAttendees(false);
-      setProfileUserId(userId);
-    },
-    []
-  );
 
   const goingCount = useMemo(
     () => attendees.filter((a) => a.status !== 'waitlist').length,
@@ -737,7 +589,7 @@ export default function HikerEventDetail() {
         </View>
       </Sidebar>
 
-      {/* ── Centre: title, facts, text panels (no page scroll) ── */}
+      {/* ── Centre: title, facts, text panels ── */}
       <Center>
         <View style={styles.centerInner}>
           <Text style={styles.title} numberOfLines={2}>
@@ -785,7 +637,7 @@ export default function HikerEventDetail() {
         </View>
       </Center>
 
-      {/* ── Right pane: weather + attendance + attendees ── */}
+      {/* ── Right pane: weather + attendance + attendee cards ── */}
       <RightPane>
         <WeatherCard state={weatherState} />
 
@@ -806,29 +658,29 @@ export default function HikerEventDetail() {
         </Panel>
 
         {attendees.length > 0 && (
-          <Panel style={{ gap: 6 }}>
+          <Panel style={{ gap: 8, flex: 1, minHeight: 0 }}>
             <View style={styles.attendeeHeader}>
               <Text style={styles.attendLabel}>HIKERS GOING</Text>
               <Text style={styles.attendeeCount}>{goingCount}</Text>
             </View>
-            <AttendeeAvatars
-              attendees={attendees}
-              onPressAttendee={setProfileUserId}
-            />
-            {attendees.length > AVATAR_MAX_VISIBLE && (
-              <Pressable
-                onPress={openAttendeeList}
-                style={({ pressed }) => [styles.seeAllAttendees, pressed && { opacity: 0.85 }]}
-              >
-                <Text style={styles.seeAllAttendeesText}>See all</Text>
-                <Ionicons name="chevron-forward" size={10} color={D.gold} />
-              </Pressable>
-            )}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.attendeeListContent}
+              style={{ flex: 1 }}
+            >
+              {attendees.map((a) => (
+                <AttendeeCard
+                  key={a.rsvpId}
+                  attendee={a}
+                  onPress={setProfileUserId}
+                />
+              ))}
+            </ScrollView>
           </Panel>
         )}
       </RightPane>
 
-      {/* ── Modals ── */}
+      {/* ── Profile card modal ── */}
       <ProfileCard
         userId={profileUserId}
         visible={profileUserId !== null}
@@ -837,13 +689,6 @@ export default function HikerEventDetail() {
           setProfileUserId(null);
           // router.push(`/chat/${id}`);
         }}
-      />
-
-      <AttendeeListModal
-        visible={showAllAttendees}
-        attendees={attendees}
-        onClose={closeAttendeeList}
-        onPressAttendee={handlePressAttendeeFromList}
       />
 
       {/* Hike permit animation — the "assurance" instead of a dialog. */}
@@ -905,132 +750,62 @@ const styles = StyleSheet.create({
   attendSub: { color: D.muted, fontSize: 11, fontWeight: '600' },
   waitlist: { color: D.gold, fontSize: 10, fontWeight: '600' },
 
-  // Attendees
+  // Attendees — vertical list of cards
   attendeeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   attendeeCount: { color: D.text, fontSize: 12, fontWeight: '700' },
-  attendeeRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 2 },
-  attendeeAvatar: {
-    width: AVATAR_SIZE,
-    height: AVATAR_SIZE,
-    borderRadius: AVATAR_SIZE / 2,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+  attendeeListContent: {
+    gap: 6,
+    paddingBottom: 4,
   },
-  attendeeAvatarImage: { width: '100%', height: '100%' },
-  attendeeInitials: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-  attendeeMore: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderColor: D.bg,
-  },
-  attendeeMoreText: {
-    color: D.text,
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  seeAllAttendees: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: 'rgba(201,169,110,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.24)',
-  },
-  seeAllAttendeesText: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: D.gold,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-
-  // Attendee list modal
-  listBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  listSheet: {
-    width: '100%',
-    maxWidth: 380,
-    maxHeight: '75%',
-    backgroundColor: D.panel,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: D.border,
-    padding: 14,
-  },
-  listHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  listTitle: { color: D.text, fontSize: 13, fontWeight: '800' },
-  listClose: {
-    width: 26,
-    height: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  listSectionLabel: {
-    color: D.gold,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  listRow: {
+  attendeeCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    paddingHorizontal: 10,
     paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: D.border,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    borderBottomColor: 'rgba(255,255,255,0.03)',
+    borderLeftColor: 'rgba(255,255,255,0.06)',
+    borderRightColor: 'rgba(255,255,255,0.06)',
   },
-  listAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  attendeeCardAvatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  listName: { color: D.text, fontSize: 12, fontWeight: '700' },
-  listUsername: { color: D.muted, fontSize: 10 },
-  listStatusPill: {
+  attendeeCardAvatarImage: { width: '100%', height: '100%' },
+  attendeeCardInitials: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  attendeeCardBody: { flex: 1, minWidth: 0 },
+  attendeeCardName: { color: D.text, fontSize: 11.5, fontWeight: '700' },
+  attendeeCardUsername: { color: D.muted, fontSize: 9.5, marginTop: 1 },
+  attendeeCardPill: {
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
   },
-  listStatusGoing: {
+  attendeeCardPillGoing: {
     backgroundColor: 'rgba(63,214,157,0.10)',
     borderColor: 'rgba(63,214,157,0.30)',
   },
-  listStatusWaitlist: {
+  attendeeCardPillWaitlist: {
     backgroundColor: 'rgba(201,169,110,0.10)',
     borderColor: 'rgba(201,169,110,0.30)',
   },
-  listStatusText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4 },
-  listEmpty: { color: D.muted, fontSize: 11, paddingVertical: 12, textAlign: 'center' },
+  attendeeCardPillText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4 },
 });
