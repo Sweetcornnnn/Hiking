@@ -28,6 +28,7 @@ export default function JournalScreen() {
     entries,
     fetchEntries,
     saveEntry,
+    updateEntry,
     deleteEntry,
     replaceEntryImage,
     isLoading,
@@ -118,6 +119,23 @@ export default function JournalScreen() {
     setEditingPhoto({ entry, index, uri });
   };
 
+  const handleUpdateNote = async (
+    entry: JournalEntry,
+    changes: { title: string; content: string },
+  ) => {
+    const result = await updateEntry(entry.id, {
+      ...changes,
+      images: (entry.images ?? []).filter(Boolean).map((uri) => ({ uri })),
+      rating: entry.rating ?? undefined,
+      mountainId: entry.mountain_id,
+      hikeId: entry.hike_id,
+      viewpointId: entry.viewpoint_id,
+      isPublic: entry.is_public,
+    });
+
+    if (result.error) throw new Error(result.error);
+  };
+
   const handleSaveEditedPhoto = async (editedUri: string): Promise<{ error: string | null }> => {
     if (!editingPhoto) return { error: null };
     const result = await replaceEntryImage(editingPhoto.entry, editingPhoto.index, editedUri);
@@ -196,36 +214,19 @@ export default function JournalScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+      {mode === 'form' && <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
           <Ionicons name="chevron-back" size={20} color={TEXT_PRIMARY} />
         </TouchableOpacity>
         <View style={styles.headerTextWrap}>
           <Text style={styles.eyebrow}>YOUR TRAIL NOTES</Text>
-          <Text style={styles.title}>
-            {mode === 'feed' ? 'My Journal' : 'New journal entry'}
-          </Text>
+          <Text style={styles.title}>New journal entry</Text>
         </View>
         <View style={styles.headerSpacer} />
-        {mode === 'feed' && (
-          <TouchableOpacity
-            onPress={() => setMode('form')}
-            style={styles.newEntryButton}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="New journal entry"
-          >
-            <Ionicons name="add" size={15} color={BG_PANEL} />
-            <Text style={styles.newEntryButtonText}>New</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      </View>}
 
       {mode === 'feed' ? (
-        <ScrollView
-          contentContainerStyle={styles.feedContent}
-          showsVerticalScrollIndicator={false}
-        >
+        <View style={styles.feedContent}>
           {error && <Text style={styles.error}>{error}</Text>}
           <MyJournalFeed
             entries={entries}
@@ -233,9 +234,11 @@ export default function JournalScreen() {
             isLoading={isLoading && !entries.length}
             onDelete={confirmDelete}
             onEdit={handleEditPhoto}
+            onUpdateNote={handleUpdateNote}
             onNewEntry={() => setMode('form')}
+            onBack={handleBack}
           />
-        </ScrollView>
+        </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
@@ -342,7 +345,7 @@ const styles = StyleSheet.create({
   title: { color: TEXT_PRIMARY, fontSize: 21, fontWeight: '700', marginTop: 3 },
   newEntryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, backgroundColor: ACCENT_GOLD },
   newEntryButtonText: { color: BG_PANEL, fontSize: 12, fontWeight: '800' },
-  feedContent: { padding: 20, paddingBottom: 60, maxWidth: 680, width: '100%', alignSelf: 'center' },
+  feedContent: { flex: 1, padding: 20, maxWidth: 680, width: '100%', alignSelf: 'center' },
   content: { padding: 24, paddingBottom: 40, maxWidth: 680, width: '100%', alignSelf: 'center' },
   label: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, marginTop: 16 },
   input: { color: TEXT_PRIMARY, backgroundColor: BG_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
