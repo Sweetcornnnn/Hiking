@@ -335,7 +335,7 @@ export default function CreateGroupModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
