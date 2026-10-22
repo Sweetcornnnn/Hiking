@@ -600,7 +600,7 @@ export default function AdminRoute() {
                 <Text style={ss.sidebarTitle} numberOfLines={1}>Admin</Text>
                 <View style={ss.statusRow}>
                   <View style={ss.statusDot} />
-                  <Text style={ss.statusText}>Signed in</Text>
+                  <Text style={ss.headerStatusText}>Signed in</Text>
                 </View>
               </View>
             </View>
@@ -1241,7 +1241,7 @@ const ss = StyleSheet.create({
   sidebarTitle: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '700', letterSpacing: -0.1 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 },
   statusDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: CHAT_ONLINE },
-  statusText: { fontSize: 9.5, color: TEXT_MUTED, fontWeight: '500', letterSpacing: 0.2 },
+  headerStatusText: { fontSize: 9.5, color: TEXT_MUTED, fontWeight: '500', letterSpacing: 0.2 },
 
   railContent: { padding: 8, gap: 2 },
   railItem: {
