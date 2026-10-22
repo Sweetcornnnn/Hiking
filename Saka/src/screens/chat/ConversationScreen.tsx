@@ -225,10 +225,18 @@ function SwipeableRow({
   );
 }
 
-export default function ConversationScreen() {
+export default function ConversationScreen({
+  embedded = false,
+  overrideUserId,
+  onClose,
+}: {
+  embedded?: boolean;
+  overrideUserId?: string;
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const userId = params.userId as string;
+  const userId = overrideUserId || (params.userId as string);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -855,7 +863,6 @@ export default function ConversationScreen() {
     };
   }, [user, userId, loadUserProfile, loadMessages, handleNewMessage, handleDeletedMessage, handleUpdatedMessage]);
 
-  // Realtime reactions
   useEffect(() => {
     const channelName = `private-reactions-${user?.id}-${userId}-${Date.now()}`;
     const channel = supabase
@@ -894,7 +901,11 @@ export default function ConversationScreen() {
 
   const goBack = async () => {
     await markAllAsRead();
-    router.back();
+    if (embedded && onClose) {
+      onClose();
+    } else {
+      router.back();
+    }
   };
 
   const renderMessage = useCallback(
@@ -990,10 +1001,10 @@ export default function ConversationScreen() {
 
   if (loading && messages.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="small" color={ACCENT_GOLD} />
         <Text style={styles.loadingText}>Loading conversation…</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -1018,11 +1029,14 @@ export default function ConversationScreen() {
       ? summarizeReactions(reactionsByMessage[reactionsTarget] || [], user?.id)
       : [];
 
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { style: styles.container } : { style: styles.container, edges: ['top'] as any };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Wrapper {...wrapperProps}>
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="arrow-back" size={18} color={TEXT_PRIMARY} />
+          <Ionicons name={embedded ? "close" : "arrow-back"} size={18} color={TEXT_PRIMARY} />
         </TouchableOpacity>
 
         <View style={styles.headerUser}>
@@ -1067,8 +1081,8 @@ export default function ConversationScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' && !embedded ? 90 : 0}
       >
         <FlatList
           ref={listRef}
@@ -1248,7 +1262,7 @@ export default function ConversationScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </Wrapper>
   );
 }
 

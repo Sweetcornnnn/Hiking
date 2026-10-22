@@ -271,10 +271,18 @@ function SwipeableRow({
   );
 }
 
-export default function GroupChatScreen() {
+export default function GroupChatScreen({
+  embedded = false,
+  overrideGroupId,
+  onClose,
+}: {
+  embedded?: boolean;
+  overrideGroupId?: string;
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const groupId = params.groupId as string;
+  const groupId = overrideGroupId || (params.groupId as string);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [group, setGroup] = useState<Group | null>(null);
@@ -295,7 +303,6 @@ export default function GroupChatScreen() {
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
   const [pendingUnsend, setPendingUnsend] = useState<Message | null>(null);
 
-  // Reactions: message_id -> rows
   const [reactionsByMessage, setReactionsByMessage] = useState<
     Record<number, ReactionRow[]>
   >({});
@@ -424,7 +431,6 @@ export default function GroupChatScreen() {
     }
   }, [groupId]);
 
-  // Fetch reactions for a set of message ids, grouped by message id.
   const loadReactionsForMessages = useCallback(async (messageIds: number[]) => {
     if (messageIds.length === 0) {
       setReactionsByMessage({});
@@ -453,7 +459,6 @@ export default function GroupChatScreen() {
     }
   }, []);
 
-  // Fetch reactions for a single message (used by realtime).
   const loadReactionsForOne = useCallback(async (messageId: number) => {
     try {
       const { data, error } = await supabase
@@ -519,7 +524,6 @@ export default function GroupChatScreen() {
 
         setMessages(normalizedMessages);
 
-        // Reactions — one query for all visible message ids
         const ids = normalizedMessages
           .filter((m) => m.type !== 'system')
           .map((m) => m.id);
@@ -547,7 +551,6 @@ export default function GroupChatScreen() {
     [user, groupId, markGroupAsRead, loadReactionsForMessages]
   );
 
-  // ─── SEND ──────────────────────────────────────────────────
   const sendMessage = async () => {
     if (!user || !groupId || !inputText.trim() || sending) return;
 
@@ -624,7 +627,6 @@ export default function GroupChatScreen() {
     }
   };
 
-  // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
     if (!actionTarget || actionTarget.sender_id !== user?.id) return;
     const target = actionTarget;
@@ -686,7 +688,6 @@ export default function GroupChatScreen() {
     }
   };
 
-  // ─── REPLY ─────────────────────────────────────────────────
   const getSenderLabel = (msg: Message): string => {
     if (msg.sender_id === user?.id) return 'You';
     const p = normalizeProfile(msg.profiles);
@@ -709,7 +710,6 @@ export default function GroupChatScreen() {
     return sendMessage();
   };
 
-  // ─── REACT / ACTIONS ──────────────────────────────────────
   const openActionSheet = useCallback((message: Message) => {
     if (message.type === 'system') return;
     if (typeof message.id !== 'number' || message.id >= 1_000_000_000_000) return;
@@ -720,7 +720,6 @@ export default function GroupChatScreen() {
     setActionTarget(null);
   };
 
-  // Apply / toggle / switch the current user's reaction on the target message.
   const applyReaction = async (reaction: ReactionType) => {
     if (!actionTarget || !user) return;
     const messageId = actionTarget.id;
@@ -732,7 +731,6 @@ export default function GroupChatScreen() {
     const existing = current.find((r) => r.user_id === user.id);
     const next = existing?.reaction === reaction ? null : reaction;
 
-    // Optimistic
     const backup = reactionsByMessage;
     setReactionsByMessage((prev) => {
       const list = (prev[messageId] || []).filter(
@@ -815,7 +813,6 @@ export default function GroupChatScreen() {
     setActionTarget(null);
   };
 
-  // ─── REALTIME ──────────────────────────────────────────────
   const handleNewMessage = useCallback(
     async (payload: any) => {
       if (!mountedRef.current) return;
@@ -950,7 +947,6 @@ export default function GroupChatScreen() {
     };
   }, [groupId, loadGroup, loadMembers, loadMessages, handleNewMessage, handleDeletedMessage, handleUpdatedMessage]);
 
-  // Realtime: reactions on the group's messages.
   useEffect(() => {
     if (!groupId) return;
     const channelName = `group-reactions-${groupId}-${Date.now()}`;
@@ -962,7 +958,6 @@ export default function GroupChatScreen() {
         (payload: any) => {
           const msgId = payload.new?.message_id ?? payload.old?.message_id;
           if (!msgId) return;
-          // Only reload if we have this message on screen.
           setMessages((current) => {
             if (current.some((m) => m.id === msgId)) {
               loadReactionsForOne(msgId);
@@ -991,7 +986,11 @@ export default function GroupChatScreen() {
 
   const goBack = async () => {
     await markGroupAsRead();
-    router.back();
+    if (embedded && onClose) {
+      onClose();
+    } else {
+      router.back();
+    }
   };
 
   const onRefresh = () => {
@@ -1031,7 +1030,11 @@ export default function GroupChatScreen() {
 
       setShowMenu(false);
       setLeaving(false);
-      router.replace('/chat/Chat' as any);
+      if (embedded && onClose) {
+        onClose();
+      } else {
+        router.replace('/chat/Chat' as any);
+      }
     } catch {
       setLeaving(false);
       Alert.alert('Error', 'Failed to leave group. Please try again.');
@@ -1238,10 +1241,10 @@ export default function GroupChatScreen() {
 
   if (loading && messages.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="small" color={ACCENT_GOLD} />
         <Text style={styles.loadingText}>Loading group chat...</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -1249,7 +1252,6 @@ export default function GroupChatScreen() {
   const replyingSenderLabel = replyingTo ? getSenderLabel(replyingTo) : '';
   const isActionTargetMine = !!actionTarget && actionTarget.sender_id === user?.id;
 
-  // Current user's reaction on the action sheet target
   const actionTargetMyReaction =
     actionTarget && user
       ? (reactionsByMessage[actionTarget.id] || []).find(
@@ -1257,17 +1259,19 @@ export default function GroupChatScreen() {
         )?.reaction ?? null
       : null;
 
-  // Summaries for the "who reacted" modal
   const reactionsSummaries =
     reactionsTarget !== null
       ? summarizeReactions(reactionsByMessage[reactionsTarget] || [], user?.id)
       : [];
 
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { style: styles.container } : { style: styles.container, edges: ['top'] as any };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Wrapper {...wrapperProps}>
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={18} color={TEXT_PRIMARY} />
+          <Ionicons name={embedded ? "close" : "arrow-back"} size={18} color={TEXT_PRIMARY} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1305,8 +1309,8 @@ export default function GroupChatScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' && !embedded ? 90 : 0}
       >
         {messages.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -1669,7 +1673,7 @@ export default function GroupChatScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </Wrapper>
   );
 }
 
