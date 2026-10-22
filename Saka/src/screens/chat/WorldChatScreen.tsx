@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/authStore';
 import { MessageBubble } from '../../components/chat/MessageBubble';
 import MessageInput from '../../components/chat/MessageInput';
 import ProfileCard from '../../components/chat/ProfileCard';
+import OnlineUsersList from '../../components/chat/OnlineUsersList';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -30,8 +31,10 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function WorldChatScreen({
   embedded = false,
+  onSelectUser,
 }: {
   embedded?: boolean;
+  onSelectUser?: (userId: string) => void;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<any[]>([]);
@@ -96,10 +99,14 @@ export default function WorldChatScreen({
   const handleProfileMessage = (uid: string) => {
     setShowProfile(false);
     setProfileUserId(null);
-    router.push({
-      pathname: '/chat/Conversation',
-      params: { userId: uid },
-    } as any);
+    if (onSelectUser) {
+      onSelectUser(uid);
+    } else {
+      router.push({
+        pathname: '/chat/Conversation',
+        params: { userId: uid },
+      } as any);
+    }
   };
 
   const loadMessages = useCallback(async (refresh = false) => {
@@ -317,7 +324,7 @@ export default function WorldChatScreen({
     </View>
   );
 
-  return (
+  const chatContent = (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
@@ -340,6 +347,7 @@ export default function WorldChatScreen({
           const isMe = item.user_id === user?.id;
           const profile = item.profiles || item.users || {};
           const senderName = profile.full_name || profile.username || 'Anonymous';
+          const senderAvatar = profile.avatar_url || null;
           const time = item.created_at
             ? new Date(item.created_at).toLocaleTimeString([], {
                 hour: '2-digit',
@@ -355,10 +363,14 @@ export default function WorldChatScreen({
                 time={time}
                 isMe={isMe}
                 showReadReceipt={false}
-                showAvatar={false}
-                showSenderHeader={!isMe}
+                showAvatar={true}
+                showSenderHeader={false}
                 senderName={senderName}
                 senderColorSeed={item.user_id}
+                senderAvatarUrl={senderAvatar}
+                avatarUri={senderAvatar}
+                avatarLabel={senderName}
+                disableAvatarLift={true} // <-- ADDED THIS
                 onPressSender={
                   canOpenProfile ? () => openProfile(item.user_id) : undefined
                 }
@@ -404,6 +416,17 @@ export default function WorldChatScreen({
       />
     </KeyboardAvoidingView>
   );
+
+  if (embedded) {
+    return (
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        <View style={{ flex: 1 }}>{chatContent}</View>
+        <OnlineUsersList onSelectUser={onSelectUser} />
+      </View>
+    );
+  }
+
+  return chatContent;
 }
 
 const styles = StyleSheet.create({
