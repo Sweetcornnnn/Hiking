@@ -4,6 +4,8 @@ import {
   deleteJournalEntry,
   fetchMyJournalEntries,
   replaceJournalImage,
+  retryJournalWriteQueue,
+  subscribeToJournalQueueChanges,
   updateJournalEntry,
 } from '../services/journalService';
 import type { CreateJournalEntryInput, JournalEntry } from '../types/journal';
@@ -13,10 +15,11 @@ interface JournalState {
   isLoading: boolean;
   error: string | null;
   fetchEntries: () => Promise<void>;
-  saveEntry: (input: CreateJournalEntryInput) => Promise<{ error: string | null }>;
-  updateEntry: (entryId: string, input: CreateJournalEntryInput) => Promise<{ error: string | null }>;
+  saveEntry: (input: CreateJournalEntryInput) => Promise<{ error: string | null; pendingSync?: boolean }>;
+  updateEntry: (entryId: string, input: CreateJournalEntryInput) => Promise<{ error: string | null; pendingSync?: boolean }>;
   replaceEntryImage: (entry: JournalEntry, index: number, localUri: string) => Promise<{ error: string | null }>;
   deleteEntry: (entry: JournalEntry) => Promise<{ error: string | null }>;
+  retryPendingSync: () => Promise<{ error: string | null }>;
   clearError: () => void;
 }
 
@@ -39,7 +42,7 @@ export const useJournalStore = create<JournalState>((set, get) => ({
     try {
       const entry = await createJournalEntry(input);
       set({ entries: [entry, ...get().entries], isLoading: false });
-      return { error: null };
+      return { error: null, pendingSync: Boolean(entry.sync_status) };
     } catch (error: any) {
       const message = error.message || 'Unable to save journal entry.';
       set({ isLoading: false, error: message });
@@ -55,7 +58,7 @@ export const useJournalStore = create<JournalState>((set, get) => ({
         entries: get().entries.map((item) => item.id === entryId ? entry : item),
         isLoading: false,
       });
-      return { error: null };
+      return { error: null, pendingSync: Boolean(entry.sync_status) };
     } catch (error: any) {
       const message = error.message || 'Unable to update journal entry.';
       set({ isLoading: false, error: message });
@@ -89,5 +92,24 @@ export const useJournalStore = create<JournalState>((set, get) => ({
     }
   },
 
+  retryPendingSync: async () => {
+    try {
+      await retryJournalWriteQueue();
+      await get().fetchEntries();
+      return { error: null };
+    } catch (error: any) {
+      const message = error.message || 'Unable to retry journal sync.';
+      set({ error: message });
+      return { error: message };
+    }
+  },
+
   clearError: () => set({ error: null }),
 }));
+
+subscribeToJournalQueueChanges(() => {
+  const store = useJournalStore.getState();
+  if (store.entries.length > 0) {
+    void store.fetchEntries();
+  }
+});

@@ -54,6 +54,7 @@ interface Props {
 }
 
 const getImageUrl = (image: string): string => {
+  if (/^(file:|content:)/i.test(image)) return image;
   if (image.startsWith('http://') || image.startsWith('https://')) return image;
   return supabase.storage.from('journal-images').getPublicUrl(image).data.publicUrl ?? '';
 };
@@ -183,6 +184,17 @@ function MyJournalPostCard({
               {authorName}
             </Text>
             <Text style={styles.timestamp}>{formatRelativeTime(entry.created_at)}</Text>
+            {entry.sync_conflict ? (
+              <Text style={styles.syncFailed}>Changed elsewhere; your edit was kept</Text>
+            ) : null}
+            {entry.sync_status ? (
+              <Text style={entry.sync_status === 'failed' ? styles.syncFailed : styles.syncPending}>
+                {entry.sync_status === 'failed' ? 'Sync failed' : 'Waiting to sync'}
+              </Text>
+            ) : null}
+            {entry.sync_status === 'failed' && entry.sync_error ? (
+              <Text style={styles.syncError}>{entry.sync_error}</Text>
+            ) : null}
           </View>
         </View>
 
@@ -677,6 +689,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER_DANGER,
   },
+  syncPending: { color: ACCENT_GOLD, fontSize: 9, marginTop: 3 },
+  syncFailed: { color: TEXT_DANGER, fontSize: 9, marginTop: 3 },
+  syncError: { color: TEXT_FAINT, fontSize: 9, marginTop: 2 },
   pressed: { opacity: 0.6 },
   photoPlaceholder: {
     marginHorizontal: SPACING.cardPadH,

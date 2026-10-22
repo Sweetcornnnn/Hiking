@@ -28,7 +28,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchViewpointDetail } from '../services/viewpointService';
+import { fetchViewpointDetail, getViewpointCacheUpdatedAt } from '../services/viewpointService';
 import SakagramSection from '../components/sakagram/SakagramSection';
 import LoadingScreen from './Loading';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
@@ -96,6 +96,7 @@ export default function ViewpointScreen() {
   const mountainId  = params.mountainId as string | undefined;
 
   const [data, setData] = React.useState<any>(null);
+  const [cacheUpdatedAt, setCacheUpdatedAt] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadingScreenComplete, setLoadingScreenComplete] = React.useState(false);
   const [activeImageReady, setActiveImageReady] = React.useState(false);
@@ -116,8 +117,10 @@ export default function ViewpointScreen() {
       try {
         const selectedId = viewpointId || 'v1';
         const nextData = await fetchViewpointDetail(selectedId);
+        const updatedAt = await getViewpointCacheUpdatedAt(selectedId);
         if (active) {
           setData(nextData);
+          setCacheUpdatedAt(updatedAt);
         }
       } catch (error) {
         console.warn('[ViewpointScreen] Failed to load data from Supabase', error);
@@ -234,6 +237,11 @@ export default function ViewpointScreen() {
                   <Text style={styles.elevText}>{data.elevation}</Text>
                 </View>
               </View>
+              {cacheUpdatedAt ? (
+                <Text style={styles.cacheTimestamp}>
+                  Saved {new Date(cacheUpdatedAt).toLocaleDateString()}
+                </Text>
+              ) : null}
 
               <View style={styles.statsGridInline}>
                 <StatChip icon="walk-outline" label="Distance" value={data.distanceFromStart} />
@@ -750,6 +758,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: PC.radiusBtn, backgroundColor: PC.gold,
   },
   elevText: { color: PC.bgCard, fontSize: 10, fontWeight: '700' },
+  cacheTimestamp: {
+    color: PC.textMuted,
+    fontSize: 10,
+    marginTop: 6,
+    marginBottom: 2,
+  },
   statsGridInline: {
     flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, paddingTop: 8,
     borderTopWidth: 1, borderTopColor: PC.border,

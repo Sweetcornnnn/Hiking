@@ -33,6 +33,7 @@ export default function JournalScreen() {
     isLoading,
     error,
     clearError,
+    retryPendingSync,
   } = useJournalStore();
   const [mode, setMode] = useState<Mode>('feed');
   const [editingPhoto, setEditingPhoto] = useState<{ entry: JournalEntry; index: number; uri: string } | null>(null);
@@ -186,9 +187,13 @@ export default function JournalScreen() {
       setSelectedMountainId(preselectedMountainId);
       setMode('feed');
 
-      Alert.alert('Journal saved', 'Your photos are now part of your profile showcase.', [
-        { text: 'View journal', onPress: () => {} },
-      ]);
+      Alert.alert(
+        result.pendingSync ? 'Saved on this device' : 'Journal saved',
+        result.pendingSync
+          ? 'Your entry and photos are saved locally and will sync automatically when the internet is available.'
+          : 'Your photos are now part of your profile showcase.',
+        [{ text: 'OK' }],
+      );
     } finally {
       saveInProgress.current = false;
     }
@@ -227,6 +232,19 @@ export default function JournalScreen() {
           showsVerticalScrollIndicator={false}
         >
           {error && <Text style={styles.error}>{error}</Text>}
+          {entries.some((entry) => entry.sync_status) && (
+            <TouchableOpacity
+              onPress={async () => {
+                const result = await retryPendingSync();
+                if (result.error) Alert.alert('Sync failed', result.error);
+              }}
+              style={styles.syncButton}
+              accessibilityRole="button"
+            >
+              <Ionicons name="sync-outline" size={14} color={ACCENT_GOLD} />
+              <Text style={styles.syncButtonText}>Retry pending journal sync</Text>
+            </TouchableOpacity>
+          )}
           <MyJournalFeed
             entries={entries}
             mountains={mountains}
@@ -361,6 +379,8 @@ const styles = StyleSheet.create({
   visibilityTitle: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
   ratingRow: { flexDirection: 'row', gap: 8 },
   error: { color: '#E07070', fontSize: 11, marginTop: 16 },
+  syncButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: BORDER_GOLD, borderRadius: RADIUS_BTN, paddingVertical: 10, marginBottom: 14 },
+  syncButtonText: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
   saveButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: ACCENT_GOLD, borderRadius: RADIUS_CARD, paddingVertical: 14, marginTop: 28 },
   saveText: { color: BG_PANEL, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.55 },

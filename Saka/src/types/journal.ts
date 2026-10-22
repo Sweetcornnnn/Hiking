@@ -10,6 +10,9 @@ export interface JournalEntry {
   is_public: boolean;
   created_at: string;
   updated_at: string;
+  sync_status?: 'pending' | 'failed';
+  sync_error?: string | null;
+  sync_conflict?: boolean;
 }
 
 export interface JournalImage {

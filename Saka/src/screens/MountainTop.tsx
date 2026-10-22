@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +24,8 @@ type TableViewpoint = {
 // Tap each spot in order → copy the SQL from the console → run in Supabase
 // → set back to `false`. Production builds always run with placement off.
 const PLACEMENT_MODE = false;
+const VIEWPOINTS_CACHE_PREFIX = 'SAKA_VIEWPOINTS_CACHE:';
+const VIEWPOINTS_CACHE_UPDATED_PREFIX = 'SAKA_VIEWPOINTS_CACHE_UPDATED:';
 
 export default function MountainTopScreen() {
   const { mountainId } = useLocalSearchParams<{ mountainId: string }>();
@@ -30,6 +33,9 @@ export default function MountainTopScreen() {
     ? mountainService.getCachedMountainById(mountainId)
     : null;
   const [mountain, setMountain] = useState<Mountain | null>(cachedMountain);
+  const [mountainUpdatedAt, setMountainUpdatedAt] = useState(
+    () => mountainService.getMountainsLastUpdatedAt()
+  );
   const [loading, setLoading] = useState(!cachedMountain);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -37,6 +43,7 @@ export default function MountainTopScreen() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number }[]>([]);
   const [viewpointList, setViewpointList] = useState<TableViewpoint[]>([]);
+  const [viewpointsUpdatedAt, setViewpointsUpdatedAt] = useState<string | null>(null);
   // NEW: viewpoints have their own loading lifecycle. The map is the feature,
   // and its dots/trail come from this query, so `ready` must wait for it.
   const [viewpointsLoading, setViewpointsLoading] = useState(true);
@@ -45,25 +52,31 @@ export default function MountainTopScreen() {
 
   // ─── Load mountain data ────────────────────────────────────────────────
   useEffect(() => {
-    if (cachedMountain) return;
-
     if (!mountainId) {
       setError('No mountain ID provided');
       setLoading(false);
       return;
     }
 
+    let active = true;
     (async () => {
       try {
         const data = await mountainService.fetchMountainById(mountainId);
-        if (data) setMountain(data);
-        else setError('Mountain not found');
+        if (active && data) {
+          setMountain(data);
+          setMountainUpdatedAt(mountainService.getMountainsLastUpdatedAt());
+        }
+        else if (active && !data) setError('Mountain not found');
       } catch (err: any) {
-        setError(err?.message || 'Failed to load mountain');
+        if (active) setError(err?.message || 'Failed to load mountain');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
+
+    return () => {
+      active = false;
+    };
   }, [cachedMountain, mountainId]);
 
   const mapInfo = getMountainMap(mountainId, mountain?.name);
@@ -80,23 +93,70 @@ export default function MountainTopScreen() {
     setViewpointsError(null);
 
     (async () => {
-      const { data, error: qError } = await supabase
-        .from('viewpoints')
-        .select('id, name, sort_order, map_x, map_y')
-        .eq('mountain_id', mountainId)
-        .not('sort_order', 'is', null)
-        .order('sort_order');
+      const cacheKey = `${VIEWPOINTS_CACHE_PREFIX}${mountainId}`;
+      const updatedAtKey = `${VIEWPOINTS_CACHE_UPDATED_PREFIX}${mountainId}`;
+      let hasCachedViewpoints = false;
 
-      if (!active) return;
-
-      if (qError) {
-        console.error('[MountainTop] viewpoints fetch failed:', qError);
-        setViewpointsError(qError.message);
-        setViewpointList([]);
-      } else {
-        setViewpointList((data ?? []) as TableViewpoint[]);
+      try {
+        const [cachedJson, cachedUpdatedAt] = await Promise.all([
+          AsyncStorage.getItem(cacheKey),
+          AsyncStorage.getItem(updatedAtKey),
+        ]);
+        if (cachedJson) {
+          const cached = JSON.parse(cachedJson) as TableViewpoint[];
+          if (Array.isArray(cached)) {
+            hasCachedViewpoints = true;
+            if (active) {
+              setViewpointList(cached);
+              setViewpointsUpdatedAt(cachedUpdatedAt);
+              setViewpointsLoading(false);
+            }
+          }
+        }
+      } catch (cacheError) {
+        console.warn('[MountainTop] Failed to read cached viewpoints:', cacheError);
       }
-      setViewpointsLoading(false);
+
+      try {
+        const { data, error: qError } = await supabase
+          .from('viewpoints')
+          .select('id, name, sort_order, map_x, map_y')
+          .eq('mountain_id', mountainId)
+          .not('sort_order', 'is', null)
+          .order('sort_order');
+
+        if (!active) return;
+
+        if (qError) {
+          console.error('[MountainTop] viewpoints fetch failed:', qError);
+          if (!hasCachedViewpoints) {
+            setViewpointsError(qError.message);
+            setViewpointList([]);
+          }
+        } else {
+          const viewpoints = (data ?? []) as TableViewpoint[];
+          setViewpointList(viewpoints);
+          const updatedAt = new Date().toISOString();
+          setViewpointsUpdatedAt(updatedAt);
+          void Promise.all([
+            AsyncStorage.setItem(cacheKey, JSON.stringify(viewpoints)),
+            AsyncStorage.setItem(updatedAtKey, updatedAt),
+          ]).catch(cacheError => {
+            console.warn('[MountainTop] Failed to persist viewpoints:', cacheError);
+          });
+        }
+      } catch (queryError) {
+        if (!active) return;
+        console.warn('[MountainTop] Unable to refresh viewpoints:', queryError);
+        if (!hasCachedViewpoints) {
+          setViewpointsError(
+            queryError instanceof Error ? queryError.message : 'Unable to load trail data.'
+          );
+          setViewpointList([]);
+        }
+      } finally {
+        if (active) setViewpointsLoading(false);
+      }
     })();
 
     return () => {
@@ -177,6 +237,7 @@ export default function MountainTopScreen() {
     !viewpointsLoading;
 
   const total = viewpointList.length;
+  const cacheTimestamp = viewpointsUpdatedAt ?? mountainUpdatedAt;
   const nextViewpoint = viewpointList[draft.length];
   const allPlaced = total > 0 && draft.length >= total;
 
@@ -247,6 +308,11 @@ export default function MountainTopScreen() {
                   </>
                 ) : null}
               </View>
+              {cacheTimestamp ? (
+                <Text style={styles.cacheTimestamp}>
+                  Trail data saved {new Date(cacheTimestamp).toLocaleDateString()}
+                </Text>
+              ) : null}
             </View>
           </SafeAreaView>
 
@@ -353,6 +419,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   difficultyText: { color: '#C9A96E', fontSize: 11, fontWeight: '600' },
+  cacheTimestamp: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    marginLeft: 42,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+    overflow: 'hidden',
+    color: 'rgba(255,255,255,0.72)',
+    backgroundColor: 'rgba(14, 21, 32, 0.78)',
+    fontSize: 10,
+  },
 
   placeBar: {
     position: 'absolute',

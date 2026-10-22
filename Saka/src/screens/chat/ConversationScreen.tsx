@@ -43,6 +43,11 @@ import {
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 import { ReactionRow, summarizeReactions } from '../../utils/reactions';
+import {
+  getQueuedTextMessages,
+  queueTextMessage,
+  subscribeToQueuedMessages,
+} from '../../services/offlineMessageQueue';
 
 type Message = {
   id: number;
@@ -60,6 +65,7 @@ type Message = {
   reply_to_sender: string | null;
   reply_to_content: string | null;
   reaction: ReactionType | null;
+  sync_status?: 'pending' | 'failed';
 };
 
 type Profile = {
@@ -431,15 +437,38 @@ export default function ConversationScreen({
         if (queryError) throw queryError;
 
         const newMessages: Message[] = data || [];
+        const queued = await getQueuedTextMessages('private', user.id, userId);
+        const mergedMessages = [
+          ...newMessages,
+          ...queued.map((entry) => ({
+            id: entry.id,
+            sender_id: user.id,
+            recipient_id: userId,
+            content: String(entry.payload.content ?? ''),
+            type: 'text' as const,
+            media_url: null,
+            is_read: false,
+            read_at: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            sync_status: entry.status,
+          })),
+        ].sort((a, b) => a.created_at.localeCompare(b.created_at));
         const firstUnreadIndex = newMessages.findIndex(
           (message) => message.sender_id === userId && !message.is_read
         );
+
         initialScrollIndexRef.current = firstUnreadIndex >= 0 ? firstUnreadIndex : null;
         setFirstUnreadId(firstUnreadIndex >= 0 ? newMessages[firstUnreadIndex].id : null);
 
         await markAllAsRead();
         initialPositionPendingRef.current = true;
-        setMessages(newMessages);
+        setMessages(mergedMessages);
 
         const ids = newMessages.map((m) => m.id);
         await loadReactionsForMessages(ids);
@@ -457,7 +486,30 @@ export default function ConversationScreen({
         }, 300);
       } catch (err: any) {
         console.error('[loadMessages] caught:', err);
-        setError(err?.message ? `Failed to load: ${err.message}` : 'Failed to load messages');
+        const queued = await getQueuedTextMessages('private', user.id, userId);
+        if (queued.length > 0) {
+          setMessages(queued.map((entry) => ({
+            id: entry.id,
+            sender_id: user.id,
+            recipient_id: userId,
+            content: String(entry.payload.content ?? ''),
+            type: 'text',
+            media_url: null,
+            is_read: false,
+            read_at: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            sync_status: entry.status,
+          })));
+          setError(null);
+        } else {
+          setError(err?.message ? `Failed to load: ${err.message}` : 'Failed to load messages');
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -465,6 +517,10 @@ export default function ConversationScreen({
     },
     [user, userId, markAllAsRead, loadReactionsForMessages]
   );
+
+  useEffect(() => subscribeToQueuedMessages(() => {
+    if (mountedRef.current) void loadMessages(true);
+  }), [loadMessages]);
 
   // ─── SEND ──────────────────────────────────────────────────
   const sendMessage = async () => {
@@ -524,8 +580,26 @@ export default function ConversationScreen({
       setMessages((prev) => prev.map((msg) => (msg.id === tempId ? data : msg)));
     } catch (err: any) {
       console.error('[sendMessage] caught:', err);
-      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
-      Alert.alert('Error', err?.message || 'Failed to send message. Please try again.');
+      try {
+        await queueTextMessage('private', user.id, {
+          sender_id: user.id,
+          recipient_id: userId,
+          content: text,
+          type: 'text',
+          reply_to_id: reply?.id ?? null,
+          reply_to_sender: repliedToName,
+          reply_to_content: reply?.content ?? null,
+        }, tempId);
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === tempId ? { ...msg, sync_status: 'pending' } : msg
+        )));
+      } catch (queueError) {
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+        Alert.alert(
+          'Message not saved',
+          queueError instanceof Error ? queueError.message : 'Unable to save message on this device.',
+        );
+      }
     } finally {
       setSending(false);
     }
@@ -971,6 +1045,7 @@ export default function ConversationScreen({
                 content={item.content}
                 time={time}
                 isMe={isMe}
+                deliveryStatus={item.sync_status}
                 isRead={item.is_read}
                 edited={edited}
                 hasReply={hasReply}

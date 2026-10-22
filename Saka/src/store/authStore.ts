@@ -3,6 +3,14 @@ import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
+import {
+  cacheProfileLocally,
+  getCachedProfile,
+  getProfileUpdateStatus,
+  queueProfileUpdate,
+  retryProfileUpdateQueue,
+} from '../services/offlineProfileService';
+import { uploadProfileAvatar } from '../services/profileAvatarService';
 
 interface Profile {
   id: string;
@@ -14,8 +22,11 @@ interface Profile {
   organization_id: string | null;
   is_verified: boolean;
   avatar_url: string | null;
+  bio?: string | null;
   created_at: string;
   updated_at: string;
+  sync_status?: 'pending' | 'failed';
+  sync_conflict?: boolean;
 }
 
 type AppUser = User & { name?: string | null };
@@ -35,7 +46,9 @@ interface AuthState {
   signOut: () => Promise<void>;
   loadSession: () => Promise<void>;
   loadProfile: () => Promise<void>;
-  updateProfile: (data: Partial<Profile>) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (data: Partial<Profile>) => Promise<{ success: boolean; error?: string; pendingSync?: boolean }>;
+  retryProfileSync: () => Promise<void>;
+  refreshProfileSyncStatus: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   clearError: () => void;
   resetLoading: () => void;
@@ -221,22 +234,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-
+        const cachedProfile = await getCachedProfile<Profile>(session.user.id);
+        const queuedUpdate = await getProfileUpdateStatus(session.user.id);
         await SecureStore.setItemAsync('authToken', session.access_token);
-
         set({
           session,
-          user: normalizeUser(session.user, profile || null),
-          profile: profile || null,
+          user: normalizeUser(session.user, cachedProfile || null),
+          profile: cachedProfile ? { ...cachedProfile, sync_status: queuedUpdate?.status } : null,
           authToken: session.access_token,
           isAuthenticated: true,
           isLoading: false,
         });
+
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (error) throw error;
+        if (profile) {
+          const currentQueuedUpdate = await getProfileUpdateStatus(session.user.id);
+          const currentCachedProfile = await getCachedProfile<Profile>(session.user.id);
+          const profileWithSyncStatus = {
+            ...profile,
+            sync_status: currentQueuedUpdate?.status,
+            sync_conflict: currentCachedProfile?.sync_conflict || false,
+          };
+          await cacheProfileLocally(session.user.id, profileWithSyncStatus);
+          set({
+            user: normalizeUser(session.user, profileWithSyncStatus),
+            profile: profileWithSyncStatus,
+          });
+        }
       } else {
         await SecureStore.deleteItemAsync('authToken');
         set({
@@ -284,38 +313,63 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // ─── LOAD PROFILE ──────────────────────────────────────────────
   loadProfile: async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!user) return;
 
-      const { data: profile } = await supabase
+      const cachedProfile = await getCachedProfile<Profile>(user.id);
+      if (cachedProfile) {
+        const queuedUpdate = await getProfileUpdateStatus(user.id);
+        set({
+          profile: { ...cachedProfile, sync_status: queuedUpdate?.status },
+          user: normalizeUser(user, cachedProfile),
+        });
+      }
+
+      const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
-
+      if (error) throw error;
       if (profile) {
+        const queuedUpdate = await getProfileUpdateStatus(user.id);
+        const profileWithSyncStatus = {
+          ...profile,
+          sync_status: queuedUpdate?.status,
+          sync_conflict: cachedProfile?.sync_conflict || false,
+        };
+        await cacheProfileLocally(user.id, profileWithSyncStatus);
         set({
-          profile,
-          user: normalizeUser(user, profile),
+          profile: profileWithSyncStatus,
+          user: normalizeUser(user, profileWithSyncStatus),
         });
       }
     } catch (error) {
-      console.error('[Auth] loadProfile error:', error);
+      console.warn('[Auth] Profile refresh failed; retaining device copy:', error);
     }
   },
 
   // ─── UPDATE PROFILE ──────────────────────────────────────────────
   updateProfile: async (data) => {
+    let queuedData = { ...data } as Record<string, unknown>;
     try {
       set({ isLoading: true, error: null });
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!user) throw new Error('User not authenticated');
+
+      const payload: Partial<Profile> = { ...data };
+      if (typeof payload.avatar_url === 'string' && /^(file:|content:)/i.test(payload.avatar_url)) {
+        payload.avatar_url = await uploadProfileAvatar(user.id, payload.avatar_url);
+      }
+      queuedData = { ...payload } as Record<string, unknown>;
 
       const { error } = await supabase
         .from('profiles')
         .update({
-          ...data,
+          ...payload,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
@@ -327,9 +381,61 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoading: false });
       return { success: true };
     } catch (error: any) {
+      const user = get().user;
+      if (user && isNetworkFailure(error)) {
+        try {
+          await queueProfileUpdate(user.id, queuedData, get().profile?.updated_at ?? null);
+          const currentProfile = get().profile;
+          const localProfile = {
+            ...currentProfile,
+            ...data,
+            id: user.id,
+            sync_status: 'pending' as const,
+          } as Profile;
+          await cacheProfileLocally(user.id, localProfile);
+          set({
+            profile: localProfile,
+            user: normalizeUser(user, localProfile),
+            isLoading: false,
+            error: null,
+          });
+          return { success: true, pendingSync: true };
+        } catch (queueError) {
+          const message = queueError instanceof Error ? queueError.message : 'Unable to save profile changes on this device.';
+          set({ error: message, isLoading: false });
+          return { success: false, error: message };
+        }
+      }
       set({ error: error.message, isLoading: false });
       return { success: false, error: error.message };
     }
+  },
+
+  retryProfileSync: async () => {
+    try {
+      await retryProfileUpdateQueue();
+    } catch (error) {
+      console.error('[Auth] Profile retry failed:', error);
+    }
+    await get().loadProfile();
+  },
+
+  refreshProfileSyncStatus: async () => {
+    const userId = get().user?.id;
+    const currentProfile = get().profile;
+    if (!userId || !currentProfile) return;
+    const queuedUpdate = await getProfileUpdateStatus(userId);
+    const cachedProfile = await getCachedProfile<Profile>(userId);
+    const updatedProfile = {
+      ...currentProfile,
+      ...(cachedProfile ?? {}),
+      sync_status: queuedUpdate?.status,
+      sync_conflict: cachedProfile?.sync_conflict ?? currentProfile.sync_conflict,
+    };
+    set({
+      profile: updatedProfile,
+      user: normalizeUser(get().user, updatedProfile),
+    });
   },
 
   // ─── RESET PASSWORD ──────────────────────────────────────────────
@@ -378,3 +484,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: false, error: null });
   },
 }));
+
+function isNetworkFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /network|fetch|offline|timed?\s*out|connection|internet/i.test(message);
+}

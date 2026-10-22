@@ -50,6 +50,11 @@ import {
   ReactionRow,
   summarizeReactions,
 } from '../../utils/reactions';
+import {
+  getQueuedTextMessages,
+  queueTextMessage,
+  subscribeToQueuedMessages,
+} from '../../services/offlineMessageQueue';
 
 type ProfileData = {
   full_name: string | null;
@@ -74,6 +79,7 @@ type Message = {
   reply_to_sender: string | null;
   reply_to_content: string | null;
   reaction: ReactionType | null;
+  sync_status?: 'pending' | 'failed';
 };
 
 type GroupMember = {
@@ -517,6 +523,31 @@ export default function GroupChatScreen({
           ...msg,
           profiles: normalizeProfile(msg.profiles),
         }));
+        const queued = await getQueuedTextMessages('group', user.id, groupId);
+        const mergedMessages: Message[] = [
+          ...normalizedMessages,
+          ...queued.map((entry) => ({
+            id: entry.id,
+            group_id: Number(groupId),
+            sender_id: user.id,
+            content: String(entry.payload.content ?? ''),
+            type: 'text' as const,
+            media_url: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            profiles: {
+              full_name: user.user_metadata?.full_name || null,
+              username: user.user_metadata?.username || null,
+              avatar_url: null,
+            },
+            sync_status: entry.status,
+          })),
+        ].sort((a, b) => a.created_at.localeCompare(b.created_at));
 
         const firstUnreadIndex = normalizedMessages.findIndex(
           (message) =>
@@ -526,7 +557,7 @@ export default function GroupChatScreen({
         initialScrollIndexRef.current = firstUnreadIndex >= 0 ? firstUnreadIndex : null;
         initialPositionPendingRef.current = true;
 
-        setMessages(normalizedMessages);
+        setMessages(mergedMessages);
 
         const ids = normalizedMessages
           .filter((m) => m.type !== 'system')
@@ -546,7 +577,33 @@ export default function GroupChatScreen({
         }, 300);
         await markGroupAsRead();
       } catch {
-        setError('Failed to load messages');
+        const queued = await getQueuedTextMessages('group', user.id, groupId);
+        if (queued.length > 0) {
+          setMessages(queued.map((entry) => ({
+            id: entry.id,
+            group_id: Number(groupId),
+            sender_id: user.id,
+            content: String(entry.payload.content ?? ''),
+            type: 'text',
+            media_url: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            profiles: {
+              full_name: user.user_metadata?.full_name || null,
+              username: user.user_metadata?.username || null,
+              avatar_url: null,
+            },
+            sync_status: entry.status,
+          })));
+          setError(null);
+        } else {
+          setError('Failed to load messages');
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -554,6 +611,10 @@ export default function GroupChatScreen({
     },
     [user, groupId, markGroupAsRead, loadReactionsForMessages]
   );
+
+  useEffect(() => subscribeToQueuedMessages(() => {
+    if (mountedRef.current) void loadMessages(true);
+  }), [loadMessages]);
 
   const sendMessage = async () => {
     if (!user || !groupId || !inputText.trim() || sending) return;
@@ -624,8 +685,26 @@ export default function GroupChatScreen({
       );
       await markGroupAsRead();
     } catch {
-      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      try {
+        await queueTextMessage('group', user.id, {
+          group_id: Number(groupId),
+          sender_id: user.id,
+          content: text,
+          type: 'text',
+          reply_to_id: reply?.id ?? null,
+          reply_to_sender: repliedToName,
+          reply_to_content: reply?.content ?? null,
+        }, tempId);
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === tempId ? { ...msg, sync_status: 'pending' } : msg
+        )));
+      } catch (queueError) {
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+        Alert.alert(
+          'Message not saved',
+          queueError instanceof Error ? queueError.message : 'Unable to save message on this device.',
+        );
+      }
     } finally {
       setSending(false);
     }
@@ -1188,6 +1267,7 @@ export default function GroupChatScreen({
                 content={item.content}
                 time={time}
                 isMe={isMe}
+                deliveryStatus={item.sync_status}
                 edited={edited}
                 hasReply={hasReply}
                 replyCaption={replyCaption}

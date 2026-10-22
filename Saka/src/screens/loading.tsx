@@ -314,7 +314,7 @@ export default function LoadingScreen({
       let lastError: unknown;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          return await mountainService.fetchMountains(true);
+          return await mountainService.fetchMountains();
         } catch (e) {
           lastError = e;
           await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
@@ -329,10 +329,12 @@ export default function LoadingScreen({
       try {
         animateTo(fetchCeiling, 5000);
         const mountains = await fetchMountainsWithRetry();
-        // Guard: some backends return null on error instead of throwing
-        mountainService.setCachedMountains(
-          Array.isArray(mountains) ? mountains : []
-        );
+        if (!Array.isArray(mountains)) {
+          throw new Error('Mountain data is not available.');
+        }
+        void mountainService.fetchMountains(true).catch((refreshError) => {
+          console.warn('[Loading] Background mountain refresh failed:', refreshError);
+        });
         animateTo(afterFetch, 500);
       } catch (error) {
         const err = error as Error | undefined;

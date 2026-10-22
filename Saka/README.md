@@ -20,6 +20,24 @@ Saka helps people:
 - Safety tools including live location tracking and emergency assistance
 - User account features such as login, profile, and settings
 
+## Current offline behavior
+
+After the app has loaded data online, Home, MountainTop, and Viewpoint can use
+saved mountain, trail-stop, and viewpoint details. Bundled mountain maps, the
+available bundled viewpoint images, and Home videos work without a connection.
+Saved trail data displays its last-updated date.
+
+GPS tracking keeps a local history and a persistent upload queue for locations
+that could not be sent. Journal entries and their photos are saved on-device
+first, then synced automatically; pending or failed entries can be retried, and
+conflicting edits retain the local version with a notice. Text messages,
+profile/avatar updates, and Sakagram likes are queued for automatic sync. Text
+messages are queued as text only; photos are not queued in chat. Sakagram can
+show its cached feed and pending public journal photos, but comments are not
+implemented. Low device storage triggers a warning when saving offline photos.
+Emergency alerts and live location sharing still require connectivity; the app
+must not report an alert as sent when its upload fails.
+
 ## Who it is for
 
 Saka is built for:

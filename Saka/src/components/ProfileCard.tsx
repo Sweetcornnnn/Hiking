@@ -72,7 +72,7 @@ export default function ProfileCard({
 }: ProfileCardProps) {
   const router = useRouter();
   const { height: windowHeight, fontScale } = useWindowDimensions();
-  const { user, profile } = useAuthStore();
+  const { user, profile, retryProfileSync } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
   const [selectedMountain, setSelectedMountain] = useState<Mountain | null>(null);
@@ -309,6 +309,23 @@ export default function ProfileCard({
 
             <Text style={styles.name} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{user?.name || 'Hiker'}</Text>
             <Text style={styles.email} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{user?.email || 'email@example.com'}</Text>
+            {profile?.sync_conflict && (
+              <Text style={{ color: '#F2D99A', fontSize: 9, textAlign: 'center', marginTop: 3 }}>
+                Profile changed elsewhere; your offline changes were kept.
+              </Text>
+            )}
+            {profile?.sync_status && (
+              <TouchableOpacity
+                onPress={() => void retryProfileSync()}
+                accessibilityRole="button"
+                accessibilityLabel="Retry profile synchronization"
+                style={{ alignItems: 'center', marginTop: 4 }}
+              >
+                <Text style={{ color: profile.sync_status === 'failed' ? '#F2A5A5' : '#D8C28B', fontSize: 10 }}>
+                  {profile.sync_status === 'failed' ? 'Profile changes failed to sync · Retry' : 'Profile changes waiting to sync'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <View style={styles.locationRow}>
               <Ionicons name="location-outline" size={11} color="#8A9BB0" />

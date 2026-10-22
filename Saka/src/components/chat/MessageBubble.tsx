@@ -44,6 +44,7 @@ export type MessageBubbleProps = {
   isRead?: boolean;
   showReadReceipt?: boolean;
   edited?: boolean;
+  deliveryStatus?: 'pending' | 'failed';
 
   hasReply?: boolean;
   replyCaption?: string;
@@ -76,6 +77,7 @@ function MessageBubbleBase({
   isRead = false,
   showReadReceipt = true,
   edited = false,
+  deliveryStatus,
   hasReply = false,
   replyCaption = '',
   replyPreview = '',
@@ -266,6 +268,11 @@ function MessageBubbleBase({
             {time}
             {edited ? ' · edited' : ''}
           </Text>
+          {deliveryStatus ? (
+            <Text style={styles.deliveryStatus}>
+              {deliveryStatus === 'failed' ? '· retry' : '· queued'}
+            </Text>
+          ) : null}
           {isMe && showReadReceipt && (
             <View style={styles.readSlot}>
               <Ionicons
@@ -431,6 +438,10 @@ const styles = StyleSheet.create({
     opacity: 0.75,
     fontVariant: ['tabular-nums'],
     letterSpacing: 0.2,
+  },
+  deliveryStatus: {
+    fontSize: 9,
+    color: ACCENT_GOLD,
   },
   readSlot: {
     width: 14,

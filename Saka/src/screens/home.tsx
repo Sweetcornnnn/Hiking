@@ -23,7 +23,7 @@ import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
 import GlobalChatNotifier from '../components/chat/GlobalChatNotifier'; // <-- NEW
 import { mountainService, Mountain } from '../services/mountainService';
-import { uploadProfileAvatar } from '../services/profileAvatarService';
+import { persistProfileAvatarLocally } from '../services/profileAvatarService';
 import {
   getHomeVideoPosters,
   subscribeHomeVideoPosters,
@@ -240,7 +240,8 @@ export default function HomeScreen() {
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
-  const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
+  const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
+  const [mountainsUpdatedAt, setMountainsUpdatedAt] = useState(() => mountainService.getMountainsLastUpdatedAt());
 
   // ── NOTIFICATION BANNER STATE ──
   const [bannerData, setBannerData] = useState<{ type: string; id: string; senderName: string; content: string } | null>(null);
@@ -253,8 +254,8 @@ export default function HomeScreen() {
       return;
     }
     try {
-      const avatarUrl = await uploadProfileAvatar(user.id, uri);
-      const result = await updateProfile({ avatar_url: avatarUrl });
+      const localUri = await persistProfileAvatarLocally(user.id, uri);
+      const result = await updateProfile({ avatar_url: localUri });
       if (!result.success) throw new Error(result.error || 'Unable to save your profile photo.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to save your profile photo.';
@@ -281,11 +282,23 @@ export default function HomeScreen() {
   const isPortrait = dimensions.height > dimensions.width;
 
   useEffect(() => {
+    const unsubscribe = mountainService.subscribeToCache((updatedMountains, updatedAt) => {
+      setMountains(updatedMountains);
+      setMountainsUpdatedAt(updatedAt);
+    });
     if (mountains.length === 0) {
-      setError('Mountain feed was not loaded yet.');
-      return;
+      void mountainService.fetchMountains().catch((fetchError) => {
+        console.warn('[Home] Mountain feed could not be loaded:', fetchError);
+        setError('Mountain feed is unavailable. Connect to the internet to load it.');
+      });
     }
-    setError(null);
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    setError(mountains.length === 0
+      ? 'Mountain feed is unavailable. Connect to the internet to load it.'
+      : null);
   }, [mountains]);
 
   useEffect(() => {
@@ -506,6 +519,11 @@ export default function HomeScreen() {
             <Text style={styles.profileName} numberOfLines={1}>
               {user?.name?.split(' ')[0] || 'Hiker'}
             </Text>
+            {mountainsUpdatedAt ? (
+              <Text style={styles.cacheTimestamp} numberOfLines={1}>
+                Trail data saved {new Date(mountainsUpdatedAt).toLocaleDateString()}
+              </Text>
+            ) : null}
           </View>
           <View style={styles.profileChevronWrap}>
             <Ionicons name="chevron-down" size={11} color="#C9A96E" />
@@ -802,6 +820,7 @@ const styles = StyleSheet.create({
   profileTextContainer: { justifyContent: 'center', marginRight: 8 },
   profileGreeting: { color: 'rgba(255,255,255,0.38)', fontSize: 9, lineHeight: 11, fontWeight: '500', letterSpacing: 0.3 },
   profileName: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 16, letterSpacing: 0.1 },
+  cacheTimestamp: { color: 'rgba(255,255,255,0.58)', fontSize: 8, lineHeight: 10, marginTop: 1 },
   profileChevronWrap: {
     width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(201,169,110,0.12)',
