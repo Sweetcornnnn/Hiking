@@ -1,5 +1,6 @@
-import React, { memo, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Animated,
   Image as NativeImage,
   Pressable,
@@ -17,12 +18,27 @@ import type { JournalEntry } from '../../types/journal';
 import type { Mountain } from '../../services/mountainService';
 import {
   ACCENT_GOLD,
+  ANIM,
   BG_AVATAR,
   BG_CARD,
+  BG_DANGER_SUBTLE,
+  BG_GOLD_ICON,
+  BG_GOLD_TINT,
+  BG_PANEL,
+  BG_SUBTLE,
+  BORDER_DANGER,
+  BORDER_DEFAULT,
+  BORDER_GOLD,
+  BORDER_GOLD_SOFT,
   BORDER_SUBTLE,
+  CHAT_FS_TITLE,
+  FONT,
   RADIUS_BTN,
+  RADIUS_CARD,
+  SPACING,
   TEXT_DANGER,
   TEXT_FAINT,
+  TEXT_FAINTEST,
   TEXT_MUTED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -42,7 +58,10 @@ const getImageUrl = (image: string): string => {
   return supabase.storage.from('journal-images').getPublicUrl(image).data.publicUrl ?? '';
 };
 
-const LONG_CONTENT_CHARS = 90;
+const LONG_CONTENT_CHARS = 120;
+const COLLAPSED_LINES = 3;
+const PHOTO_RADIUS = 12;
+const OVERLAY = `${BG_CARD}CC`;
 
 export default function MyJournalFeed({
   entries,
@@ -58,6 +77,15 @@ export default function MyJournalFeed({
     return map;
   }, [mountains]);
 
+  if (isLoading && entries.length === 0) {
+    return (
+      <View style={styles.feed} accessibilityLabel="Loading journal entries">
+        <SkeletonCard />
+        <SkeletonCard />
+      </View>
+    );
+  }
+
   if (!isLoading && entries.length === 0) {
     return (
       <View style={styles.emptyState}>
@@ -72,8 +100,9 @@ export default function MyJournalFeed({
           onPress={onNewEntry}
           style={styles.emptyButton}
           activeOpacity={0.85}
+          accessibilityRole="button"
         >
-          <Ionicons name="add" size={15} color="#0E1520" />
+          <Ionicons name="add" size={15} color={BG_CARD} />
           <Text style={styles.emptyButtonText}>New journal entry</Text>
         </TouchableOpacity>
       </View>
@@ -110,6 +139,7 @@ function MyJournalPostCard({
 }) {
   const { height: windowHeight } = useWindowDimensions();
   const user = useAuthStore((state) => state.user);
+  const profile = useAuthStore((state) => state.profile);
 
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -121,16 +151,18 @@ function MyJournalPostCard({
     [entry.images],
   );
   const isMulti = images.length > 1;
-  const photoMaxHeight = windowHeight * 0.72;
+  const photoMaxHeight = windowHeight * 0.6;
   const hasLongContent = (entry.content?.length ?? 0) > LONG_CONTENT_CHARS;
 
-  const profile = useAuthStore((state) => state.profile);
   const authorName = user?.name || profile?.full_name || 'You';
   const avatarUrl = profile?.avatar_url ?? undefined;
   const initials = getInitials(authorName);
+  const showFooter = !!entry.rating || !!entry.is_public;
+  const overlayInset = isMulti ? '11%' : SPACING.cardPadH + 10;
 
   return (
     <View style={styles.card}>
+      {/* Header */}
       <View style={styles.headerRow}>
         <View style={styles.authorRow}>
           <View style={styles.avatarRing}>
@@ -150,27 +182,23 @@ function MyJournalPostCard({
             <Text style={styles.authorName} numberOfLines={1}>
               {authorName}
             </Text>
-            {!!locationLabel && (
-              <Text style={styles.location} numberOfLines={1}>
-                {locationLabel}
-              </Text>
-            )}
+            <Text style={styles.timestamp}>{formatRelativeTime(entry.created_at)}</Text>
           </View>
         </View>
 
         <Pressable
           onPress={onDelete}
-          style={styles.actionButton}
+          style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Delete journal entry"
         >
-          <Ionicons name="trash-outline" size={22} color={TEXT_DANGER} />
+          <Ionicons name="trash-outline" size={16} color={TEXT_DANGER} />
         </Pressable>
       </View>
 
       {images.length === 0 || (!isMulti && photoFailed) ? (
-        <View style={[styles.photoPlaceholder, { maxHeight: photoMaxHeight }]}>
+        <View style={styles.photoPlaceholder}>
           <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
           <Text style={styles.placeholderText}>No photo in this entry</Text>
         </View>
@@ -178,7 +206,7 @@ function MyJournalPostCard({
         <View style={styles.photoContainer}>
           <TouchableOpacity
             onPress={() => onEdit(entry, activeIndex, images[activeIndex])}
-            style={styles.editPhotoButton}
+            style={[styles.editPhotoButton, { right: overlayInset }]}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Edit photo"
@@ -201,7 +229,7 @@ function MyJournalPostCard({
           )}
 
           {isMulti && (
-            <View style={styles.counter} pointerEvents="none">
+            <View style={[styles.counter, { left: overlayInset }]} pointerEvents="none">
               <Text style={styles.counterText}>
                 {activeIndex + 1}/{images.length}
               </Text>
@@ -221,16 +249,50 @@ function MyJournalPostCard({
         </View>
       )}
 
-      {entry.rating ? (
-        <View style={styles.starsRow}>
-          {[1, 2, 3, 4, 5].map((star) => (
-            <Ionicons
-              key={star}
-              name={star <= entry.rating! ? 'star' : 'star-outline'}
-              size={14}
-              color={ACCENT_GOLD}
-            />
-          ))}
+      {/* Body */}
+      <View style={styles.body}>
+        {!!locationLabel && (
+          <View style={styles.locationChip}>
+            <Ionicons name="location-outline" size={11} color={ACCENT_GOLD} />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {locationLabel}
+            </Text>
+          </View>
+        )}
+        <Text style={styles.title}>{entry.title || 'Untitled entry'}</Text>
+        {!!entry.content && (
+          <Text style={styles.content} numberOfLines={expanded ? undefined : COLLAPSED_LINES}>
+            {entry.content}
+          </Text>
+        )}
+        {hasLongContent && (
+          <TouchableOpacity
+            onPress={() => setExpanded((value) => !value)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? 'Show less' : 'Show full entry'}
+          >
+            <Text style={styles.more}>{expanded ? 'Show less' : 'Read more'}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {showFooter && (
+        <View style={styles.footer}>
+          <View
+            style={styles.starsRow}
+            accessible={!!entry.rating}
+            accessibilityLabel={entry.rating ? `Rated ${entry.rating} out of 5` : undefined}
+          >
+            {!!entry.rating && [1, 2, 3, 4, 5].map((star) => (
+              <Ionicons
+                key={star}
+                name={star <= entry.rating! ? 'star' : 'star-outline'}
+                size={13}
+                color={ACCENT_GOLD}
+              />
+            ))}
+          </View>
           {entry.is_public && (
             <View style={styles.publicBadge}>
               <Ionicons name="earth-outline" size={10} color={ACCENT_GOLD} />
@@ -238,39 +300,73 @@ function MyJournalPostCard({
             </View>
           )}
         </View>
-      ) : (
-        entry.is_public && (
-          <View style={styles.starsRow}>
-            <View style={styles.publicBadge}>
-              <Ionicons name="earth-outline" size={10} color={ACCENT_GOLD} />
-              <Text style={styles.publicBadgeText}>Public</Text>
-            </View>
-          </View>
-        )
       )}
-
-      <Text style={styles.caption} numberOfLines={expanded ? undefined : 2}>
-        <Text style={styles.captionName}>{authorName}</Text>
-        {'  '}
-        <Text style={styles.captionTitle}>{entry.title || 'Untitled entry'}</Text>
-        {!!entry.content && (
-          <Text style={styles.captionBody}>{`\n${entry.content}`}</Text>
-        )}
-      </Text>
-      {hasLongContent && !expanded && (
-        <TouchableOpacity
-          onPress={() => setExpanded(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Show full entry"
-        >
-          <Text style={styles.more}>more</Text>
-        </TouchableOpacity>
-      )}
-
-      <Text style={styles.timestamp}>{formatRelativeTime(entry.created_at)}</Text>
     </View>
   );
 }
+
+function SkeletonCard() {
+  const [pulse] = useState(() => new Animated.Value(0.5));
+
+  useEffect(() => {
+    let loop: Animated.CompositeAnimation | null = null;
+    let cancelled = false;
+
+    AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+      if (cancelled || reduce) return;
+      loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, {
+            toValue: 1,
+            duration: ANIM.zoomMs,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulse, {
+            toValue: 0.5,
+            duration: ANIM.zoomMs,
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+    });
+
+    return () => {
+      cancelled = true;
+      loop?.stop();
+    };
+  }, [pulse]);
+
+  return (
+    <Animated.View style={[styles.card, { opacity: pulse }]}>
+      <View style={styles.headerRow}>
+        <View style={skeletonStyles.avatar} />
+        <View style={skeletonStyles.nameBlock}>
+          <View style={[skeletonStyles.line, { width: '40%' }]} />
+          <View style={[skeletonStyles.line, { width: '22%', height: 8 }]} />
+        </View>
+      </View>
+      <View style={skeletonStyles.photo} />
+      <View style={styles.body}>
+        <View style={[skeletonStyles.line, { width: '55%', height: 14 }]} />
+        <View style={[skeletonStyles.line, { width: '92%' }]} />
+        <View style={[skeletonStyles.line, { width: '70%' }]} />
+      </View>
+    </Animated.View>
+  );
+}
+
+const skeletonStyles = StyleSheet.create({
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: BG_AVATAR },
+  nameBlock: { flex: 1, gap: 6 },
+  line: { height: 10, borderRadius: 5, backgroundColor: BG_AVATAR },
+  photo: {
+    marginHorizontal: SPACING.cardPadH,
+    aspectRatio: 4 / 3,
+    borderRadius: PHOTO_RADIUS,
+    backgroundColor: BG_AVATAR,
+  },
+});
 
 const ITEM_WIDTH_RATIO = 0.84;
 
@@ -287,7 +383,8 @@ function SingleImage({
   const [ratio, setRatio] = useState<number | null>(null);
 
   const ratioSafe = ratio ?? 1;
-  const width = Math.min(containerWidth * ITEM_WIDTH_RATIO, maxHeight * ratioSafe);
+  const available = Math.max(0, containerWidth - SPACING.cardPadH * 2);
+  const width = Math.min(available, maxHeight * ratioSafe);
   const height = width / ratioSafe;
 
   return (
@@ -301,11 +398,11 @@ function SingleImage({
           style={{
             width,
             height,
-            borderRadius: 12,
+            borderRadius: PHOTO_RADIUS,
             backgroundColor: BG_AVATAR,
           }}
           contentFit="cover"
-          transition={180}
+          transition={ANIM.fadeMs}
           onLoad={(event) => {
             const { width: imageWidth, height: imageHeight } = event.source;
             if (imageWidth > 0 && imageHeight > 0) setRatio(imageWidth / imageHeight);
@@ -334,7 +431,7 @@ const ImageCarousel = memo(function ImageCarousel({
 }) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [failed, setFailed] = useState<Set<number>>(new Set());
-  const scrollX = useRef(new Animated.Value(0)).current;
+  const [scrollX] = useState(() => new Animated.Value(0));
   const lastIndex = useRef(0);
 
   const itemWidth = containerWidth * ITEM_WIDTH_RATIO;
@@ -343,24 +440,16 @@ const ImageCarousel = memo(function ImageCarousel({
   const sidePad = (containerWidth - itemWidth) / 2;
   const lastItem = images.length - 1;
 
-  const handleScroll = useMemo(
-    () =>
-      Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
-        useNativeDriver: true,
-        listener: (event: any) => {
-          if (stride <= 0) return;
-          const index = Math.max(
-            0,
-            Math.min(lastItem, Math.round(event.nativeEvent.contentOffset.x / stride)),
-          );
-          if (index !== lastIndex.current) {
-            lastIndex.current = index;
-            onIndexChange(index);
-          }
-        },
-      }),
-    [scrollX, stride, lastItem, onIndexChange],
-  );
+  const handleScroll = (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    scrollX.setValue(offsetX);
+    if (stride <= 0) return;
+    const index = Math.max(0, Math.min(lastItem, Math.round(offsetX / stride)));
+    if (index !== lastIndex.current) {
+      lastIndex.current = index;
+      onIndexChange(index);
+    }
+  };
 
   return (
     <View
@@ -417,7 +506,7 @@ const ImageCarousel = memo(function ImageCarousel({
                     opacity,
                   }}
                 >
-                  <View style={[carouselStyles.fallback, { borderRadius: 12 }]}>
+                  <View style={[carouselStyles.fallback, { borderRadius: PHOTO_RADIUS }]}>
                     <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
                   </View>
                 </Animated.View>
@@ -436,7 +525,7 @@ const ImageCarousel = memo(function ImageCarousel({
               >
                 <ExpoImage
                   source={{ uri: item }}
-                  style={{ flex: 1, borderRadius: 12, backgroundColor: BG_AVATAR }}
+                  style={{ flex: 1, borderRadius: PHOTO_RADIUS, backgroundColor: BG_AVATAR }}
                   contentFit="cover"
                   transition={0}
                   cachePolicy="memory-disk"
@@ -494,16 +583,16 @@ function formatRelativeTime(value: string): string {
 }
 
 const styles = StyleSheet.create({
-  feed: { gap: 0 },
+  feed: { gap: SPACING.gapLg },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
-    gap: 8,
-    borderRadius: 12,
+    gap: SPACING.gap,
+    borderRadius: RADIUS_CARD,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: BORDER_DEFAULT,
     backgroundColor: BG_CARD,
   },
   emptyIcon: {
@@ -512,20 +601,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 24,
-    backgroundColor: 'rgba(201,169,110,0.1)',
+    backgroundColor: BG_GOLD_ICON,
     borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.3)',
+    borderColor: BORDER_GOLD_SOFT,
   },
-  emptyTitle: { color: TEXT_PRIMARY, fontSize: 15, fontWeight: '700' },
+  emptyTitle: { color: TEXT_PRIMARY, fontSize: CHAT_FS_TITLE, fontWeight: '700' },
   emptyText: {
     color: TEXT_MUTED,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: FONT.itemSize,
+    lineHeight: 18,
     textAlign: 'center',
     maxWidth: 300,
   },
   emptyButton: {
-    marginTop: 8,
+    marginTop: SPACING.gap,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -534,133 +623,173 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: ACCENT_GOLD,
   },
-  emptyButtonText: { color: '#0E1520', fontSize: 12, fontWeight: '800' },
-  card: { marginBottom: 22 },
+  emptyButtonText: { color: BG_CARD, fontSize: FONT.itemSize, fontWeight: '800' },
+  card: {
+    backgroundColor: BG_CARD,
+    borderRadius: RADIUS_CARD,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
+    overflow: 'hidden',
+    paddingBottom: SPACING.cardPadB,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingBottom: 9,
-    minHeight: 40,
+    gap: SPACING.gap,
+    paddingHorizontal: SPACING.cardPadH,
+    paddingTop: SPACING.cardPadT,
+    paddingBottom: SPACING.gapLg,
   },
   authorRow: {
     flex: 1,
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    gap: SPACING.gapLg,
   },
   avatarRing: {
     padding: 2,
-    borderRadius: 19,
-    borderWidth: 2,
-    borderColor: ACCENT_GOLD,
+    borderRadius: 21,
+    borderWidth: 1.5,
+    borderColor: BORDER_GOLD,
   },
   avatar: {
-    width: 30,
-    height: 30,
+    width: 34,
+    height: 34,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 15,
+    borderRadius: 17,
     backgroundColor: BG_AVATAR,
-    borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
   },
   avatarImage: { width: '100%', height: '100%' },
-  avatarInitials: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '800' },
-  authorText: { flex: 1, minWidth: 0 },
-  authorName: { color: TEXT_PRIMARY, fontSize: 11, fontWeight: '700' },
-  location: { color: TEXT_SECONDARY, fontSize: 9, marginTop: 1 },
-  actionButton: {
-    minWidth: 36,
-    minHeight: 34,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  photoPlaceholder: {
-    width: '100%',
-    aspectRatio: 1,
+  avatarInitials: { color: ACCENT_GOLD, fontSize: FONT.emailSize, fontWeight: '800' },
+  authorText: { flex: 1, minWidth: 0, gap: 1 },
+  authorName: { color: TEXT_PRIMARY, fontSize: FONT.nameSize, fontWeight: FONT.namWeight },
+  timestamp: { color: TEXT_FAINT, fontSize: FONT.emailSize },
+  deleteButton: {
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
     borderRadius: RADIUS_BTN,
-    backgroundColor: BG_AVATAR,
+    backgroundColor: BG_DANGER_SUBTLE,
+    borderWidth: 1,
+    borderColor: BORDER_DANGER,
   },
+  pressed: { opacity: 0.6 },
+  photoPlaceholder: {
+    marginHorizontal: SPACING.cardPadH,
+    aspectRatio: 16 / 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: PHOTO_RADIUS,
+    backgroundColor: BG_PANEL,
+    borderWidth: 1,
+    borderColor: BORDER_SUBTLE,
+    borderStyle: 'dashed',
+  },
+  placeholderText: { color: TEXT_MUTED, fontSize: FONT.emailSize },
   photoContainer: { position: 'relative' },
   editPhotoButton: {
     position: 'absolute',
     top: 10,
-    right: 10,
     zIndex: 2,
     width: 34,
     height: 34,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 17,
-    backgroundColor: 'rgba(14,21,32,0.78)',
+    backgroundColor: OVERLAY,
     borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.5)',
+    borderColor: BORDER_GOLD,
   },
-  placeholderText: { color: TEXT_MUTED, fontSize: 9 },
   counter: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    top: 10,
+    zIndex: 2,
+    height: 24,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 999,
-    backgroundColor: 'rgba(14,21,32,0.7)',
+    backgroundColor: OVERLAY,
+    borderWidth: 1,
+    borderColor: BORDER_SUBTLE,
   },
-  counterText: { color: TEXT_PRIMARY, fontSize: 9, fontWeight: '700' },
+  counterText: { color: TEXT_PRIMARY, fontSize: FONT.tagSize, fontWeight: '700' },
   dots: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingTop: 10,
+    gap: 5,
+    paddingTop: SPACING.gapLg,
   },
   dot: {
-    width: 6,
+    width: 5,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: TEXT_FAINTEST,
   },
-  dotActive: { backgroundColor: ACCENT_GOLD },
+  dotActive: { width: 16, backgroundColor: ACCENT_GOLD },
+  body: {
+    paddingHorizontal: SPACING.cardPadH,
+    paddingTop: SPACING.gapLg,
+    gap: 6,
+  },
+  locationChip: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: BG_GOLD_TINT,
+    borderWidth: 1,
+    borderColor: BORDER_GOLD_SOFT,
+  },
+  locationText: {
+    flexShrink: 1,
+    color: ACCENT_GOLD,
+    fontSize: FONT.emailSize,
+    fontWeight: '700',
+  },
+  title: {
+    color: TEXT_PRIMARY,
+    fontSize: CHAT_FS_TITLE,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  content: { color: TEXT_SECONDARY, fontSize: FONT.itemSize, lineHeight: 18 },
+  more: { color: ACCENT_GOLD, fontSize: FONT.emailSize, fontWeight: '600' },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: SPACING.cardPadH,
+    marginTop: SPACING.gapLg,
+    paddingTop: SPACING.gapLg,
+    borderTopWidth: 1,
+    borderTopColor: BORDER_DEFAULT,
+  },
   starsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    marginTop: 8,
   },
   publicBadge: {
-    marginLeft: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.3)',
-    backgroundColor: 'rgba(201,169,110,0.08)',
+    borderColor: BORDER_GOLD_SOFT,
+    backgroundColor: BG_SUBTLE,
   },
-  publicBadgeText: { color: ACCENT_GOLD, fontSize: 9, fontWeight: '700' },
-  caption: {
-    color: TEXT_SECONDARY,
-    fontSize: 10,
-    lineHeight: 15,
-    marginTop: 4,
-  },
-  captionName: { color: TEXT_PRIMARY, fontWeight: '800' },
-  captionTitle: { color: TEXT_PRIMARY, fontWeight: '600' },
-  captionBody: { color: TEXT_SECONDARY, fontWeight: '400' },
-  more: { color: TEXT_FAINT, fontSize: 10, marginTop: 2 },
-  timestamp: {
-    color: TEXT_FAINT,
-    fontSize: 8,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginTop: 6,
-  },
+  publicBadgeText: { color: ACCENT_GOLD, fontSize: FONT.tagSize, fontWeight: '700' },
 });
