@@ -1,32 +1,102 @@
 // screens/ChatScreen.tsx
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  useWindowDimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import {
   CHAT_BG,
   CHAT_ONLINE,
   CHAT_BORDER,
-  ACCENT_GOLD,
   TEXT_PRIMARY,
   TEXT_MUTED,
 } from '../../theme/designTokens';
 import ChatTabs from '../../components/chat/ChatTabs';
+import ChatSidebar, { ChatSidebarTab } from '../../components/chat/ChatSidebar';
+import OnlineUsersList from '../../components/chat/OnlineUsersList';
+import CreateGroupModal from '../../components/chat/CreateGroupModal';
 import WorldChatScreen from './WorldChatScreen';
 import PrivateChatScreen from './PrivateChatScreen';
 
 export default function ChatScreen() {
   const router = useRouter();
-  const [active, setActive] = useState<'world' | 'private'>('world');
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
+  const [active, setActive] = useState<ChatSidebarTab>('world');
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+
+  const handleBack = useCallback(() => {
+    router.back();
+  }, [router]);
+
+  const handleCreateGroup = useCallback(() => {
+    setShowCreateGroup(true);
+  }, []);
+
+  const handleSettings = useCallback(() => {
+    try {
+      router.push('/settings' as any);
+    } catch {}
+  }, [router]);
+
+  const handleOnlineUserPress = useCallback(
+    (userId: string) => {
+      router.push({
+        pathname: '/chat/Conversation',
+        params: { userId },
+      } as any);
+    },
+    [router]
+  );
+
+  // ── Landscape: three-pane shell ──
+  if (isLandscape) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.shell}>
+          <ChatSidebar
+            active={active}
+            onChange={setActive}
+            onCreateGroup={handleCreateGroup}
+            onSettings={handleSettings}
+            onBack={handleBack}
+          />
+
+          <View style={styles.center}>
+            {active === 'world' ? (
+              <WorldChatScreen embedded />
+            ) : (
+              <PrivateChatScreen
+                embedded
+                onOpenCreateGroup={handleCreateGroup}
+              />
+            )}
+          </View>
+
+          <OnlineUsersList onSelectUser={handleOnlineUserPress} />
+        </View>
+
+        {showCreateGroup && (
+          <CreateGroupModal onClose={() => setShowCreateGroup(false)} />
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // ── Portrait: original stacked layout with tabs ──
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header — same recipe as Discoveries / FeaturedSpecies */}
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={handleBack}
             style={styles.backBtn}
             hitSlop={8}
             activeOpacity={0.85}
@@ -35,7 +105,9 @@ export default function ChatScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerCenter}>
-            <Text style={styles.title} numberOfLines={1}>SAKA Chat</Text>
+            <Text style={styles.title} numberOfLines={1}>
+              SAKA Chat
+            </Text>
             <View style={styles.statusRow}>
               <View style={styles.statusDot} />
               <Text style={styles.statusText}>Online</Text>
@@ -51,9 +123,15 @@ export default function ChatScreen() {
 
         <View style={styles.content}>
           {active === 'world' && <WorldChatScreen />}
-          {active === 'private' && <PrivateChatScreen />}
+          {active === 'private' && (
+            <PrivateChatScreen onOpenCreateGroup={handleCreateGroup} />
+          )}
         </View>
       </SafeAreaView>
+
+      {showCreateGroup && (
+        <CreateGroupModal onClose={() => setShowCreateGroup(false)} />
+      )}
     </View>
   );
 }
@@ -61,6 +139,14 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: CHAT_BG },
   safeArea: { flex: 1, backgroundColor: CHAT_BG },
+
+  shell: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: CHAT_BG,
+  },
+  center: { flex: 1, minWidth: 0, backgroundColor: CHAT_BG },
+
   header: {
     height: 52,
     paddingHorizontal: 12,

@@ -33,7 +33,6 @@ interface Props {
   viewpointId: string;
   viewpointName?: string;
   mountainId?: string;
-  /** True when Sakagram fills the screen; bumps type and spacing up. */
   focused?: boolean;
 }
 
@@ -76,7 +75,6 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
       router.replace('/Login');
       return;
     }
-
     router.push({
       pathname: '/journal',
       params: mountainId ? { viewpointId, mountainId } : { viewpointId },
@@ -210,7 +208,6 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
   );
 }
 
-// Sizes scale up when Sakagram is the focus of the screen.
 function makeStyles(focused: boolean) {
   const f = (n: number) => Math.round(n * (focused ? 1.3 : 1));
 

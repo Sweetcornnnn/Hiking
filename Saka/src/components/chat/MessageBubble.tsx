@@ -22,6 +22,8 @@ import {
   CHAT_FS_META,
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
+import ReactionChip from './ReactionChip';
+import { ReactionSummary } from '../../utils/reactions';
 
 export type ReactionType = 'heart' | 'like' | 'haha' | 'wow' | 'sad' | 'angry';
 
@@ -52,8 +54,12 @@ export type MessageBubbleProps = {
   replyCaption?: string;
   replyPreview?: string;
 
-  // ── optional: reaction badge ──
+  // ── optional: single-reaction badge (legacy, replaced by reactionSummaries) ──
   reaction?: ReactionType | null;
+
+  // ── optional: multi-user reactions ──
+  reactionSummaries?: ReactionSummary[];
+  onPressReactions?: () => void;
 
   // ── optional: left avatar (DMs, other user only) ──
   avatarUri?: string | null;
@@ -83,6 +89,8 @@ function MessageBubbleBase({
   replyCaption = '',
   replyPreview = '',
   reaction = null,
+  reactionSummaries,
+  onPressReactions,
   avatarUri,
   avatarLabel = '?',
   avatarColorSeed = '',
@@ -96,12 +104,17 @@ function MessageBubbleBase({
 }: MessageBubbleProps) {
   const { width } = useWindowDimensions();
 
-  const rowAvailableWidth = width - (isMe ? 24 : 58);
+  const reserved = isMe ? 24 : showAvatar ? 58 : 24;
+  const rowAvailableWidth = width - reserved;
   const bubbleMaxWidth = Math.max(
     0,
     Math.min(width * 0.75, rowAvailableWidth)
   );
   const replyMaxWidth = width * 0.68;
+
+  const hasChip = !!reactionSummaries && reactionSummaries.length > 0;
+  const hasLegacyReaction = !hasChip && !!reaction;
+  const anyReaction = hasChip || hasLegacyReaction;
 
   return (
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowOther]}>
@@ -127,7 +140,6 @@ function MessageBubbleBase({
           { maxWidth: bubbleMaxWidth },
         ]}
       >
-        {/* Sender name header (group / world chat, other users only) */}
         {showSenderHeader && !isMe && senderName ? (
           <TouchableOpacity
             style={styles.senderRow}
@@ -190,7 +202,6 @@ function MessageBubbleBase({
           </>
         )}
 
-        {/* Bubble + optional reaction badge */}
         <View style={styles.bubbleWrap}>
           <TouchableOpacity
             activeOpacity={onPressBubble || onLongPressBubble ? 0.9 : 1}
@@ -204,7 +215,7 @@ function MessageBubbleBase({
                 styles.bubble,
                 isMe ? styles.bubbleMe : styles.bubbleOther,
                 { maxWidth: bubbleMaxWidth },
-                reaction && styles.bubbleWithReaction,
+                anyReaction && styles.bubbleWithReaction,
               ]}
             >
               <Text
@@ -219,7 +230,13 @@ function MessageBubbleBase({
             </View>
           </TouchableOpacity>
 
-          {reaction && (
+          {hasChip ? (
+            <ReactionChip
+              summaries={reactionSummaries!}
+              onPress={onPressReactions ?? (() => {})}
+              isMe={isMe}
+            />
+          ) : hasLegacyReaction ? (
             <View
               style={[
                 styles.reactionBadge,
@@ -228,10 +245,10 @@ function MessageBubbleBase({
               pointerEvents="none"
             >
               <Text style={styles.reactionEmoji}>
-                {REACTION_EMOJI[reaction]}
+                {REACTION_EMOJI[reaction!]}
               </Text>
             </View>
-          )}
+          ) : null}
         </View>
 
         <View
@@ -288,7 +305,6 @@ const styles = StyleSheet.create({
   stackMe: { alignItems: 'flex-end' },
   stackOther: { alignItems: 'flex-start', flexGrow: 1 },
 
-  // ── Sender header ──
   senderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -312,7 +328,6 @@ const styles = StyleSheet.create({
     maxWidth: 180,
   },
 
-  // ── Reply preview ──
   replyCaptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -334,7 +349,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: -8,
     borderRadius: 6,
-    backgroundColor: 'rgba(217,221,227,0.84)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
   },
   replyPreviewAccent: {
     width: 2,
@@ -345,10 +362,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     flexShrink: 1,
-    color: '#252A31',
+    color: TEXT_MUTED,
   },
 
-  // ── Bubble ──
   bubbleWrap: { position: 'relative' },
   bubble: {
     paddingVertical: 7,
@@ -356,9 +372,7 @@ const styles = StyleSheet.create({
     borderRadius: CHAT_RADIUS_BUBBLE,
     marginVertical: 1,
   },
-  bubbleWithReaction: {
-    paddingBottom: 10,
-  },
+  bubbleWithReaction: { paddingBottom: 10 },
   bubbleMe: {
     backgroundColor: ACCENT_GOLD,
     borderBottomRightRadius: 4,
@@ -376,7 +390,7 @@ const styles = StyleSheet.create({
   },
   textMe: { fontWeight: '600' },
 
-  // ── Reaction badge ──
+  // Legacy single-reaction badge (used only when summaries aren't provided)
   reactionBadge: {
     position: 'absolute',
     bottom: -6,
@@ -396,13 +410,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   reactionBadgeMe: { right: -2 },
-  reactionBadgeOther: { right: -2 },
-  reactionEmoji: {
-    fontSize: 11,
-    lineHeight: 13,
-  },
+  reactionBadgeOther: { left: -2 },
+  reactionEmoji: { fontSize: 11, lineHeight: 13 },
 
-  // ── Footer ──
   footer: {
     flexDirection: 'row',
     alignItems: 'center',

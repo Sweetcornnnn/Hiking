@@ -9,7 +9,7 @@ import {
   Easing,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { mountainService } from '../services/mountainService';
@@ -64,12 +64,17 @@ const HIKING_LINES = [
   'Wondering where all the water went and trying not to panic...',
   'Saying “short cut” while discovering the shortcut was a cliff...',
 ];
-const FINAL_LINE = 'Summit reached. Enjoy the view.';
+
+// The final line shown for FINAL_HOLD_MS once progress hits 100%.
+const FINAL_LINE = 'The trail is ready. Lace up and let’s go.';
 
 // Slow, gentle transitions
 const LINE_ROTATE_MS = 7000;
 const LINE_FADE_OUT_MS = 1800;
 const LINE_FADE_IN_MS = 2200;
+
+// How long the "ready" line stays visible before we navigate / complete.
+const FINAL_HOLD_MS = 3000;
 
 // Hard safety net only (long on purpose so loading can really finish)
 const MAX_WAIT_MS = 45000;
@@ -104,13 +109,19 @@ export default function LoadingScreen({
   const nextRoute = params.next as string | undefined;
 
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width >= height;
   const textSize = width < 340 ? 9 : isLandscape ? 11 : 10;
-  const sidePadding = isLandscape ? 24 : Math.max(12, Math.round(width * 0.04));
+
+  // Symmetric padding measured from the PHYSICAL screen edges, ignoring the
+  // notch/camera cutout. This is what balances the bar.
+  const sidePadding = isLandscape
+    ? 50
+    : Math.max(16, Math.round(width * 0.08));
 
   const [lines] = useState(() => shuffled(HIKING_LINES));
   const [lineIndex, setLineIndex] = useState(0);
-  const [showFinal, setShowFinal] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
   const mountedRef = useRef(true);
 
   // Always-latest values so the loading effect runs ONCE and is never restarted
@@ -165,14 +176,15 @@ export default function LoadingScreen({
     [lineOpacity, lineShift]
   );
 
-  // Rotate lines
+  // Rotate lines — only while not finishing. Once finishing, we hold the
+  // final line still so it reads as a definitive "ready" message.
   useEffect(() => {
-    if (showFinal) return;
+    if (isFinishing) return;
     const interval = setInterval(() => {
       swapLine(() => setLineIndex((i) => (i + 1) % lines.length));
     }, LINE_ROTATE_MS);
     return () => clearInterval(interval);
-  }, [showFinal, swapLine, lines.length]);
+  }, [swapLine, lines.length, isFinishing]);
 
   // Main loading effect (runs once)
   useEffect(() => {
@@ -193,24 +205,31 @@ export default function LoadingScreen({
           : '/Home';
     const shouldPreloadHomeVideos = !oc0 && initialTarget === '/Home';
 
-    const goNext = () => {
+    // Finish: hold the "ready" line for FINAL_HOLD_MS, then navigate/complete.
+    const finish = () => {
       if (didNavigate || !mountedRef.current) return;
       didNavigate = true;
+      setIsFinishing(true);
 
-      const { profile, nextRoute, onComplete, router } = latest.current;
-      if (onComplete) {
-        onComplete();
-        return;
-      }
-      const role = profile?.role ?? 'hiker';
-      const target: Href = nextRoute
-        ? (nextRoute as Href)
-        : profile?.is_admin
-          ? '/admin/Admin'
-          : role === 'organization'
-            ? '/organizations/Dashboard'
-            : '/Home';
-      router.replace(target);
+      timers.push(
+        setTimeout(() => {
+          if (!mountedRef.current) return;
+          const { profile, nextRoute, onComplete, router } = latest.current;
+          if (onComplete) {
+            onComplete();
+            return;
+          }
+          const role = profile?.role ?? 'hiker';
+          const target: Href = nextRoute
+            ? (nextRoute as Href)
+            : profile?.is_admin
+              ? '/admin/Admin'
+              : role === 'organization'
+                ? '/organizations/Dashboard'
+                : '/Home';
+          router.replace(target);
+        }, FINAL_HOLD_MS)
+      );
     };
 
     const animateTo = (
@@ -256,17 +275,38 @@ export default function LoadingScreen({
     if (isReadyDriven) {
       didCompleteInline.current = false;
       animateTo(0.85, Math.max(loadingDuration, 1000));
+
+      // Safety net: if the parent never reports `ready` (hung fetch, map image
+      // that fires neither onLoad nor onError, etc.), fill and complete anyway
+      // after MAX_WAIT_MS so the user is never trapped on the loading screen.
+      timers.push(
+        setTimeout(() => {
+          if (!mountedRef.current) return;
+          if (didCompleteInline.current) return;
+          didCompleteInline.current = true;
+          Animated.timing(progressAnim, {
+            toValue: 1,
+            duration: 700,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: false,
+          }).start(({ finished }) => {
+            if (finished && mountedRef.current) finish();
+          });
+        }, MAX_WAIT_MS)
+      );
+
       return () => {
         mountedRef.current = false;
         pulseAnimation.stop();
         progressAnim.stopAnimation();
+        timers.forEach(clearTimeout);
       };
     }
 
     // Progress plan (follows the real work):
     //  - mountains fetch:  creeps to 30% / 60% while waiting, 40% / 85% once done
     //  - video posters:    up to 95%, driven by completed/total
-    //  - finish:           100%, then navigate
+    //  - finish:           100%, hold FINAL_HOLD_MS, then navigate
     const fetchCeiling = shouldPreloadHomeVideos ? 0.3 : 0.6;
     const afterFetch = shouldPreloadHomeVideos ? 0.4 : 0.85;
 
@@ -285,40 +325,67 @@ export default function LoadingScreen({
     };
 
     const preloadData = async () => {
+      // ── Step 1: fetch mountains (independent of video preload) ──
       try {
         animateTo(fetchCeiling, 5000);
         const mountains = await fetchMountainsWithRetry();
-        mountainService.setCachedMountains(mountains);
+        // Guard: some backends return null on error instead of throwing
+        mountainService.setCachedMountains(
+          Array.isArray(mountains) ? mountains : []
+        );
         animateTo(afterFetch, 500);
+      } catch (error) {
+        const err = error as Error | undefined;
+        console.warn(
+          '[Loading] mountains step failed:',
+          err?.message ?? error,
+          '\nStack:',
+          err?.stack ?? '(no stack)'
+        );
+        animateTo(afterFetch, 400);
+      }
 
-        if (shouldPreloadHomeVideos) {
+      // ── Step 2: preload home video posters (independent) ──
+      if (shouldPreloadHomeVideos) {
+        try {
           await preloadHomeVideoPosters((completed, total) => {
-            const ratio = total > 0 ? completed / total : 1;
+            const safeTotal =
+              typeof total === 'number' && total > 0 ? total : 0;
+            const safeCompleted =
+              typeof completed === 'number' && Number.isFinite(completed)
+                ? completed
+                : 0;
+            const ratio =
+              safeTotal > 0 ? Math.min(safeCompleted / safeTotal, 1) : 1;
             animateTo(afterFetch + (0.95 - afterFetch) * ratio, 400);
           });
-        }
-      } catch (error) {
-        console.warn('[Loading] preloading failed:', error);
-      } finally {
-        if (mountedRef.current) {
-          // Honor the minimum display time and finish the bar right as we leave
-          const remaining = Math.max(loadingDuration - (Date.now() - startedAt), 0);
-          const fillDuration = Math.max(700, remaining);
-          animateTo(1, fillDuration, Easing.inOut(Easing.quad));
-          timers.push(
-            setTimeout(() => {
-              if (mountedRef.current) swapLine(() => setShowFinal(true));
-            }, fillDuration * 0.75)
+        } catch (error) {
+          const err = error as Error | undefined;
+          console.warn(
+            '[Loading] video preload step failed:',
+            err?.message ?? error,
+            '\nStack:',
+            err?.stack ?? '(no stack)'
           );
-          timers.push(setTimeout(goNext, fillDuration + 3000));
         }
+      }
+
+      // ── Step 3: finish (always runs, no matter what failed above) ──
+      if (mountedRef.current) {
+        const remaining = Math.max(
+          loadingDuration - (Date.now() - startedAt),
+          0
+        );
+        const fillDuration = Math.max(700, remaining);
+        animateTo(1, fillDuration, Easing.inOut(Easing.quad));
+        timers.push(setTimeout(finish, fillDuration + 300));
       }
     };
 
     preloadData();
 
     // Safety net so a hung request can never trap the user here
-    timers.push(setTimeout(goNext, MAX_WAIT_MS));
+    timers.push(setTimeout(finish, MAX_WAIT_MS));
 
     return () => {
       mountedRef.current = false;
@@ -351,7 +418,11 @@ export default function LoadingScreen({
       useNativeDriver: false,
     }).start(({ finished }) => {
       if (finished && mountedRef.current) {
-        latest.current.onComplete?.();
+        // Hold the "ready" line for FINAL_HOLD_MS before calling onComplete.
+        setIsFinishing(true);
+        setTimeout(() => {
+          if (mountedRef.current) latest.current.onComplete?.();
+        }, FINAL_HOLD_MS);
       }
     });
   }, [ready, progressAnim]);
@@ -363,10 +434,10 @@ export default function LoadingScreen({
   });
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Big GIF fills all the space above the progress area */}
-        <View style={styles.gifArea}>
+        <View style={[styles.gifArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <Animated.View
             style={[styles.gifContainer, { transform: [{ scale: pulseAnim }] }]}
           >
@@ -378,8 +449,20 @@ export default function LoadingScreen({
           </Animated.View>
         </View>
 
-        {/* Progress + sentence sit just above the bottom edge */}
-        <View style={[styles.bottom, { paddingHorizontal: sidePadding }]}>
+        {/* Progress + sentence sit just above the bottom edge.
+            NOT wrapped in SafeAreaView — so the bar is centered on the
+            physical screen, with symmetric side padding that ignores the
+            notch/camera cutout. Bottom inset is applied to the container
+            so the text doesn't collide with the home indicator. */}
+        <View
+          style={[
+            styles.bottom,
+            {
+              paddingHorizontal: sidePadding,
+              paddingBottom: Math.max(insets.bottom, 16),
+            },
+          ]}
+        >
           <View style={styles.progressTrack}>
             <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
           </View>
@@ -396,12 +479,12 @@ export default function LoadingScreen({
                 },
               ]}
             >
-              {showFinal ? FINAL_LINE : lines[lineIndex]}
+              {isFinishing ? FINAL_LINE : lines[lineIndex]}
             </Animated.Text>
           </View>
         </View>
       </Animated.View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -438,7 +521,6 @@ const styles = StyleSheet.create({
   bottom: {
     width: '100%',
     alignItems: 'center',
-    paddingBottom: 16,
   },
 
   progressTrack: {

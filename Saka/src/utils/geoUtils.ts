@@ -5,6 +5,8 @@ export interface Viewpoint {
   longitude: number;
   elevation?: string;
   notes?: string;
+  mapX?: number; // 0..1 across the map image (0 = left edge)
+  mapY?: number; // 0..1 down the map image (0 = top edge)
 }
 
 interface Point {

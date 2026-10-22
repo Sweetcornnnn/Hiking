@@ -25,6 +25,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { MessageBubble, ReactionType } from '../../components/chat/MessageBubble';
 import MessageActionSheet from '../../components/chat/MessageActionSheet';
+import ReactionsList from '../../components/chat/ReactionsList';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -43,6 +44,10 @@ import {
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 import UserSearch from '../../components/chat/UserSearch';
+import {
+  ReactionRow,
+  summarizeReactions,
+} from '../../utils/reactions';
 
 type ProfileData = {
   full_name: string | null;
@@ -61,6 +66,7 @@ type Message = {
   metadata?: any;
   created_at: string;
   updated_at: string;
+  is_edited: boolean;
   profiles?: any;
   reply_to_id: number | null;
   reply_to_sender: string | null;
@@ -107,13 +113,7 @@ const formatSystemMessage = (item: Message, currentUserId: string): string => {
   return item.content;
 };
 
-const isEdited = (m: { created_at: string; updated_at: string }) => {
-  try {
-    return new Date(m.updated_at).getTime() - new Date(m.created_at).getTime() > 1000;
-  } catch {
-    return false;
-  }
-};
+const isEdited = (m: { is_edited?: boolean }) => m.is_edited === true;
 
 const isSameDay = (first: string, second: string) => {
   const firstDate = new Date(first);
@@ -162,10 +162,24 @@ const SELECT_COLS = `
   metadata,
   created_at,
   updated_at,
+  is_edited,
   reply_to_id,
   reply_to_sender,
   reply_to_content,
   reaction,
+  profiles:profiles (
+    full_name,
+    username,
+    avatar_url
+  )
+`;
+
+const REACTIONS_SELECT = `
+  id,
+  message_id,
+  user_id,
+  reaction,
+  created_at,
   profiles:profiles (
     full_name,
     username,
@@ -279,10 +293,17 @@ export default function GroupChatScreen() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
 
+  // Reactions: message_id -> rows
+  const [reactionsByMessage, setReactionsByMessage] = useState<
+    Record<number, ReactionRow[]>
+  >({});
+  const [reactionsTarget, setReactionsTarget] = useState<number | null>(null);
+
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
+  const reactionsChannelRef = useRef<any>(null);
   const mountedRef = useRef(true);
 
   const isNearBottomRef = useRef(true);
@@ -401,6 +422,58 @@ export default function GroupChatScreen() {
     }
   }, [groupId]);
 
+  // Fetch reactions for a set of message ids, grouped by message id.
+  const loadReactionsForMessages = useCallback(async (messageIds: number[]) => {
+    if (messageIds.length === 0) {
+      setReactionsByMessage({});
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('group_message_reactions')
+        .select(REACTIONS_SELECT)
+        .in('message_id', messageIds);
+
+      if (error) throw error;
+
+      const grouped: Record<number, ReactionRow[]> = {};
+      for (const row of (data || []) as any[]) {
+        const list = grouped[row.message_id] || [];
+        list.push({
+          ...row,
+          profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
+        });
+        grouped[row.message_id] = list;
+      }
+      if (mountedRef.current) setReactionsByMessage(grouped);
+    } catch (err) {
+      console.warn('[reactions] load failed:', err);
+    }
+  }, []);
+
+  // Fetch reactions for a single message (used by realtime).
+  const loadReactionsForOne = useCallback(async (messageId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('group_message_reactions')
+        .select(REACTIONS_SELECT)
+        .eq('message_id', messageId);
+
+      if (error) throw error;
+
+      const rows: ReactionRow[] = (data || []).map((row: any) => ({
+        ...row,
+        profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
+      }));
+
+      if (mountedRef.current) {
+        setReactionsByMessage((prev) => ({ ...prev, [messageId]: rows }));
+      }
+    } catch (err) {
+      console.warn('[reactions] single load failed:', err);
+    }
+  }, []);
+
   const loadMessages = useCallback(
     async (refresh = false) => {
       if (!user || !groupId) return;
@@ -444,6 +517,12 @@ export default function GroupChatScreen() {
 
         setMessages(normalizedMessages);
 
+        // Reactions — one query for all visible message ids
+        const ids = normalizedMessages
+          .filter((m) => m.type !== 'system')
+          .map((m) => m.id);
+        await loadReactionsForMessages(ids);
+
         setTimeout(() => {
           if (firstUnreadIndex >= 0) {
             listRef.current?.scrollToIndex({
@@ -463,7 +542,7 @@ export default function GroupChatScreen() {
         setRefreshing(false);
       }
     },
-    [user, groupId, markGroupAsRead]
+    [user, groupId, markGroupAsRead, loadReactionsForMessages]
   );
 
   // ─── SEND ──────────────────────────────────────────────────
@@ -493,6 +572,7 @@ export default function GroupChatScreen() {
       media_url: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      is_edited: false,
       reply_to_id: reply?.id ?? null,
       reply_to_sender: repliedToName,
       reply_to_content: reply?.content ?? null,
@@ -578,13 +658,17 @@ export default function GroupChatScreen() {
 
     setSending(true);
     setMessages((prev) =>
-      prev.map((m) => (m.id === targetId ? { ...m, content: newContent, updated_at: now } : m))
+      prev.map((m) =>
+        m.id === targetId
+          ? { ...m, content: newContent, updated_at: now, is_edited: true }
+          : m
+      )
     );
 
     try {
       const { error } = await supabase
         .from('group_messages')
-        .update({ content: newContent, updated_at: now })
+        .update({ content: newContent, updated_at: now, is_edited: true })
         .eq('id', targetId)
         .eq('sender_id', user.id);
 
@@ -634,38 +718,62 @@ export default function GroupChatScreen() {
     setActionTarget(null);
   };
 
+  // Apply / toggle / switch the current user's reaction on the target message.
   const applyReaction = async (reaction: ReactionType) => {
     if (!actionTarget || !user) return;
-    const targetId = actionTarget.id;
-
-    if (typeof targetId !== 'number' || targetId >= 1_000_000_000_000) {
-      setActionTarget(null);
-      return;
-    }
-
-    const next = actionTarget.reaction === reaction ? null : reaction;
-
-    const backup = messages;
-    setMessages((prev) =>
-      prev.map((m) => (m.id === targetId ? { ...m, reaction: next } : m))
-    );
+    const messageId = actionTarget.id;
     setActionTarget(null);
 
-    try {
-      const { data: updated, error } = await supabase
-        .from('group_messages')
-        .update({ reaction: next })
-        .eq('id', targetId)
-        .select('id, reaction');
+    if (typeof messageId !== 'number' || messageId >= 1_000_000_000_000) return;
 
-      if (error) throw error;
-      if (!updated || updated.length === 0) {
-        throw new Error('Reaction not saved — RLS blocked or row missing');
+    const current = reactionsByMessage[messageId] || [];
+    const existing = current.find((r) => r.user_id === user.id);
+    const next = existing?.reaction === reaction ? null : reaction;
+
+    // Optimistic
+    const backup = reactionsByMessage;
+    setReactionsByMessage((prev) => {
+      const list = (prev[messageId] || []).filter(
+        (r) => r.user_id !== user.id
+      );
+      if (next) {
+        list.push({
+          id: `temp-${Date.now()}`,
+          message_id: messageId,
+          user_id: user.id,
+          reaction: next,
+          created_at: new Date().toISOString(),
+          profiles: {
+            full_name: user.user_metadata?.full_name || null,
+            username: user.user_metadata?.username || null,
+            avatar_url: null,
+          },
+        });
       }
-    } catch (err) {
+      return { ...prev, [messageId]: list };
+    });
+
+    try {
+      if (next === null) {
+        const { error } = await supabase
+          .from('group_message_reactions')
+          .delete()
+          .eq('message_id', messageId)
+          .eq('user_id', user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('group_message_reactions')
+          .upsert(
+            { message_id: messageId, user_id: user.id, reaction: next },
+            { onConflict: 'message_id,user_id' }
+          );
+        if (error) throw error;
+      }
+    } catch (err: any) {
       console.warn('[reaction] failed:', err);
-      setMessages(backup);
-      Alert.alert('Error', 'Failed to react. Please try again.');
+      setReactionsByMessage(backup);
+      Alert.alert('Error', err?.message || 'Failed to react. Please try again.');
     }
   };
 
@@ -756,10 +864,10 @@ export default function GroupChatScreen() {
               ...msg,
               content: updated.content ?? msg.content,
               updated_at: updated.updated_at ?? msg.updated_at,
+              is_edited: updated.is_edited ?? msg.is_edited,
               reply_to_id: updated.reply_to_id ?? msg.reply_to_id,
               reply_to_sender: updated.reply_to_sender ?? msg.reply_to_sender,
               reply_to_content: updated.reply_to_content ?? msg.reply_to_content,
-              reaction: updated.reaction ?? msg.reaction,
             }
           : msg
       )
@@ -771,6 +879,12 @@ export default function GroupChatScreen() {
     const deletedId = payload.old?.id;
     if (deletedId === undefined) return;
     setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+    setReactionsByMessage((prev) => {
+      if (!(deletedId in prev)) return prev;
+      const next = { ...prev };
+      delete next[deletedId];
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -839,6 +953,39 @@ export default function GroupChatScreen() {
       mountedRef.current = false;
     };
   }, [groupId, loadGroup, loadMembers, loadMessages, handleNewMessage, handleDeletedMessage, handleUpdatedMessage]);
+
+  // Realtime: reactions on the group's messages.
+  useEffect(() => {
+    if (!groupId) return;
+    const channelName = `group-reactions-${groupId}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'group_message_reactions' },
+        (payload: any) => {
+          const msgId = payload.new?.message_id ?? payload.old?.message_id;
+          if (!msgId) return;
+          // Only reload if we have this message on screen.
+          setMessages((current) => {
+            if (current.some((m) => m.id === msgId)) {
+              loadReactionsForOne(msgId);
+            }
+            return current;
+          });
+        }
+      )
+      .subscribe();
+
+    reactionsChannelRef.current = channel;
+
+    return () => {
+      if (reactionsChannelRef.current) {
+        supabase.removeChannel(reactionsChannelRef.current);
+        reactionsChannelRef.current = null;
+      }
+    };
+  }, [groupId, loadReactionsForOne]);
 
   useFocusEffect(
     useCallback(() => {
@@ -959,90 +1106,105 @@ export default function GroupChatScreen() {
     }
   };
 
-  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
-    const previousMessage = index > 0 ? messages[index - 1] : null;
-    const showDateDivider =
-      !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
-    const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
-    const dateDivider = dateLabel ? (
-      <View style={styles.dateDivider}>
-        <View style={styles.dateDividerLine} />
-        <View style={styles.datePill}>
-          <Text style={styles.datePillText}>{dateLabel}</Text>
+  const renderMessage = useCallback(
+    ({ item, index }: { item: Message; index: number }) => {
+      const previousMessage = index > 0 ? messages[index - 1] : null;
+      const showDateDivider =
+        !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
+      const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
+      const dateDivider = dateLabel ? (
+        <View style={styles.dateDivider}>
+          <View style={styles.dateDividerLine} />
+          <View style={styles.datePill}>
+            <Text style={styles.datePillText}>{dateLabel}</Text>
+          </View>
+          <View style={styles.dateDividerLine} />
         </View>
-        <View style={styles.dateDividerLine} />
-      </View>
-    ) : null;
+      ) : null;
 
-    if (item.type === 'system') {
-      const displayText = formatSystemMessage(item, user?.id || '');
+      if (item.type === 'system') {
+        const displayText = formatSystemMessage(item, user?.id || '');
+        return (
+          <>
+            {dateDivider}
+            <View style={styles.systemMessageContainer}>
+              <Text style={styles.systemMessageText}>{displayText}</Text>
+            </View>
+          </>
+        );
+      }
+
+      const isMe = item.sender_id === user?.id;
+      const profile = normalizeProfile(item.profiles);
+      const senderName = profile?.full_name || profile?.username || 'Member';
+
+      const time = item.created_at
+        ? new Date(item.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          })
+        : '';
+      const edited = isEdited(item);
+      const hasReply = !!item.reply_to_id;
+
+      const repliedMessage = hasReply
+        ? messages.find((message) => message.id === item.reply_to_id)
+        : null;
+      const repliedToLabel = repliedMessage
+        ? getSenderLabel(repliedMessage)
+        : item.reply_to_sender || 'a message';
+      const replyCaption = isMe
+        ? `You replied to ${repliedToLabel}`
+        : repliedMessage?.sender_id === user?.id
+          ? `${senderName} replied to you`
+          : `${senderName} replied to ${repliedToLabel}`;
+      const replyPreview =
+        repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
+
+      const rows = reactionsByMessage[item.id] || [];
+      const summaries = summarizeReactions(rows, user?.id);
+
       return (
         <>
           {dateDivider}
-          <View style={styles.systemMessageContainer}>
-            <Text style={styles.systemMessageText}>{displayText}</Text>
-          </View>
+          <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
+            <Pressable
+              onLongPress={() => openActionSheet(item)}
+              delayLongPress={350}
+              style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
+            >
+              <MessageBubble
+                content={item.content}
+                time={time}
+                isMe={isMe}
+                edited={edited}
+                hasReply={hasReply}
+                replyCaption={replyCaption}
+                replyPreview={replyPreview}
+                reactionSummaries={summaries}
+                onPressReactions={
+                  summaries.length > 0 ? () => setReactionsTarget(item.id) : undefined
+                }
+                showReadReceipt={false}
+                showAvatar={false}
+                showSenderHeader={!isMe}
+                senderName={senderName}
+                senderColorSeed={item.sender_id}
+              />
+            </Pressable>
+          </SwipeableRow>
         </>
       );
-    }
-
-    const isMe = item.sender_id === user?.id;
-    const profile = normalizeProfile(item.profiles);
-    const senderName = profile?.full_name || profile?.username || 'Member';
-
-    const time = item.created_at
-      ? new Date(item.created_at).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        })
-      : '';
-    const edited = isEdited(item);
-    const hasReply = !!item.reply_to_id;
-
-    const repliedMessage = hasReply
-      ? messages.find((message) => message.id === item.reply_to_id)
-      : null;
-    const repliedToLabel = repliedMessage
-      ? getSenderLabel(repliedMessage)
-      : item.reply_to_sender || 'a message';
-    const replyCaption = isMe
-      ? `You replied to ${repliedToLabel}`
-      : repliedMessage?.sender_id === user?.id
-        ? `${senderName} replied to you`
-        : `${senderName} replied to ${repliedToLabel}`;
-    const replyPreview =
-      repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
-
-    return (
-      <>
-        {dateDivider}
-        <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
-          <Pressable
-            onLongPress={() => openActionSheet(item)}
-            delayLongPress={350}
-            style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
-          >
-            <MessageBubble
-              content={item.content}
-              time={time}
-              isMe={isMe}
-              edited={edited}
-              hasReply={hasReply}
-              replyCaption={replyCaption}
-              replyPreview={replyPreview}
-              reaction={item.reaction}
-              showReadReceipt={false}
-              showAvatar={false}
-              showSenderHeader={!isMe}
-              senderName={senderName}
-              senderColorSeed={item.sender_id}
-            />
-          </Pressable>
-        </SwipeableRow>
-      </>
-    );
-  };
+    },
+    [
+      messages,
+      reactionsByMessage,
+      sending,
+      user?.id,
+      openActionSheet,
+    ]
+  );
 
   const renderMember = ({ item }: { item: GroupMember }) => {
     const profile = normalizeProfile(item.profiles);
@@ -1084,6 +1246,20 @@ export default function GroupChatScreen() {
   const canSave = inputText.trim().length > 0 && !sending;
   const replyingSenderLabel = replyingTo ? getSenderLabel(replyingTo) : '';
   const isActionTargetMine = !!actionTarget && actionTarget.sender_id === user?.id;
+
+  // Current user's reaction on the action sheet target
+  const actionTargetMyReaction =
+    actionTarget && user
+      ? (reactionsByMessage[actionTarget.id] || []).find(
+          (r) => r.user_id === user.id
+        )?.reaction ?? null
+      : null;
+
+  // Summaries for the "who reacted" modal
+  const reactionsSummaries =
+    reactionsTarget !== null
+      ? summarizeReactions(reactionsByMessage[reactionsTarget] || [], user?.id)
+      : [];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -1412,11 +1588,11 @@ export default function GroupChatScreen() {
         </Pressable>
       </Modal>
 
-      {/* ── Unified action sheet ── */}
+      {/* Unified action sheet */}
       <MessageActionSheet
         visible={!!actionTarget}
         isMe={isActionTargetMine}
-        currentReaction={actionTarget?.reaction ?? null}
+        currentReaction={actionTargetMyReaction}
         onClose={closeActionSheet}
         onReact={applyReaction}
         onReply={
@@ -1431,6 +1607,14 @@ export default function GroupChatScreen() {
         onEdit={isActionTargetMine ? openEditFromSheet : undefined}
         onUnsend={isActionTargetMine ? confirmDeleteFromSheet : undefined}
         onCopy={copyMessage}
+      />
+
+      {/* Who-reacted modal */}
+      <ReactionsList
+        visible={reactionsTarget !== null}
+        onClose={() => setReactionsTarget(null)}
+        summaries={reactionsSummaries}
+        currentUserId={user?.id}
       />
     </SafeAreaView>
   );
