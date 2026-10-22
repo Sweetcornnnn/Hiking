@@ -64,6 +64,49 @@ async function uploadJournalImage(userId: string, journalId: string, image: Jour
   return supabase.storage.from(JOURNAL_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
+export async function replaceJournalImage(
+  entry: JournalEntry,
+  index: number,
+  localEditedUri: string,
+): Promise<{ error: string | null; entry?: JournalEntry }> {
+  try {
+    const currentImages = [...(entry.images ?? [])];
+    const realIndices = currentImages
+      .map((value, imageIndex) => (value ? imageIndex : -1))
+      .filter((imageIndex) => imageIndex >= 0);
+    const realIndex = realIndices[index];
+    if (realIndex === undefined) throw new Error('Photo not found in this entry.');
+
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth?.user?.id;
+    if (!userId) throw new Error('Not signed in.');
+
+    const editedUrl = await uploadJournalImage(userId, entry.id, {
+      uri: localEditedUri,
+      mimeType: 'image/jpeg',
+    });
+    const nextImages = [...currentImages];
+    nextImages[realIndex] = editedUrl;
+    const { data, error } = await supabase
+      .from('hiking_journals')
+      .update({ images: nextImages })
+      .eq('id', entry.id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      const uploadedPath = getStoragePath(editedUrl);
+      if (uploadedPath) await supabase.storage.from(JOURNAL_BUCKET).remove([uploadedPath]);
+      throw error;
+    }
+
+    return { error: null, entry: data as JournalEntry };
+  } catch (error: any) {
+    return { error: error?.message ?? 'Unable to replace photo.' };
+  }
+}
+
 function getImageContentType(uri: string): string {
   const extension = uri.split('?')[0].split('.').pop()?.toLowerCase();
   if (extension === 'png') return 'image/png';

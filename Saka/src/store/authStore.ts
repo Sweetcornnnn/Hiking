@@ -342,7 +342,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'saka://auth/callback',
+        redirectTo: 'saka://auth/callback', 
       });
 
       if (error) {

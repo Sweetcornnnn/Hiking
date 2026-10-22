@@ -33,6 +33,7 @@ interface Props {
   mountains: Mountain[];
   isLoading?: boolean;
   onDelete: (entry: JournalEntry) => void;
+  onEdit: (entry: JournalEntry, index: number, uri: string) => void;
   onNewEntry: () => void;
 }
 
@@ -48,6 +49,7 @@ export default function MyJournalFeed({
   mountains,
   isLoading = false,
   onDelete,
+  onEdit,
   onNewEntry,
 }: Props) {
   const mountainsById = useMemo(() => {
@@ -88,6 +90,7 @@ export default function MyJournalFeed({
             entry.mountain_id ? mountainsById.get(entry.mountain_id) : undefined
           }
           onDelete={() => onDelete(entry)}
+          onEdit={onEdit}
         />
       ))}
     </View>
@@ -98,10 +101,12 @@ function MyJournalPostCard({
   entry,
   locationLabel,
   onDelete,
+  onEdit,
 }: {
   entry: JournalEntry;
   locationLabel?: string;
   onDelete: () => void;
+  onEdit: (entry: JournalEntry, index: number, uri: string) => void;
 }) {
   const { height: windowHeight } = useWindowDimensions();
   const user = useAuthStore((state) => state.user);
@@ -170,7 +175,16 @@ function MyJournalPostCard({
           <Text style={styles.placeholderText}>No photo in this entry</Text>
         </View>
       ) : (
-        <View>
+        <View style={styles.photoContainer}>
+          <TouchableOpacity
+            onPress={() => onEdit(entry, activeIndex, images[activeIndex])}
+            style={styles.editPhotoButton}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Edit photo"
+          >
+            <Ionicons name="pencil-outline" size={15} color={TEXT_PRIMARY} />
+          </TouchableOpacity>
           {isMulti ? (
             <ImageCarousel
               images={images}
@@ -572,6 +586,21 @@ const styles = StyleSheet.create({
     gap: 5,
     borderRadius: RADIUS_BTN,
     backgroundColor: BG_AVATAR,
+  },
+  photoContainer: { position: 'relative' },
+  editPhotoButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 2,
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 17,
+    backgroundColor: 'rgba(14,21,32,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.5)',
   },
   placeholderText: { color: TEXT_MUTED, fontSize: 9 },
   counter: {
