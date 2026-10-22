@@ -11,19 +11,16 @@
       "bundleIdentifier": "com.yourname.saka",
       "supportsTablet": true,
       "config": {
-        "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
+        "googleMapsApiKey": "AIzaSyAI-xnvFzV-h5lEFs9bUNn-muw-vb4HpK8"
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to track hiking progress and ensure your safety on trails.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need continuous location access to provide real-time safety monitoring and emergency assistance.",
         "NSLocationAlwaysUsageDescription": "We need continuous location access for background safety tracking.",
         "UIBackgroundModes": [
-          "location",
-          "remote-notification",
-          "location",
-          "remote-notification"
-        ],
-        "ITSAppUsesNonExemptEncryption": false
+           "location",
+           "remote-notification"
+        ]
       }
     },
     "android": {
@@ -35,7 +32,7 @@
       },
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
+          "apiKey": "AIzaSyAI-xnvFzV-h5lEFs9bUNn-muw-vb4HpK8"
         }
       },
       "predictiveBackGestureEnabled": false,
@@ -47,11 +44,7 @@
     },
     "extra": {
       "WEATHER_API_KEY": "8354d134719c19d5c918ac8a014dc925",
-      "API_HOST": "192.168.18.10",
-      "router": {},
-      "eas": {
-        "projectId": "be6b2c80-2441-412a-b0b0-340d2ad962b8"
-      }
+      "API_HOST": "192.168.18.10"
     },
     "plugins": [
       "expo-router",

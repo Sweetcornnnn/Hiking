@@ -10,17 +10,24 @@ import {
   TouchableOpacity,
   BackHandler,
   Alert,
+  AppState,
+  type AppStateStatus,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
-import { useVideoPlayer, VideoView, type VideoPlayer, type VideoThumbnail } from 'expo-video';
+import { useVideoPlayer, VideoView, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
 import { mountainService, Mountain } from '../services/mountainService';
 import { uploadProfileAvatar } from '../services/profileAvatarService';
-import { getHomeVideoPosters, MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
+import {
+  getHomeVideoPosters,
+  subscribeHomeVideoPosters,
+  preloadHomeVideoPosters,
+  MOUNTAIN_VIDEOS,
+} from '../services/homeVideoAssets';
 import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
@@ -32,32 +39,174 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-/** Renders Home's single native player over the slide's frozen poster frame. */
-function VideoViewPlayer({ player }: { player: VideoPlayer }) {
-  return (
-    <View style={styles.videoOverlay} pointerEvents="none">
-      <VideoView
+/**
+ * Only the ACTIVE slide mounts a video player.
+ *
+ * Android hardware decoders are limited (typically 2–4 across the whole app).
+ * Mounting more than one simultaneous `VideoView` is what caused
+ *   "IllegalArgumentException: byteCount < 0"
+ * and the "video freezes at a low-quality frame" symptom. With window = 1,
+ * inactive slides render the poster only and their decoder is fully released.
+ */
+const VIDEO_WINDOW = 1;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Poster-only fallback
+// ─────────────────────────────────────────────────────────────────────────────
+function VideoPoster({ poster }: { poster?: VideoThumbnail }) {
+  const [failed, setFailed] = useState(false);
+
+  if (poster && !failed) {
+    return (
+      <ExpoImage
+        source={poster}
         style={StyleSheet.absoluteFill}
-        player={player}
-        nativeControls={false}
         contentFit="cover"
-        surfaceType="textureView"
+        onError={() => setFailed(true)}
       />
+    );
+  }
+
+  return (
+    <View style={styles.fullScreenVideoPlaceholder}>
+      <Ionicons name="videocam-outline" size={80} color="#8B7355" />
     </View>
   );
 }
 
-// Memoized slide component.
-//
-// Note: no `isActive` prop. Because the slide doesn't care about the active
-// index anymore, `memo` can short-circuit every carousel swipe — no slide
-// re-renders when `activeIndex` changes.
+// ─────────────────────────────────────────────────────────────────────────────
+// Active video player — plays and loops while mounted, released on unmount
+// ─────────────────────────────────────────────────────────────────────────────
+function MountainVideo({
+  source,
+  poster,
+  isActive,
+}: {
+  source: number;
+  poster?: VideoThumbnail;
+  isActive: boolean;
+}) {
+  const player = useVideoPlayer(source, (videoPlayer) => {
+    videoPlayer.loop = true;
+    videoPlayer.muted = true;
+  });
+  const [firstFrameRendered, setFirstFrameRendered] = useState(false);
+  const [videoErrored, setVideoErrored] = useState(false);
+  const hasRetriedRef = useRef(false);
+  const wasActiveRef = useRef(false);
+
+  // Only ever play when active. With VIDEO_WINDOW = 1 this component only
+  // mounts while active, so the "pause" path is mostly defensive — but the
+  // important thing is: when this component unmounts, the player is released
+  // cleanly (no "paused at a low-quality intermediate frame" left visible).
+  useEffect(() => {
+    if (videoErrored) return;
+
+    if (isActive) {
+      try {
+        player.play();
+      } catch {}
+    } else {
+      try {
+        player.pause();
+      } catch {}
+    }
+    wasActiveRef.current = isActive;
+  }, [isActive, player, videoErrored]);
+
+  // Loop + mute re-assertion + one retry on error.
+  useEffect(() => {
+    const sub = player.addListener('statusChange', ({ status, error }) => {
+      if (status === 'error') {
+        console.error(
+          '[Home] Mountain video failed:',
+          error?.message ?? 'Unknown player error',
+        );
+
+        if (!hasRetriedRef.current) {
+          hasRetriedRef.current = true;
+          setFirstFrameRendered(false);
+          void player.replaceAsync(source).catch(() => setVideoErrored(true));
+          return;
+        }
+
+        setVideoErrored(true);
+        setFirstFrameRendered(false);
+        return;
+      }
+
+      if (status === 'readyToPlay') {
+        setVideoErrored(false);
+        hasRetriedRef.current = false;
+      }
+
+      // Re-assert on every tick — Android drops these after buffer stalls.
+      try {
+        player.loop = true;
+        player.muted = true;
+      } catch {}
+
+      if (status === 'readyToPlay' && isActive) {
+        try {
+          player.play();
+        } catch {}
+      }
+    });
+    return () => sub.remove();
+  }, [isActive, player, source]);
+
+  // Foreground resume.
+  useEffect(() => {
+    const onChange = (state: AppStateStatus) => {
+      if (state === 'active' && isActive && !videoErrored) {
+        try {
+          player.loop = true;
+          player.muted = true;
+        } catch {}
+        try {
+          player.play();
+        } catch {}
+      }
+    };
+    const sub = AppState.addEventListener('change', onChange);
+    return () => sub.remove();
+  }, [isActive, player, videoErrored]);
+
+  if (videoErrored) {
+    return <VideoPoster poster={poster} />;
+  }
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      {/* Permanent fallback under the video (visible until first frame). */}
+      <VideoPoster poster={poster} />
+
+      <View style={styles.videoOverlay} pointerEvents="none">
+        <VideoView
+          style={StyleSheet.absoluteFill}
+          player={player}
+          nativeControls={false}
+          contentFit="cover"
+          surfaceType="textureView"
+          onFirstFrameRender={() => setFirstFrameRendered(true)}
+        />
+      </View>
+
+      {/* Opaque cover until first frame paints (Android textureView can be
+          opaque black before first frame, hiding the fallback above). */}
+      {!firstFrameRendered ? <VideoPoster poster={poster} /> : null}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slide
+// ─────────────────────────────────────────────────────────────────────────────
 const MountainSlide = memo(function MountainSlide({
   mountain,
+  shouldMountVideo,
   isActive,
   poster,
-  videoPlayer,
-  videoReady,
   width,
   height,
   isPortrait,
@@ -65,10 +214,9 @@ const MountainSlide = memo(function MountainSlide({
   onEventsPress,
 }: {
   mountain: Mountain;
+  shouldMountVideo: boolean;
   isActive: boolean;
   poster: VideoThumbnail | undefined;
-  videoPlayer: VideoPlayer;
-  videoReady: boolean;
   width: number;
   height: number;
   isPortrait: boolean;
@@ -76,29 +224,19 @@ const MountainSlide = memo(function MountainSlide({
   onEventsPress: (mountainId: string) => void;
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
-
-  // Bundled local video for this mountain (if one is registered for its ID).
-  // Home is video-only: no `image_url` is ever read or fetched here.
   const localVideo = MOUNTAIN_VIDEOS[mountain.id];
 
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
       <View style={styles.videoWrapper}>
         {localVideo ? (
-          <>
-            {poster ? (
-              <ExpoImage source={poster} style={StyleSheet.absoluteFill} contentFit="cover" />
-            ) : (
-              <View style={styles.fullScreenVideoPlaceholder}>
-                <Ionicons name="videocam-outline" size={80} color="#8B7355" />
-              </View>
-            )}
-            {isActive && videoReady && <VideoViewPlayer player={videoPlayer} />}
-          </>
+          shouldMountVideo ? (
+            <MountainVideo source={localVideo} poster={poster} isActive={isActive} />
+          ) : (
+            <VideoPoster poster={poster} />
+          )
         ) : (
-          <View style={styles.fullScreenVideoPlaceholder}>
-            <Ionicons name="videocam-outline" size={80} color="#8B7355" />
-          </View>
+          <VideoPoster poster={poster} />
         )}
       </View>
 
@@ -109,7 +247,6 @@ const MountainSlide = memo(function MountainSlide({
           <Text style={styles.funnyWarningText}>{mountain.funny_warning}</Text>
         )}
 
-        {/* Meta row: difficulty + elevation + events button */}
         <View style={styles.infoMetaRow}>
           <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
             <View style={[styles.difficultyDot, { backgroundColor: diffColor }]} />
@@ -156,6 +293,9 @@ const MountainSlide = memo(function MountainSlide({
   );
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const router = useRouter();
   const { returnToProfile } = useLocalSearchParams<{ returnToProfile?: string }>();
@@ -166,16 +306,7 @@ export default function HomeScreen() {
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
-  const initialVideoMountainId = mountains[0] && MOUNTAIN_VIDEOS[mountains[0].id]
-    ? mountains[0].id
-    : null;
-  const initialVideoSource = initialVideoMountainId
-    ? MOUNTAIN_VIDEOS[initialVideoMountainId]
-    : Object.values(MOUNTAIN_VIDEOS)[0];
-  const videoPlayer = useVideoPlayer(initialVideoSource, (player) => {
-    player.loop = true;
-    player.muted = true;
-  });
+
   const handleProfileImageSelect = async (uri: string) => {
     if (!user) {
       Alert.alert('Sign in required', 'Sign in to save a profile photo.');
@@ -189,7 +320,8 @@ export default function HomeScreen() {
         throw new Error(result.error || 'Unable to save your profile photo.');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save your profile photo.';
+      const message =
+        error instanceof Error ? error.message : 'Unable to save your profile photo.';
       console.error('[Profile] Avatar update failed:', error);
       Alert.alert('Profile photo not saved', message);
     }
@@ -198,95 +330,17 @@ export default function HomeScreen() {
   const [videoPosters, setVideoPosters] = useState<Record<string, VideoThumbnail>>(
     () => getHomeVideoPosters()
   );
-  const [videoReady, setVideoReady] = useState(false);
-  const activeMountainId = useRef<string | null>(mountains[0]?.id ?? null);
-  const loadedMountainId = useRef<string | null>(initialVideoMountainId);
-  const videoPositions = useRef<Record<string, number>>({});
-  const switchRequest = useRef(0);
+  useEffect(() => {
+    setVideoPosters(getHomeVideoPosters());
+    const unsubscribe = subscribeHomeVideoPosters(setVideoPosters);
+    void preloadHomeVideoPosters();
+    return unsubscribe;
+  }, []);
+
   const [error, setError] = useState<string | null>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
-
-  const capturePoster = useCallback(async (mountainId: string, time: number) => {
-    try {
-      const [poster] = await videoPlayer.generateThumbnailsAsync(time, {
-        maxWidth: 640,
-        maxHeight: 360,
-      });
-      if (poster) {
-        setVideoPosters((current) => ({ ...current, [mountainId]: poster }));
-      }
-    } catch (posterError) {
-      console.warn(`[Home] Could not create video poster for ${mountainId}:`, posterError);
-    }
-  }, [videoPlayer]);
-
-  useEffect(() => {
-    const mountain = mountains[activeIndex];
-    const mountainId = mountain?.id ?? null;
-    const source = mountainId ? MOUNTAIN_VIDEOS[mountainId] : undefined;
-    const currentLoadedId = loadedMountainId.current;
-    const requestId = ++switchRequest.current;
-    activeMountainId.current = mountainId;
-
-    if (!mountainId || !source) {
-      videoPlayer.pause();
-      setVideoReady(false);
-      return;
-    }
-
-    if (currentLoadedId === mountainId) {
-      setVideoReady(videoPlayer.status === 'readyToPlay');
-      videoPlayer.play();
-      if (!videoPosters[mountainId]) {
-        void capturePoster(mountainId, 0);
-      }
-      return;
-    }
-
-    if (currentLoadedId) {
-      videoPositions.current[currentLoadedId] = videoPlayer.currentTime;
-    }
-
-    videoPlayer.pause();
-    setVideoReady(false);
-    let cancelled = false;
-
-    videoPlayer.replaceAsync(source).then(() => {
-      if (cancelled || requestId !== switchRequest.current) return;
-
-      const savedPosition = videoPositions.current[mountainId] ?? 0;
-      if (savedPosition > 0 && savedPosition < videoPlayer.duration) {
-        videoPlayer.currentTime = savedPosition;
-      }
-
-      loadedMountainId.current = mountainId;
-      setVideoReady(videoPlayer.status === 'readyToPlay');
-      videoPlayer.play();
-      if (!videoPosters[mountainId]) {
-        void capturePoster(mountainId, 0);
-      }
-    }).catch((loadError) => {
-      if (!cancelled && requestId === switchRequest.current) {
-        console.warn('[Home] Failed to load mountain video:', loadError);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeIndex, capturePoster, mountains, videoPlayer, videoPosters]);
-
-  useEffect(() => {
-    const subscription = videoPlayer.addListener('statusChange', ({ status }) => {
-      setVideoReady(
-        status === 'readyToPlay' && loadedMountainId.current === activeMountainId.current
-      );
-    });
-    return () => subscription.remove();
-  }, [videoPlayer]);
 
   useEffect(() => {
     if (mountains.length === 0) {
@@ -296,7 +350,6 @@ export default function HomeScreen() {
     setError(null);
   }, [mountains]);
 
-  // Force landscape orientation
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ screen }) => {
       setDimensions(screen);
@@ -306,23 +359,28 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // Scroll to active index when dimensions change
   useEffect(() => {
     if (scrollViewRef.current && mountains.length > 0) {
-      scrollViewRef.current.scrollTo({ x: activeIndex * dimensions.width, animated: false });
+      scrollViewRef.current.scrollTo({
+        x: activeIndex * dimensions.width,
+        animated: false,
+      });
     }
   }, [dimensions, activeIndex, mountains]);
 
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
 
-  const handleOpenTips = useCallback((mountain: Mountain) => {
-    router.push({
-      pathname: '/mountainInfo/TipsAndTricks',
-      params: { mountainId: mountain.id, mountainName: mountain.name },
-    } as any);
-  }, [router]);
-  // Stable handler for the per-slide Events button (keeps MountainSlide memoized)
+  const handleOpenTips = useCallback(
+    (mountain: Mountain) => {
+      router.push({
+        pathname: '/mountainInfo/TipsAndTricks',
+        params: { mountainId: mountain.id, mountainName: mountain.name },
+      } as any);
+    },
+    [router]
+  );
+
   const handleEventsPress = useCallback(
     (mountainId: string) => {
       router.push({
@@ -333,7 +391,6 @@ export default function HomeScreen() {
     [router]
   );
 
-  // Logout toast state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const logoutToastOpacity = useRef(new Animated.Value(0)).current;
   const logoutToastY = useRef(new Animated.Value(-6)).current;
@@ -343,15 +400,35 @@ export default function HomeScreen() {
     logoutToastOpacity.setValue(0);
     logoutToastY.setValue(-6);
     Animated.parallel([
-      Animated.timing(logoutToastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastOpacity, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoutToastY, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
     ]).start();
   }, [logoutToastOpacity, logoutToastY]);
 
   const dismissLogoutConfirm = useCallback(() => {
     Animated.parallel([
-      Animated.timing(logoutToastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY, { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastOpacity, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoutToastY, {
+        toValue: -4,
+        duration: 180,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
     ]).start(() => setShowLogoutConfirm(false));
   }, [logoutToastOpacity, logoutToastY]);
 
@@ -361,7 +438,6 @@ export default function HomeScreen() {
     router.replace('/Login');
   }, [signOut, router]);
 
-  // Back handler
   useEffect(() => {
     const onBack = () => {
       if (profileCardVisible) {
@@ -379,7 +455,6 @@ export default function HomeScreen() {
     return () => sub.remove();
   }, [profileCardVisible, showLogoutConfirm, openLogoutConfirm, dismissLogoutConfirm]);
 
-  // Loading / error states
   if (error) {
     return (
       <View style={styles.immersiveContainer}>
@@ -390,7 +465,9 @@ export default function HomeScreen() {
   if (mountains.length === 0) {
     return (
       <View style={styles.immersiveContainer}>
-        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>Preparing your mountain feed...</Text>
+        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>
+          Preparing your mountain feed...
+        </Text>
       </View>
     );
   }
@@ -404,26 +481,15 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.immersiveContainer}>
-      {/* Full Screen Horizontal Scroll */}
       <Animated.ScrollView
         ref={scrollViewRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: false }
-        )}
         onMomentumScrollEnd={(event) => {
-          const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
-          const outgoingMountain = mountains[activeIndex];
-          if (outgoingMountain && loadedMountainId.current === outgoingMountain.id) {
-            const time = videoPlayer.currentTime;
-            videoPositions.current[outgoingMountain.id] = time;
-            void capturePoster(outgoingMountain.id, time);
-          }
-
-          activeMountainId.current = mountains[newIndex]?.id ?? null;
+          const newIndex = Math.round(
+            event.nativeEvent.contentOffset.x / dimensions.width
+          );
           setActiveIndex(newIndex);
 
           if (mountains[newIndex]) {
@@ -432,24 +498,28 @@ export default function HomeScreen() {
         }}
         decelerationRate="fast"
       >
-        {mountains.map((mountain, index) => (
-          <MountainSlide
-            key={mountain.id}
-            mountain={mountain}
-            isActive={index === activeIndex}
-            poster={videoPosters[mountain.id]}
-            videoPlayer={videoPlayer}
-            videoReady={videoReady}
-            width={dimensions.width}
-            height={dimensions.height}
-            isPortrait={isPortrait}
-            onOpenTips={handleOpenTips}
-            onEventsPress={handleEventsPress}
-          />
-        ))}
+        {mountains.map((mountain, index) => {
+          const distance = Math.abs(index - activeIndex);
+          const shouldMountVideo = distance < VIDEO_WINDOW;
+          const isActive = index === activeIndex;
+
+          return (
+            <MountainSlide
+              key={mountain.id}
+              mountain={mountain}
+              shouldMountVideo={shouldMountVideo}
+              isActive={isActive}
+              poster={videoPosters[mountain.id]}
+              width={dimensions.width}
+              height={dimensions.height}
+              isPortrait={isPortrait}
+              onOpenTips={handleOpenTips}
+              onEventsPress={handleEventsPress}
+            />
+          );
+        })}
       </Animated.ScrollView>
 
-      {/* Floating Header */}
       <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
         <TouchableOpacity
           onPress={openProfileCard}
@@ -463,7 +533,12 @@ export default function HomeScreen() {
                   <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
                 ) : (
                   <Text style={styles.profileInitials}>
-                    {user?.name?.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'H'}
+                    {user?.name
+                      ?.split(' ')
+                      .map((p) => p[0])
+                      .join('')
+                      .slice(0, 2)
+                      .toUpperCase() || 'H'}
                   </Text>
                 )}
               </View>
@@ -482,7 +557,6 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Header actions on the right */}
         <View style={styles.headerRightButtons}>
           {profile?.role === 'organization' && (
             <TouchableOpacity
@@ -515,8 +589,6 @@ export default function HomeScreen() {
         onProfileImageSelect={handleProfileImageSelect}
       />
 
-      {/* CTA button – shown on every slide */}
-      {/* CTA button */}
       {mountains[activeIndex] && (
         <TouchableOpacity
           style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
@@ -535,7 +607,6 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Pagination */}
       <View style={styles.paginationFixed}>
         <View style={styles.paginationStack}>
           {mountains.map((_, index) => (
@@ -543,16 +614,22 @@ export default function HomeScreen() {
               key={index}
               style={[
                 styles.paginationDot,
-                index === activeIndex ? styles.paginationDotActive : styles.paginationDotInactive,
+                index === activeIndex
+                  ? styles.paginationDotActive
+                  : styles.paginationDotInactive,
               ]}
             />
           ))}
         </View>
       </View>
 
-      {/* Logout Toast */}
       {showLogoutConfirm && (
-        <Animated.View style={[styles.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
+        <Animated.View
+          style={[
+            styles.logoutToast,
+            { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] },
+          ]}
+        >
           <View style={styles.logoutToastBar} />
           <View style={styles.logoutToastInner}>
             <Text style={styles.logoutToastTitle}>Sign out?</Text>
@@ -589,9 +666,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // Solid "poster" surface. Deliberately not pure black so a slide that is
-    // waiting on its video (or has no bundled video) still reads as a themed
-    // surface rather than a void.
     backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',

@@ -22,10 +22,11 @@ import {
   CHAT_FS_META,
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
+import ReactionChip from './ReactionChip';
+import { ReactionSummary } from '../../utils/reactions';
 
 export type ReactionType = 'heart' | 'like' | 'haha' | 'wow' | 'sad' | 'angry';
 
-// Emoji map — kept here so the picker and the badge stay in sync.
 export const REACTION_EMOJI: Record<ReactionType, string> = {
   heart: '❤️',
   like: '👍',
@@ -40,33 +41,29 @@ export type MessageBubbleProps = {
   time: string;
   isMe: boolean;
 
-  // ── optional: read receipts (DMs only) ──
   isRead?: boolean;
   showReadReceipt?: boolean;
-
-  // ── optional: edited tag ──
   edited?: boolean;
 
-  // ── optional: reply preview ──
   hasReply?: boolean;
   replyCaption?: string;
   replyPreview?: string;
 
-  // ── optional: reaction badge ──
   reaction?: ReactionType | null;
+  reactionSummaries?: ReactionSummary[];
+  onPressReactions?: () => void;
 
-  // ── optional: left avatar (DMs, other user only) ──
   avatarUri?: string | null;
   avatarLabel?: string;
   avatarColorSeed?: string;
   showAvatar?: boolean;
+  disableAvatarLift?: boolean; // <-- NEW
 
-  // ── optional: sender header (group chats / world chat) ──
   senderName?: string;
   senderColorSeed?: string;
   showSenderHeader?: boolean;
+  senderAvatarUrl?: string | null;
 
-  // ── optional: press handlers ──
   onPressSender?: () => void;
   onPressBubble?: () => void;
   onLongPressBubble?: () => void;
@@ -83,41 +80,57 @@ function MessageBubbleBase({
   replyCaption = '',
   replyPreview = '',
   reaction = null,
+  reactionSummaries,
+  onPressReactions,
   avatarUri,
   avatarLabel = '?',
   avatarColorSeed = '',
   showAvatar = true,
+  disableAvatarLift = false, // <-- NEW
   senderName = '',
   senderColorSeed = '',
   showSenderHeader = false,
+  senderAvatarUrl,
   onPressSender,
   onPressBubble,
   onLongPressBubble,
 }: MessageBubbleProps) {
   const { width } = useWindowDimensions();
 
-  const rowAvailableWidth = width - (isMe ? 24 : 58);
+  const reserved = isMe ? 24 : showAvatar ? 58 : 24;
+  const rowAvailableWidth = width - reserved;
   const bubbleMaxWidth = Math.max(
     0,
     Math.min(width * 0.75, rowAvailableWidth)
   );
   const replyMaxWidth = width * 0.68;
 
+  const hasChip = !!reactionSummaries && reactionSummaries.length > 0;
+  const hasLegacyReaction = !hasChip && !!reaction;
+  const anyReaction = hasChip || hasLegacyReaction;
+
   return (
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowOther]}>
       {!isMe && showAvatar && (
-        <View
-          style={[
-            styles.avatar,
-            { backgroundColor: getAvatarColor(avatarColorSeed) },
-          ]}
+        <TouchableOpacity
+          disabled={!onPressSender}
+          onPress={onPressSender}
+          activeOpacity={0.7}
         >
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-          ) : (
-            <Text style={styles.avatarText}>{getInitials(avatarLabel)}</Text>
-          )}
-        </View>
+          <View
+            style={[
+              styles.avatar,
+              { backgroundColor: getAvatarColor(avatarColorSeed) },
+              !disableAvatarLift && styles.avatarLift,
+            ]}
+          >
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{getInitials(avatarLabel)}</Text>
+            )}
+          </View>
+        </TouchableOpacity>
       )}
 
       <View
@@ -127,7 +140,6 @@ function MessageBubbleBase({
           { maxWidth: bubbleMaxWidth },
         ]}
       >
-        {/* Sender name header (group / world chat, other users only) */}
         {showSenderHeader && !isMe && senderName ? (
           <TouchableOpacity
             style={styles.senderRow}
@@ -145,9 +157,13 @@ function MessageBubbleBase({
                 },
               ]}
             >
-              <Text style={styles.smallAvatarText}>
-                {getInitials(senderName)}
-              </Text>
+              {senderAvatarUrl ? (
+                <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.smallAvatarText}>
+                  {getInitials(senderName)}
+                </Text>
+              )}
             </View>
             <Text style={styles.senderName} numberOfLines={1}>
               {senderName}
@@ -190,7 +206,6 @@ function MessageBubbleBase({
           </>
         )}
 
-        {/* Bubble + optional reaction badge */}
         <View style={styles.bubbleWrap}>
           <TouchableOpacity
             activeOpacity={onPressBubble || onLongPressBubble ? 0.9 : 1}
@@ -204,7 +219,7 @@ function MessageBubbleBase({
                 styles.bubble,
                 isMe ? styles.bubbleMe : styles.bubbleOther,
                 { maxWidth: bubbleMaxWidth },
-                reaction && styles.bubbleWithReaction,
+                anyReaction && styles.bubbleWithReaction,
               ]}
             >
               <Text
@@ -219,7 +234,13 @@ function MessageBubbleBase({
             </View>
           </TouchableOpacity>
 
-          {reaction && (
+          {hasChip ? (
+            <ReactionChip
+              summaries={reactionSummaries!}
+              onPress={onPressReactions ?? (() => {})}
+              isMe={isMe}
+            />
+          ) : hasLegacyReaction ? (
             <View
               style={[
                 styles.reactionBadge,
@@ -228,10 +249,10 @@ function MessageBubbleBase({
               pointerEvents="none"
             >
               <Text style={styles.reactionEmoji}>
-                {REACTION_EMOJI[reaction]}
+                {REACTION_EMOJI[reaction!]}
               </Text>
             </View>
-          )}
+          ) : null}
         </View>
 
         <View
@@ -279,6 +300,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarLift: {
     transform: [{ translateY: -20 }],
   },
   avatarImage: { width: '100%', height: '100%' },
@@ -288,7 +311,6 @@ const styles = StyleSheet.create({
   stackMe: { alignItems: 'flex-end' },
   stackOther: { alignItems: 'flex-start', flexGrow: 1 },
 
-  // ── Sender header ──
   senderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -302,6 +324,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   smallAvatarText: { color: '#fff', fontSize: 8.5, fontWeight: '700' },
   senderName: {
@@ -312,7 +335,6 @@ const styles = StyleSheet.create({
     maxWidth: 180,
   },
 
-  // ── Reply preview ──
   replyCaptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -334,7 +356,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: -8,
     borderRadius: 6,
-    backgroundColor: 'rgba(217,221,227,0.84)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
   },
   replyPreviewAccent: {
     width: 2,
@@ -345,10 +369,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     flexShrink: 1,
-    color: '#252A31',
+    color: TEXT_MUTED,
   },
 
-  // ── Bubble ──
   bubbleWrap: { position: 'relative' },
   bubble: {
     paddingVertical: 7,
@@ -356,9 +379,7 @@ const styles = StyleSheet.create({
     borderRadius: CHAT_RADIUS_BUBBLE,
     marginVertical: 1,
   },
-  bubbleWithReaction: {
-    paddingBottom: 10,
-  },
+  bubbleWithReaction: { paddingBottom: 10 },
   bubbleMe: {
     backgroundColor: ACCENT_GOLD,
     borderBottomRightRadius: 4,
@@ -376,7 +397,6 @@ const styles = StyleSheet.create({
   },
   textMe: { fontWeight: '600' },
 
-  // ── Reaction badge ──
   reactionBadge: {
     position: 'absolute',
     bottom: -6,
@@ -396,13 +416,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   reactionBadgeMe: { right: -2 },
-  reactionBadgeOther: { right: -2 },
-  reactionEmoji: {
-    fontSize: 11,
-    lineHeight: 13,
-  },
+  reactionBadgeOther: { left: -2 },
+  reactionEmoji: { fontSize: 11, lineHeight: 13 },
 
-  // ── Footer ──
   footer: {
     flexDirection: 'row',
     alignItems: 'center',

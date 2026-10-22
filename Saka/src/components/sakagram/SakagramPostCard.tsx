@@ -29,9 +29,7 @@ interface Props {
   onToggleLike: (id: string, liked: boolean) => void | Promise<void>;
   onPressAuthor?: (userId: string) => void;
   isLikePending?: boolean;
-  /** Shown under the author's name, like an Instagram location line. */
   locationLabel?: string;
-  /** Larger type and spacing when Sakagram fills the screen. */
   focused?: boolean;
 }
 
@@ -46,7 +44,7 @@ export default function SakagramPostCard({
   locationLabel,
   focused = false,
 }: Props) {
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const s = useMemo(() => makeStyles(focused), [focused]);
 
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -57,7 +55,12 @@ export default function SakagramPostCard({
   const heartAnim = useRef(new Animated.Value(0)).current;
 
   const initials = getInitials(post.authorName);
-  const images = useMemo(() => (post.images ?? []).filter(Boolean), [post.images]);
+  const images = useMemo(
+    () =>
+      (Array.isArray(post.images) ? post.images : [])
+        .filter((v): v is string => typeof v === 'string' && v.trim().length > 0),
+    [post.images],
+  );
   const isMulti = images.length > 1;
   const photoMaxHeight = windowHeight * 0.72;
   const hasLongCaption = (post.content?.length ?? 0) > LONG_CAPTION_CHARS;
@@ -71,7 +74,6 @@ export default function SakagramPostCard({
     ]).start();
   };
 
-  // Double-tap the photo to like it (never unlikes, same as Instagram).
   const handlePhotoPress = () => {
     const now = Date.now();
     if (now - lastTap.current < DOUBLE_TAP_MS) {
@@ -85,7 +87,6 @@ export default function SakagramPostCard({
     }
   };
 
-  // Latest-handler ref so the memoized carousel never re-renders on like changes.
   const pressRef = useRef(handlePhotoPress);
   pressRef.current = handlePhotoPress;
   const stablePhotoPress = useCallback(() => pressRef.current(), []);
@@ -97,7 +98,6 @@ export default function SakagramPostCard({
 
   return (
     <View style={s.card}>
-      {/* Header row: author on the left, heart on the right */}
       <View style={s.headerRow}>
         <TouchableOpacity
           onPress={() => onPressAuthor?.(post.user_id)}
@@ -144,7 +144,6 @@ export default function SakagramPostCard({
         </Pressable>
       </View>
 
-      {/* Photo(s), edge to edge, with double-tap-to-like */}
       {images.length === 0 || (!isMulti && photoFailed) ? (
         <View style={[s.photoPlaceholder, { maxHeight: photoMaxHeight }]}>
           <Ionicons name="image-outline" size={focused ? 32 : 24} color={TEXT_MUTED} />
@@ -157,6 +156,7 @@ export default function SakagramPostCard({
               images={images}
               authorName={post.authorName}
               maxHeight={photoMaxHeight}
+              fallbackWidth={windowWidth - 40}
               onPressImage={stablePhotoPress}
               onIndexChange={setActiveIndex}
               radius={s.carouselRadius.borderRadius}
@@ -166,6 +166,7 @@ export default function SakagramPostCard({
               uri={images[0]}
               authorName={post.authorName}
               maxHeight={photoMaxHeight}
+              fallbackWidth={windowWidth - 40}
               onPress={stablePhotoPress}
               onError={() => setPhotoFailed(true)}
               radius={s.carouselRadius.borderRadius}
@@ -195,7 +196,6 @@ export default function SakagramPostCard({
         </View>
       )}
 
-      {/* Page dots (multi-photo posts only) */}
       {isMulti && (
         <View style={s.dots} pointerEvents="none">
           {images.map((_, i) => (
@@ -204,7 +204,6 @@ export default function SakagramPostCard({
         </View>
       )}
 
-      {/* Likes + caption */}
       <Text style={s.likes}>{likesLabel}</Text>
 
       <Text style={s.caption} numberOfLines={expanded ? undefined : 2}>
@@ -228,13 +227,13 @@ export default function SakagramPostCard({
   );
 }
 
-// ── Single photo: centered, same width as a carousel card, height follows the photo ─
 const ITEM_WIDTH_RATIO = 0.84;
 
 function SingleImage({
   uri,
   authorName,
   maxHeight,
+  fallbackWidth,
   onPress,
   onError,
   radius,
@@ -242,6 +241,7 @@ function SingleImage({
   uri: string;
   authorName: string;
   maxHeight: number;
+  fallbackWidth: number;
   onPress: () => void;
   onError: () => void;
   radius: number;
@@ -249,43 +249,41 @@ function SingleImage({
   const [containerWidth, setContainerWidth] = useState(0);
   const [ratio, setRatio] = useState<number | null>(null);
 
+  const effectiveWidth = containerWidth > 0 ? containerWidth : fallbackWidth;
   const ratioSafe = ratio ?? 1;
-  // Same width as a carousel card; if the photo is very tall, shrink width so height stays capped.
-  const width = Math.min(containerWidth * ITEM_WIDTH_RATIO, maxHeight * ratioSafe);
+  const width = Math.min(effectiveWidth * ITEM_WIDTH_RATIO, maxHeight * ratioSafe);
   const height = width / ratioSafe;
 
   return (
     <View
       style={carouselStyles.singleWrap}
-      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0 && Math.abs(w - containerWidth) > 1) setContainerWidth(w);
+      }}
     >
-      {containerWidth > 0 && (
-        <Pressable
-          onPress={onPress}
-          accessibilityRole="imagebutton"
-          accessibilityLabel={`Photo shared by ${authorName}. Double tap to like.`}
-        >
-          <ExpoImage
-            source={{ uri }}
-            style={{ width, height, borderRadius: radius, backgroundColor: BG_AVATAR }}
-            contentFit="cover"
-            transition={180}
-            onLoad={(e) => {
-              const { width: w, height: h } = e.source;
-              if (w > 0 && h > 0) setRatio(w / h);
-            }}
-            onError={onError}
-          />
-        </Pressable>
-      )}
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="imagebutton"
+        accessibilityLabel={`Photo shared by ${authorName}. Double tap to like.`}
+      >
+        <ExpoImage
+          source={{ uri }}
+          style={{ width, height, borderRadius: radius, backgroundColor: BG_AVATAR }}
+          contentFit="cover"
+          transition={0}
+          cachePolicy="memory-disk"
+          onLoad={(e) => {
+            const { width: w, height: h } = e.source;
+            if (w > 0 && h > 0) setRatio(w / h);
+          }}
+          onError={onError}
+        />
+      </Pressable>
     </View>
   );
 }
 
-// ── Horizontal card-stack carousel ──────────────────────────────────────────
-// Mirrors the viewpoint's left media rail, turned sideways: same snap behaviour,
-// same scale/fade falloff. Memoized with stable props so swiping never re-renders
-// the list (that re-render was what made it stutter).
 const ITEM_GAP = 8;
 const SIDE_SCALE = 0.78;
 const SIDE_OPACITY = 0.35;
@@ -294,6 +292,7 @@ const ImageCarousel = memo(function ImageCarousel({
   images,
   authorName,
   maxHeight,
+  fallbackWidth,
   onPressImage,
   onIndexChange,
   radius,
@@ -301,6 +300,7 @@ const ImageCarousel = memo(function ImageCarousel({
   images: string[];
   authorName: string;
   maxHeight: number;
+  fallbackWidth: number;
   onPressImage: () => void;
   onIndexChange: (index: number) => void;
   radius: number;
@@ -310,11 +310,11 @@ const ImageCarousel = memo(function ImageCarousel({
   const scrollX = useRef(new Animated.Value(0)).current;
   const lastIndex = useRef(0);
 
-  const itemWidth = containerWidth * ITEM_WIDTH_RATIO;
+  const effectiveWidth = containerWidth > 0 ? containerWidth : fallbackWidth;
+  const itemWidth = effectiveWidth * ITEM_WIDTH_RATIO;
   const itemHeight = Math.min(itemWidth, maxHeight);
   const stride = itemWidth + ITEM_GAP;
-  // Side padding centers the resting photo in the column.
-  const sidePad = (containerWidth - itemWidth) / 2;
+  const sidePad = (effectiveWidth - itemWidth) / 2;
   const lastItem = images.length - 1;
 
   const handleScroll = useMemo(
@@ -323,7 +323,10 @@ const ImageCarousel = memo(function ImageCarousel({
         useNativeDriver: true,
         listener: (e: any) => {
           if (stride <= 0) return;
-          const index = Math.max(0, Math.min(lastItem, Math.round(e.nativeEvent.contentOffset.x / stride)));
+          const index = Math.max(
+            0,
+            Math.min(lastItem, Math.round(e.nativeEvent.contentOffset.x / stride)),
+          );
           if (index !== lastIndex.current) {
             lastIndex.current = index;
             onIndexChange(index);
@@ -336,77 +339,78 @@ const ImageCarousel = memo(function ImageCarousel({
   return (
     <View
       style={{ width: '100%', height: itemHeight }}
-      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0 && Math.abs(w - containerWidth) > 1) setContainerWidth(w);
+      }}
     >
-      {containerWidth > 0 && (
-        <Animated.FlatList
-          data={images}
-          horizontal
-          keyExtractor={(uri, i) => `${uri}-${i}`}
-          showsHorizontalScrollIndicator={false}
-          decelerationRate="fast"
-          bounces={false}
-          nestedScrollEnabled
-          removeClippedSubviews={false}
-          initialNumToRender={images.length}
-          windowSize={5}
-          snapToInterval={stride}
-          snapToAlignment="start"
-          contentContainerStyle={{ paddingHorizontal: sidePad }}
-          getItemLayout={(_, index) => ({ length: stride, offset: stride * index, index })}
-          scrollEventThrottle={16}
-          onScroll={handleScroll}
-          renderItem={({ item, index }) => {
-            const inputRange = [(index - 1) * stride, index * stride, (index + 1) * stride];
-            const scale = scrollX.interpolate({
-              inputRange,
-              outputRange: [SIDE_SCALE, 1, SIDE_SCALE],
-              extrapolate: 'clamp',
-            });
-            const opacity = scrollX.interpolate({
-              inputRange,
-              outputRange: [SIDE_OPACITY, 1, SIDE_OPACITY],
-              extrapolate: 'clamp',
-            });
+      <Animated.FlatList
+        data={images}
+        horizontal
+        keyExtractor={(uri, i) => `${uri}-${i}`}
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        bounces={false}
+        nestedScrollEnabled
+        removeClippedSubviews={false}
+        initialNumToRender={images.length}
+        windowSize={5}
+        snapToInterval={stride}
+        snapToAlignment="start"
+        contentContainerStyle={{ paddingHorizontal: sidePad }}
+        getItemLayout={(_, index) => ({ length: stride, offset: stride * index, index })}
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
+        renderItem={({ item, index }) => {
+          const inputRange = [(index - 1) * stride, index * stride, (index + 1) * stride];
+          const scale = scrollX.interpolate({
+            inputRange,
+            outputRange: [SIDE_SCALE, 1, SIDE_SCALE],
+            extrapolate: 'clamp',
+          });
+          const opacity = scrollX.interpolate({
+            inputRange,
+            outputRange: [SIDE_OPACITY, 1, SIDE_OPACITY],
+            extrapolate: 'clamp',
+          });
 
-            return (
-              <Animated.View
-                style={{
-                  width: itemWidth,
-                  height: itemHeight,
-                  marginRight: index === lastItem ? 0 : ITEM_GAP,
-                  transform: [{ scale }],
-                  opacity,
-                }}
+          return (
+            <Animated.View
+              style={{
+                width: itemWidth,
+                height: itemHeight,
+                marginRight: index === lastItem ? 0 : ITEM_GAP,
+                transform: [{ scale }],
+                opacity,
+              }}
+            >
+              <Pressable
+                onPress={onPressImage}
+                style={{ flex: 1 }}
+                accessibilityRole="imagebutton"
+                accessibilityLabel={`Photo ${index + 1} of ${images.length} shared by ${authorName}. Double tap to like.`}
               >
-                <Pressable
-                  onPress={onPressImage}
-                  style={{ flex: 1 }}
-                  accessibilityRole="imagebutton"
-                  accessibilityLabel={`Photo ${index + 1} of ${images.length} shared by ${authorName}. Double tap to like.`}
-                >
-                  {failed.has(index) ? (
-                    <View style={[carouselStyles.fallback, { borderRadius: radius }]}>
-                      <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
-                    </View>
-                  ) : (
-                    <ExpoImage
-                      source={{ uri: item }}
-                      style={{ flex: 1, borderRadius: radius, backgroundColor: BG_AVATAR }}
-                      contentFit="cover"
-                      transition={0}
-                      cachePolicy="memory-disk"
-                      onError={() =>
-                        setFailed((current) => new Set(current).add(index))
-                      }
-                    />
-                  )}
-                </Pressable>
-              </Animated.View>
-            );
-          }}
-        />
-      )}
+                {failed.has(index) ? (
+                  <View style={[carouselStyles.fallback, { borderRadius: radius }]}>
+                    <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
+                  </View>
+                ) : (
+                  <ExpoImage
+                    source={{ uri: item }}
+                    style={{ flex: 1, borderRadius: radius, backgroundColor: BG_AVATAR }}
+                    contentFit="cover"
+                    transition={0}
+                    cachePolicy="memory-disk"
+                    onError={() =>
+                      setFailed((current) => new Set(current).add(index))
+                    }
+                  />
+                )}
+              </Pressable>
+            </Animated.View>
+          );
+        }}
+      />
     </View>
   );
 });
@@ -443,7 +447,6 @@ function formatRelativeTime(value: string): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
-// Sizes scale up when Sakagram is the focus of the screen.
 function makeStyles(focused: boolean) {
   const f = (n: number) => Math.round(n * (focused ? 1.3 : 1));
   const avatarSize = f(30);

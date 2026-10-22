@@ -1,98 +1,154 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { mountainService, Mountain } from '../services/mountainService';
-import { buildTrailCoordinates, Viewpoint } from '../utils/geoUtils';
+import { supabase } from '../lib/supabase';
+import ResponsiveMapImage, { MapPoint } from '../components/ResponsiveMapImage';
+import { getMountainMap } from '../data/mountainMaps';
 import LoadingScreen from './Loading';
+
+type TableViewpoint = {
+  id: string;
+  name: string;
+  sort_order: number;
+  map_x: number | null;
+  map_y: number | null;
+};
+
+// ─── PLACEMENT MODE ──────────────────────────────────────────────────────
+// Flip to `true` temporarily when calibrating a NEW mountain's viewpoints.
+// Tap each spot in order → copy the SQL from the console → run in Supabase
+// → set back to `false`. Production builds always run with placement off.
+const PLACEMENT_MODE = false;
 
 export default function MountainTopScreen() {
   const { mountainId } = useLocalSearchParams<{ mountainId: string }>();
-  const cachedMountain = mountainId ? mountainService.getCachedMountainById(mountainId) : null;
+  const cachedMountain = mountainId
+    ? mountainService.getCachedMountainById(mountainId)
+    : null;
   const [mountain, setMountain] = useState<Mountain | null>(cachedMountain);
   const [loading, setLoading] = useState(!cachedMountain);
-  const [mapTilesLoaded, setMapTilesLoaded] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const [loadingScreenComplete, setLoadingScreenComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const mapRef = useRef<MapView>(null);
+  const [draft, setDraft] = useState<{ x: number; y: number }[]>([]);
+  const [viewpointList, setViewpointList] = useState<TableViewpoint[]>([]);
+  // NEW: viewpoints have their own loading lifecycle. The map is the feature,
+  // and its dots/trail come from this query, so `ready` must wait for it.
+  const [viewpointsLoading, setViewpointsLoading] = useState(true);
+  const [viewpointsError, setViewpointsError] = useState<string | null>(null);
   const router = useRouter();
 
+  // ─── Load mountain data ────────────────────────────────────────────────
   useEffect(() => {
-    if (cachedMountain) {
+    if (cachedMountain) return;
+
+    if (!mountainId) {
+      setError('No mountain ID provided');
+      setLoading(false);
       return;
     }
 
-    if (mountainId) {
-      const load = async () => {
-        try {
-          const data = await mountainService.fetchMountainById(mountainId);
-          if (data) {
-            setMountain(data);
-          } else {
-            setError('Mountain not found');
-          }
-        } catch (err: any) {
-          setError(err.message || 'Failed to load mountain');
-        } finally {
-          setLoading(false);
-        }
-      };
-      load();
-    } else {
-      setError('No mountain ID provided');
-      setLoading(false);
-    }
+    (async () => {
+      try {
+        const data = await mountainService.fetchMountainById(mountainId);
+        if (data) setMountain(data);
+        else setError('Mountain not found');
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load mountain');
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [cachedMountain, mountainId]);
 
-  // ─── Calculate initial camera values from viewpoints ────────────────
-  const initialCamera = useMemo(() => {
-    if (!mountain) return null;
+  const mapInfo = getMountainMap(mountainId, mountain?.name);
 
-    const viewpoints = mountain.viewpoints || [];
-
-    if (viewpoints.length >= 2) {
-      const lats = viewpoints.map(v => v.latitude);
-      const lngs = viewpoints.map(v => v.longitude);
-      const avgLat = lats.reduce((a, b) => a + b, 0) / lats.length;
-      const avgLng = lngs.reduce((a, b) => a + b, 0) / lngs.length;
-
-      const minLat = Math.min(...lats);
-      const maxLat = Math.max(...lats);
-      const minLng = Math.min(...lngs);
-      const maxLng = Math.max(...lngs);
-
-      let deltaLat = (maxLat - minLat) * 1.4;
-      let deltaLng = (maxLng - minLng) * 1.4;
-
-      if (deltaLat < 0.01) deltaLat = 0.01;
-      if (deltaLng < 0.01) deltaLng = 0.01;
-
-      // Return as a region (for initialCamera)
-      return {
-        center: { latitude: avgLat, longitude: avgLng },
-        heading: 0,
-        pitch: 45,
-        altitude: 0,
-        zoom: 13.8, // Use a fixed zoom – or calculate from delta if you prefer
-      };
-    } else {
-      return {
-        center: { latitude: mountain.latitude, longitude: mountain.longitude },
-        heading: 0,
-        pitch: 45,
-        altitude: 0,
-        zoom: 13.8,
-      };
+  // ─── Load viewpoints from Supabase ─────────────────────────────────────
+  useEffect(() => {
+    if (!mountainId) {
+      setViewpointsLoading(false);
+      return;
     }
-  }, [mountain]);
 
+    let active = true;
+    setViewpointsLoading(true);
+    setViewpointsError(null);
+
+    (async () => {
+      const { data, error: qError } = await supabase
+        .from('viewpoints')
+        .select('id, name, sort_order, map_x, map_y')
+        .eq('mountain_id', mountainId)
+        .not('sort_order', 'is', null)
+        .order('sort_order');
+
+      if (!active) return;
+
+      if (qError) {
+        console.error('[MountainTop] viewpoints fetch failed:', qError);
+        setViewpointsError(qError.message);
+        setViewpointList([]);
+      } else {
+        setViewpointList((data ?? []) as TableViewpoint[]);
+      }
+      setViewpointsLoading(false);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [mountainId]);
+
+  // ─── Map points (draft in placement mode, saved coords otherwise) ──────
+  const points: MapPoint[] = useMemo(() => {
+    if (PLACEMENT_MODE) {
+      return draft.map((d, i) => ({
+        id: viewpointList[i]?.id ?? String(i),
+        x: d.x,
+        y: d.y,
+      }));
+    }
+    return viewpointList
+      .filter(v => typeof v.map_x === 'number' && typeof v.map_y === 'number')
+      .map(v => ({ id: v.id, x: v.map_x as number, y: v.map_y as number }));
+  }, [viewpointList, draft]);
+
+  // Trail runs through the viewpoints in sort_order.
+  const trail = useMemo(() => points.map(p => ({ x: p.x, y: p.y })), [points]);
+
+  // ─── Placement-mode tap handler ────────────────────────────────────────
+  const handleImagePress = useCallback(
+    (x: number, y: number) => {
+      if (!PLACEMENT_MODE) return;
+      setDraft(prev =>
+        prev.length >= viewpointList.length ? prev : [...prev, { x, y }]
+      );
+    },
+    [viewpointList.length]
+  );
+
+  // ─── Dump SQL for Supabase when all points are placed ──────────────────
+  useEffect(() => {
+    if (!PLACEMENT_MODE) return;
+    if (viewpointList.length === 0 || draft.length !== viewpointList.length) return;
+    const sql = viewpointList
+      .map(
+        (v, i) =>
+          `update viewpoints set map_x=${draft[i].x.toFixed(3)}, map_y=${draft[i].y.toFixed(3)} where id='${v.id}';`
+      )
+      .join('\n');
+    console.log(
+      `[MountainTop] RUN THIS in the Supabase SQL editor for ${mountain?.name}:\n${sql}`
+    );
+  }, [draft, viewpointList, mountain?.name]);
+
+  const handleLoadingComplete = useCallback(() => setLoadingScreenComplete(true), []);
+
+  // ─── Error / empty states ──────────────────────────────────────────────
   if (!loading && (error || !mountain)) {
     return (
       <View style={styles.container}>
@@ -101,24 +157,68 @@ export default function MountainTopScreen() {
     );
   }
 
-  const viewpoints = mountain?.viewpoints || [];
-  const hasTrail = viewpoints.length >= 2;
-  const trailCoords = hasTrail ? buildTrailCoordinates(viewpoints, 100) : [];
-  const centerCoord = mountain
-    ? { latitude: mountain.latitude, longitude: mountain.longitude }
-    : null;
+  if (!loading && mountain && !mapInfo) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>No map image for this mountain yet</Text>
+      </View>
+    );
+  }
+
+  // NEW: viewpoints must be done loading (success OR error) before we reveal
+  // the map, because the dots/trail are the feature. An error still flips
+  // this to `false` so the user is not trapped; the "No trail data yet"
+  // message surfaces it once the map is visible.
+  const loadingReady =
+    !loading &&
+    mountain !== null &&
+    (imageLoaded || imageError) &&
+    !viewpointsLoading;
+
+  const total = viewpointList.length;
+  const nextViewpoint = viewpointList[draft.length];
+  const allPlaced = total > 0 && draft.length >= total;
 
   return (
     <View style={styles.container}>
-      {mountain && (
+      {mountain && mapInfo && (
         <>
+          <ResponsiveMapImage
+            source={mapInfo.source}
+            fit="cover"
+            points={points}
+            trail={trail}
+            onLoad={() => setImageLoaded(true)}
+            onError={() => {
+              console.error(
+                `[MountainTop] Failed to load map image for ${mountain.name}`
+              );
+              setImageError(true);
+            }}
+            // Only pass a press handler when placement is on — otherwise it
+            // can steal taps from the viewpoint dots.
+            onImagePress={PLACEMENT_MODE ? handleImagePress : undefined}
+            onPointPress={p => {
+              if (PLACEMENT_MODE || !mountainId) return;
+              router.push({
+                pathname: '/Viewpoint',
+                params: { viewpointId: p.id, mountainId },
+              });
+            }}
+          />
+
+          {imageError && loadingScreenComplete && (
+            <View style={styles.mapError} pointerEvents="none">
+              <Text style={styles.errorText}>The map image could not be loaded.</Text>
+            </View>
+          )}
+
           {/* Floating Header */}
-          <SafeAreaView style={styles.headerSafeArea}>
+          <SafeAreaView style={styles.headerSafeArea} pointerEvents="box-none">
             <View style={styles.header}>
               <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                 <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
               </TouchableOpacity>
-
               <Ionicons name="location-outline" size={18} color="#C9A96E" />
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {mountain.name}
@@ -129,79 +229,38 @@ export default function MountainTopScreen() {
             </View>
           </SafeAreaView>
 
-          <MapView
-            ref={mapRef}
-            provider={PROVIDER_GOOGLE}
-            style={styles.map}
-            mapType="satellite"
-            pitchEnabled={true}
-            rotateEnabled={true}
-            showsCompass={true}
-            showsUserLocation={true}
-            initialCamera={initialCamera || {
-              center: { latitude: 11.4050, longitude: 122.1350 },
-              heading: 0,
-              pitch: 45,
-              altitude: 0,
-              zoom: 13.8,
-            }}
-            onMapReady={() => {
-              if (mapRef.current) {
-                setTimeout(() => {
-                  mapRef.current?.animateCamera?.(
-                    {
-                      pitch: 55,
-                    },
-                    { duration: 800 }
-                  );
-                }, 300);
-              }
-            }}
-            onMapLoaded={() => setMapTilesLoaded(true)}
-          >
-            {viewpoints.map((vp: Viewpoint) => (
-              <Marker
-                key={vp.id}
-                coordinate={{
-                  latitude: vp.latitude,
-                  longitude: vp.longitude,
-                }}
-                onPress={() => {
-                  if (!mountainId) return;
-                  router.push({
-                    pathname: '/Viewpoint',
-                    params: { viewpointId: vp.id, mountainId },
-                  });
-                }}
-              >
-                <View style={styles.markerDot}>
-                  <View style={styles.markerInner} />
-                </View>
-              </Marker>
-            ))}
+          {/* Placement helper (dev only) */}
+          {PLACEMENT_MODE && (
+            <View style={styles.placeBar} pointerEvents="box-none">
+              <View style={styles.placeCard}>
+                <Text style={styles.placeText} numberOfLines={2}>
+                  {total === 0
+                    ? 'This mountain has no viewpoints in the database'
+                    : allPlaced
+                    ? 'All placed. Copy the SQL from the console.'
+                    : `Tap the spot for: ${nextViewpoint?.name ?? 'viewpoint'} (${
+                        draft.length + 1
+                      }/${total})`}
+                </Text>
+                <TouchableOpacity
+                  style={styles.placeBtn}
+                  onPress={() => setDraft(d => d.slice(0, -1))}
+                >
+                  <Text style={styles.placeBtnText}>Undo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.placeBtn} onPress={() => setDraft([])}>
+                  <Text style={styles.placeBtnText}>Reset</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
-            {!hasTrail && centerCoord && (
-              <Marker
-                coordinate={centerCoord}
-                title={mountain.name}
-                description={mountain.description}
-              />
-            )}
-
-            {hasTrail && trailCoords.length > 0 && (
-              <Polyline
-                coordinates={trailCoords}
-                strokeColor="#C9A96E"
-                strokeWidth={3}
-                lineDashPattern={[0, 0]}
-              />
-            )}
-          </MapView>
-
-          {!hasTrail && (
-            <View style={styles.fallbackMessage}>
-              <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.4)" />
-              <Text style={styles.fallbackText}>No trail data yet</Text>
+          {!PLACEMENT_MODE && points.length < 2 && (
+            <View style={styles.fallbackMessage} pointerEvents="none">
+              <Ionicons name="map-outline" size={20} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.fallbackText}>
+                {viewpointsError ? 'Trail data unavailable' : 'No trail data yet'}
+              </Text>
             </View>
           )}
         </>
@@ -210,9 +269,9 @@ export default function MountainTopScreen() {
       {!loadingScreenComplete && (
         <View style={styles.loadingOverlay}>
           <LoadingScreen
-            ready={!loading && mountain !== null && mapTilesLoaded}
+            ready={loadingReady}
             loadingDuration={1000}
-            onComplete={() => setLoadingScreenComplete(true)}
+            onComplete={handleLoadingComplete}
           />
         </View>
       )}
@@ -220,28 +279,17 @@ export default function MountainTopScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { flex: 1, backgroundColor: '#0E1520' },
+  loadingOverlay: { ...StyleSheet.absoluteFill, zIndex: 20 },
+  mapError: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#0E1520',
   },
-  map: {
-    flex: 1,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 20,
-  },
 
-  // ─── Header (Option A) ────────────────────────────────────────────────
-  headerSafeArea: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
+  headerSafeArea: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -291,23 +339,35 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // ─── Markers ──────────────────────────────────────────────────────────
-  markerDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(201, 169, 110, 0.3)',
-    justifyContent: 'center',
+  placeBar: {
+    position: 'absolute',
+    bottom: 24,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#C9A96E',
+    zIndex: 10,
   },
-  markerInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#C9A96E',
+  placeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(18, 26, 38, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(201, 169, 110, 0.4)',
   },
+  placeText: { color: '#FFFFFF', fontSize: 13, fontWeight: '500', maxWidth: 320 },
+  placeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(201, 169, 110, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(201, 169, 110, 0.3)',
+  },
+  placeBtnText: { color: '#C9A96E', fontSize: 12, fontWeight: '600' },
 
   fallbackMessage: {
     position: 'absolute',
@@ -320,14 +380,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   fallbackText: {
-    color: 'rgba(255,255,255,0.4)',
+    color: 'rgba(255,255,255,0.6)',
     fontSize: 12,
     fontWeight: '500',
     letterSpacing: 0.5,
   },
-  errorText: {
-    color: '#FFFFFF',
-    textAlign: 'center',
-    margin: 20,
-  },
+  errorText: { color: '#FFFFFF', textAlign: 'center', margin: 20 },
 });

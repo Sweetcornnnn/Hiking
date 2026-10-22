@@ -17,6 +17,7 @@ import {
   Animated,
   PanResponder,
   Clipboard,
+  Image,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +26,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { MessageBubble, ReactionType } from '../../components/chat/MessageBubble';
 import MessageActionSheet from '../../components/chat/MessageActionSheet';
+import ReactionsList from '../../components/chat/ReactionsList';
+import ProfileCard from '../../components/chat/ProfileCard';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -43,6 +46,10 @@ import {
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 import UserSearch from '../../components/chat/UserSearch';
+import {
+  ReactionRow,
+  summarizeReactions,
+} from '../../utils/reactions';
 
 type ProfileData = {
   full_name: string | null;
@@ -61,6 +68,7 @@ type Message = {
   metadata?: any;
   created_at: string;
   updated_at: string;
+  is_edited: boolean;
   profiles?: any;
   reply_to_id: number | null;
   reply_to_sender: string | null;
@@ -107,13 +115,7 @@ const formatSystemMessage = (item: Message, currentUserId: string): string => {
   return item.content;
 };
 
-const isEdited = (m: { created_at: string; updated_at: string }) => {
-  try {
-    return new Date(m.updated_at).getTime() - new Date(m.created_at).getTime() > 1000;
-  } catch {
-    return false;
-  }
-};
+const isEdited = (m: { is_edited?: boolean }) => m.is_edited === true;
 
 const isSameDay = (first: string, second: string) => {
   const firstDate = new Date(first);
@@ -162,10 +164,24 @@ const SELECT_COLS = `
   metadata,
   created_at,
   updated_at,
+  is_edited,
   reply_to_id,
   reply_to_sender,
   reply_to_content,
   reaction,
+  profiles:profiles (
+    full_name,
+    username,
+    avatar_url
+  )
+`;
+
+const REACTIONS_SELECT = `
+  id,
+  message_id,
+  user_id,
+  reaction,
+  created_at,
   profiles:profiles (
     full_name,
     username,
@@ -257,10 +273,18 @@ function SwipeableRow({
   );
 }
 
-export default function GroupChatScreen() {
+export default function GroupChatScreen({
+  embedded = false,
+  overrideGroupId,
+  onClose,
+}: {
+  embedded?: boolean;
+  overrideGroupId?: string;
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const groupId = params.groupId as string;
+  const groupId = overrideGroupId || (params.groupId as string);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [group, setGroup] = useState<Group | null>(null);
@@ -274,15 +298,25 @@ export default function GroupChatScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
+
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
 
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  const [pendingUnsend, setPendingUnsend] = useState<Message | null>(null);
+
+  const [reactionsByMessage, setReactionsByMessage] = useState<
+    Record<number, ReactionRow[]>
+  >({});
+  const [reactionsTarget, setReactionsTarget] = useState<number | null>(null);
 
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
+  const reactionsChannelRef = useRef<any>(null);
   const mountedRef = useRef(true);
 
   const isNearBottomRef = useRef(true);
@@ -401,6 +435,56 @@ export default function GroupChatScreen() {
     }
   }, [groupId]);
 
+  const loadReactionsForMessages = useCallback(async (messageIds: number[]) => {
+    if (messageIds.length === 0) {
+      setReactionsByMessage({});
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('group_message_reactions')
+        .select(REACTIONS_SELECT)
+        .in('message_id', messageIds);
+
+      if (error) throw error;
+
+      const grouped: Record<number, ReactionRow[]> = {};
+      for (const row of (data || []) as any[]) {
+        const list = grouped[row.message_id] || [];
+        list.push({
+          ...row,
+          profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
+        });
+        grouped[row.message_id] = list;
+      }
+      if (mountedRef.current) setReactionsByMessage(grouped);
+    } catch (err) {
+      console.warn('[reactions] load failed:', err);
+    }
+  }, []);
+
+  const loadReactionsForOne = useCallback(async (messageId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('group_message_reactions')
+        .select(REACTIONS_SELECT)
+        .eq('message_id', messageId);
+
+      if (error) throw error;
+
+      const rows: ReactionRow[] = (data || []).map((row: any) => ({
+        ...row,
+        profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
+      }));
+
+      if (mountedRef.current) {
+        setReactionsByMessage((prev) => ({ ...prev, [messageId]: rows }));
+      }
+    } catch (err) {
+      console.warn('[reactions] single load failed:', err);
+    }
+  }, []);
+
   const loadMessages = useCallback(
     async (refresh = false) => {
       if (!user || !groupId) return;
@@ -444,6 +528,11 @@ export default function GroupChatScreen() {
 
         setMessages(normalizedMessages);
 
+        const ids = normalizedMessages
+          .filter((m) => m.type !== 'system')
+          .map((m) => m.id);
+        await loadReactionsForMessages(ids);
+
         setTimeout(() => {
           if (firstUnreadIndex >= 0) {
             listRef.current?.scrollToIndex({
@@ -463,10 +552,9 @@ export default function GroupChatScreen() {
         setRefreshing(false);
       }
     },
-    [user, groupId, markGroupAsRead]
+    [user, groupId, markGroupAsRead, loadReactionsForMessages]
   );
 
-  // ─── SEND ──────────────────────────────────────────────────
   const sendMessage = async () => {
     if (!user || !groupId || !inputText.trim() || sending) return;
 
@@ -493,6 +581,7 @@ export default function GroupChatScreen() {
       media_url: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      is_edited: false,
       reply_to_id: reply?.id ?? null,
       reply_to_sender: repliedToName,
       reply_to_content: reply?.content ?? null,
@@ -542,7 +631,6 @@ export default function GroupChatScreen() {
     }
   };
 
-  // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
     if (!actionTarget || actionTarget.sender_id !== user?.id) return;
     const target = actionTarget;
@@ -578,13 +666,17 @@ export default function GroupChatScreen() {
 
     setSending(true);
     setMessages((prev) =>
-      prev.map((m) => (m.id === targetId ? { ...m, content: newContent, updated_at: now } : m))
+      prev.map((m) =>
+        m.id === targetId
+          ? { ...m, content: newContent, updated_at: now, is_edited: true }
+          : m
+      )
     );
 
     try {
       const { error } = await supabase
         .from('group_messages')
-        .update({ content: newContent, updated_at: now })
+        .update({ content: newContent, updated_at: now, is_edited: true })
         .eq('id', targetId)
         .eq('sender_id', user.id);
 
@@ -600,7 +692,6 @@ export default function GroupChatScreen() {
     }
   };
 
-  // ─── REPLY ─────────────────────────────────────────────────
   const getSenderLabel = (msg: Message): string => {
     if (msg.sender_id === user?.id) return 'You';
     const p = normalizeProfile(msg.profiles);
@@ -623,7 +714,6 @@ export default function GroupChatScreen() {
     return sendMessage();
   };
 
-  // ─── REACT / ACTIONS ──────────────────────────────────────
   const openActionSheet = useCallback((message: Message) => {
     if (message.type === 'system') return;
     if (typeof message.id !== 'number' || message.id >= 1_000_000_000_000) return;
@@ -636,73 +726,89 @@ export default function GroupChatScreen() {
 
   const applyReaction = async (reaction: ReactionType) => {
     if (!actionTarget || !user) return;
-    const targetId = actionTarget.id;
-
-    if (typeof targetId !== 'number' || targetId >= 1_000_000_000_000) {
-      setActionTarget(null);
-      return;
-    }
-
-    const next = actionTarget.reaction === reaction ? null : reaction;
-
-    const backup = messages;
-    setMessages((prev) =>
-      prev.map((m) => (m.id === targetId ? { ...m, reaction: next } : m))
-    );
+    const messageId = actionTarget.id;
     setActionTarget(null);
 
-    try {
-      const { data: updated, error } = await supabase
-        .from('group_messages')
-        .update({ reaction: next })
-        .eq('id', targetId)
-        .select('id, reaction');
+    if (typeof messageId !== 'number' || messageId >= 1_000_000_000_000) return;
 
-      if (error) throw error;
-      if (!updated || updated.length === 0) {
-        throw new Error('Reaction not saved — RLS blocked or row missing');
+    const current = reactionsByMessage[messageId] || [];
+    const existing = current.find((r) => r.user_id === user.id);
+    const next = existing?.reaction === reaction ? null : reaction;
+
+    const backup = reactionsByMessage;
+    setReactionsByMessage((prev) => {
+      const list = (prev[messageId] || []).filter(
+        (r) => r.user_id !== user.id
+      );
+      if (next) {
+        list.push({
+          id: `temp-${Date.now()}`,
+          message_id: messageId,
+          user_id: user.id,
+          reaction: next,
+          created_at: new Date().toISOString(),
+          profiles: {
+            full_name: user.user_metadata?.full_name || null,
+            username: user.user_metadata?.username || null,
+            avatar_url: null,
+          },
+        });
       }
-    } catch (err) {
+      return { ...prev, [messageId]: list };
+    });
+
+    try {
+      if (next === null) {
+        const { error } = await supabase
+          .from('group_message_reactions')
+          .delete()
+          .eq('message_id', messageId)
+          .eq('user_id', user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('group_message_reactions')
+          .upsert(
+            { message_id: messageId, user_id: user.id, reaction: next },
+            { onConflict: 'message_id,user_id' }
+          );
+        if (error) throw error;
+      }
+    } catch (err: any) {
       console.warn('[reaction] failed:', err);
-      setMessages(backup);
-      Alert.alert('Error', 'Failed to react. Please try again.');
+      setReactionsByMessage(backup);
+      Alert.alert('Error', err?.message || 'Failed to react. Please try again.');
     }
   };
 
   const confirmDeleteFromSheet = () => {
     if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+    setPendingUnsend(actionTarget);
+    setActionTarget(null);
+  };
 
-    Alert.alert(
-      'Unsend this message?',
-      'This will remove it for everyone in the group.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unsend',
-          style: 'destructive',
-          onPress: async () => {
-            const msgId = actionTarget.id;
-            const backup = messages;
-            setMessages((prev) => prev.filter((m) => m.id !== msgId));
-            setActionTarget(null);
+  const unsendMessage = async () => {
+    if (!pendingUnsend || !user) return;
 
-            try {
-              const { error } = await supabase
-                .from('group_messages')
-                .delete()
-                .eq('id', msgId)
-                .eq('sender_id', user!.id);
+    const messageToUnsend = pendingUnsend;
+    const backup = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== messageToUnsend.id));
+    setPendingUnsend(null);
 
-              if (error) throw error;
-            } catch (err) {
-              console.error('[unsend] caught:', err);
-              setMessages(backup);
-              Alert.alert('Error', 'Failed to unsend. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+    try {
+      const { error } = await supabase
+        .from('group_messages')
+        .delete()
+        .eq('id', messageToUnsend.id)
+        .eq('sender_id', user.id);
+
+      if (error) throw error;
+      setNotice({ title: 'Message unsent', message: 'The message was removed for everyone.' });
+    } catch (err) {
+      console.error('[unsend] caught:', err);
+      setMessages(backup);
+      Alert.alert('Error', 'Failed to unsend. Please try again.');
+    }
   };
 
   const copyMessage = () => {
@@ -711,7 +817,6 @@ export default function GroupChatScreen() {
     setActionTarget(null);
   };
 
-  // ─── REALTIME ──────────────────────────────────────────────
   const handleNewMessage = useCallback(
     async (payload: any) => {
       if (!mountedRef.current) return;
@@ -756,10 +861,10 @@ export default function GroupChatScreen() {
               ...msg,
               content: updated.content ?? msg.content,
               updated_at: updated.updated_at ?? msg.updated_at,
+              is_edited: updated.is_edited ?? msg.is_edited,
               reply_to_id: updated.reply_to_id ?? msg.reply_to_id,
               reply_to_sender: updated.reply_to_sender ?? msg.reply_to_sender,
               reply_to_content: updated.reply_to_content ?? msg.reply_to_content,
-              reaction: updated.reaction ?? msg.reaction,
             }
           : msg
       )
@@ -771,6 +876,12 @@ export default function GroupChatScreen() {
     const deletedId = payload.old?.id;
     if (deletedId === undefined) return;
     setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+    setReactionsByMessage((prev) => {
+      if (!(deletedId in prev)) return prev;
+      const next = { ...prev };
+      delete next[deletedId];
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -840,6 +951,37 @@ export default function GroupChatScreen() {
     };
   }, [groupId, loadGroup, loadMembers, loadMessages, handleNewMessage, handleDeletedMessage, handleUpdatedMessage]);
 
+  useEffect(() => {
+    if (!groupId) return;
+    const channelName = `group-reactions-${groupId}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'group_message_reactions' },
+        (payload: any) => {
+          const msgId = payload.new?.message_id ?? payload.old?.message_id;
+          if (!msgId) return;
+          setMessages((current) => {
+            if (current.some((m) => m.id === msgId)) {
+              loadReactionsForOne(msgId);
+            }
+            return current;
+          });
+        }
+      )
+      .subscribe();
+
+    reactionsChannelRef.current = channel;
+
+    return () => {
+      if (reactionsChannelRef.current) {
+        supabase.removeChannel(reactionsChannelRef.current);
+        reactionsChannelRef.current = null;
+      }
+    };
+  }, [groupId, loadReactionsForOne]);
+
   useFocusEffect(
     useCallback(() => {
       loadMessages(true);
@@ -848,7 +990,11 @@ export default function GroupChatScreen() {
 
   const goBack = async () => {
     await markGroupAsRead();
-    router.back();
+    if (embedded && onClose) {
+      onClose();
+    } else {
+      router.back();
+    }
   };
 
   const onRefresh = () => {
@@ -888,7 +1034,11 @@ export default function GroupChatScreen() {
 
       setShowMenu(false);
       setLeaving(false);
-      router.replace('/chat/Chat' as any);
+      if (embedded && onClose) {
+        onClose();
+      } else {
+        router.replace('/chat/Chat' as any);
+      }
     } catch {
       setLeaving(false);
       Alert.alert('Error', 'Failed to leave group. Please try again.');
@@ -910,7 +1060,10 @@ export default function GroupChatScreen() {
     if (!user || !groupId) return;
 
     if (members.some((m) => m.user_id === selectedUser.id)) {
-      Alert.alert('Already a member', 'This user is already in the group.');
+      setNotice({
+        title: 'Already a member',
+        message: 'This user is already in the group.',
+      });
       return;
     }
 
@@ -953,110 +1106,144 @@ export default function GroupChatScreen() {
         },
       });
       setShowAddMembers(false);
-      Alert.alert('Success', `${addedName} has been added to the group`);
+      setNotice({
+        title: 'Member added',
+        message: `${addedName} has been added to the group.`,
+      });
     } catch {
       Alert.alert('Error', 'Failed to add member. Please try again.');
     }
   };
 
-  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
-    const previousMessage = index > 0 ? messages[index - 1] : null;
-    const showDateDivider =
-      !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
-    const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
-    const dateDivider = dateLabel ? (
-      <View style={styles.dateDivider}>
-        <View style={styles.dateDividerLine} />
-        <View style={styles.datePill}>
-          <Text style={styles.datePillText}>{dateLabel}</Text>
+  const renderMessage = useCallback(
+    ({ item, index }: { item: Message; index: number }) => {
+      const previousMessage = index > 0 ? messages[index - 1] : null;
+      const showDateDivider =
+        !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
+      const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
+      const dateDivider = dateLabel ? (
+        <View style={styles.dateDivider}>
+          <View style={styles.dateDividerLine} />
+          <View style={styles.datePill}>
+            <Text style={styles.datePillText}>{dateLabel}</Text>
+          </View>
+          <View style={styles.dateDividerLine} />
         </View>
-        <View style={styles.dateDividerLine} />
-      </View>
-    ) : null;
+      ) : null;
 
-    if (item.type === 'system') {
-      const displayText = formatSystemMessage(item, user?.id || '');
+      if (item.type === 'system') {
+        const displayText = formatSystemMessage(item, user?.id || '');
+        return (
+          <>
+            {dateDivider}
+            <View style={styles.systemMessageContainer}>
+              <Text style={styles.systemMessageText}>{displayText}</Text>
+            </View>
+          </>
+        );
+      }
+
+      const isMe = item.sender_id === user?.id;
+      const profile = normalizeProfile(item.profiles);
+      const senderName = profile?.full_name || profile?.username || 'Member';
+      const senderAvatar = profile?.avatar_url || null;
+
+      const time = item.created_at
+        ? new Date(item.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          })
+        : '';
+      const edited = isEdited(item);
+      const hasReply = !!item.reply_to_id;
+
+      const repliedMessage = hasReply
+        ? messages.find((message) => message.id === item.reply_to_id)
+        : null;
+      const repliedToLabel = repliedMessage
+        ? getSenderLabel(repliedMessage)
+        : item.reply_to_sender || 'a message';
+      const replyCaption = isMe
+        ? `You replied to ${repliedToLabel}`
+        : repliedMessage?.sender_id === user?.id
+          ? `${senderName} replied to you`
+          : `${senderName} replied to ${repliedToLabel}`;
+      const replyPreview =
+        repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
+
+      const rows = reactionsByMessage[item.id] || [];
+      const summaries = summarizeReactions(rows, user?.id);
+
       return (
         <>
           {dateDivider}
-          <View style={styles.systemMessageContainer}>
-            <Text style={styles.systemMessageText}>{displayText}</Text>
-          </View>
+          <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
+            <Pressable
+              onLongPress={() => openActionSheet(item)}
+              delayLongPress={350}
+              style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
+            >
+              <MessageBubble
+                content={item.content}
+                time={time}
+                isMe={isMe}
+                edited={edited}
+                hasReply={hasReply}
+                replyCaption={replyCaption}
+                replyPreview={replyPreview}
+                reactionSummaries={summaries}
+                onPressReactions={
+                  summaries.length > 0 ? () => setReactionsTarget(item.id) : undefined
+                }
+                showReadReceipt={false}
+                showAvatar={true} // <-- CHANGED TO TRUE
+                showSenderHeader={false} // <-- CHANGED TO FALSE
+                senderName={senderName}
+                senderColorSeed={item.sender_id}
+                senderAvatarUrl={senderAvatar}
+                avatarUri={senderAvatar} // <-- ADDED TO RENDER IMAGE
+                avatarLabel={senderName}
+                onPressSender={!isMe ? () => setProfileUserId(item.sender_id) : undefined}
+              />
+            </Pressable>
+          </SwipeableRow>
         </>
       );
-    }
-
-    const isMe = item.sender_id === user?.id;
-    const profile = normalizeProfile(item.profiles);
-    const senderName = profile?.full_name || profile?.username || 'Member';
-
-    const time = item.created_at
-      ? new Date(item.created_at).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        })
-      : '';
-    const edited = isEdited(item);
-    const hasReply = !!item.reply_to_id;
-
-    const repliedMessage = hasReply
-      ? messages.find((message) => message.id === item.reply_to_id)
-      : null;
-    const repliedToLabel = repliedMessage
-      ? getSenderLabel(repliedMessage)
-      : item.reply_to_sender || 'a message';
-    const replyCaption = isMe
-      ? `You replied to ${repliedToLabel}`
-      : repliedMessage?.sender_id === user?.id
-        ? `${senderName} replied to you`
-        : `${senderName} replied to ${repliedToLabel}`;
-    const replyPreview =
-      repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
-
-    return (
-      <>
-        {dateDivider}
-        <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
-          <Pressable
-            onLongPress={() => openActionSheet(item)}
-            delayLongPress={350}
-            style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
-          >
-            <MessageBubble
-              content={item.content}
-              time={time}
-              isMe={isMe}
-              edited={edited}
-              hasReply={hasReply}
-              replyCaption={replyCaption}
-              replyPreview={replyPreview}
-              reaction={item.reaction}
-              showReadReceipt={false}
-              showAvatar={false}
-              showSenderHeader={!isMe}
-              senderName={senderName}
-              senderColorSeed={item.sender_id}
-            />
-          </Pressable>
-        </SwipeableRow>
-      </>
-    );
-  };
+    },
+    [
+      messages,
+      reactionsByMessage,
+      sending,
+      user?.id,
+      openActionSheet,
+    ]
+  );
 
   const renderMember = ({ item }: { item: GroupMember }) => {
     const profile = normalizeProfile(item.profiles);
     const name = profile?.full_name || profile?.username || 'Unknown';
 
     return (
-      <View style={styles.memberItem}>
+      <TouchableOpacity 
+        style={styles.memberItem}
+        onPress={() => {
+          setShowMembers(false);
+          setProfileUserId(item.user_id);
+        }}
+        activeOpacity={0.7}
+      >
         <View
           style={[
             styles.memberAvatar,
             { backgroundColor: getAvatarColor(item.user_id) },
           ]}
         >
-          <Text style={styles.memberAvatarText}>{getInitials(name)}</Text>
+          {profile?.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.memberAvatarImage} />
+          ) : (
+            <Text style={styles.memberAvatarText}>{getInitials(name)}</Text>
+          )}
         </View>
         <View style={styles.memberInfo}>
           <Text style={styles.memberName}>{name}</Text>
@@ -1068,16 +1255,16 @@ export default function GroupChatScreen() {
               : 'Member'}
           </Text>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   if (loading && messages.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="small" color={ACCENT_GOLD} />
         <Text style={styles.loadingText}>Loading group chat...</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -1085,11 +1272,26 @@ export default function GroupChatScreen() {
   const replyingSenderLabel = replyingTo ? getSenderLabel(replyingTo) : '';
   const isActionTargetMine = !!actionTarget && actionTarget.sender_id === user?.id;
 
+  const actionTargetMyReaction =
+    actionTarget && user
+      ? (reactionsByMessage[actionTarget.id] || []).find(
+          (r) => r.user_id === user.id
+        )?.reaction ?? null
+      : null;
+
+  const reactionsSummaries =
+    reactionsTarget !== null
+      ? summarizeReactions(reactionsByMessage[reactionsTarget] || [], user?.id)
+      : [];
+
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { style: styles.container } : { style: styles.container, edges: ['top'] as any };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Wrapper {...wrapperProps}>
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={18} color={TEXT_PRIMARY} />
+          <Ionicons name={embedded ? "close" : "arrow-back"} size={18} color={TEXT_PRIMARY} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1102,7 +1304,11 @@ export default function GroupChatScreen() {
               { backgroundColor: getAvatarColor(groupId || '') },
             ]}
           >
-            <Ionicons name="people" size={16} color="#fff" />
+            {group?.avatar_url ? (
+              <Image source={{ uri: group.avatar_url }} style={styles.headerAvatarImage} />
+            ) : (
+              <Ionicons name="people" size={16} color="#fff" />
+            )}
           </View>
           <View style={styles.headerGroupInfo}>
             <Text style={styles.headerName} numberOfLines={1}>
@@ -1127,8 +1333,8 @@ export default function GroupChatScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' && !embedded ? 90 : 0}
       >
         {messages.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -1321,7 +1527,11 @@ export default function GroupChatScreen() {
                   { backgroundColor: getAvatarColor(groupId || '') },
                 ]}
               >
-                <Ionicons name="people" size={18} color="#fff" />
+                {group?.avatar_url ? (
+                  <Image source={{ uri: group.avatar_url }} style={styles.menuAvatarImage} />
+                ) : (
+                  <Ionicons name="people" size={18} color="#fff" />
+                )}
               </View>
               <View style={styles.menuHeaderInfo}>
                 <Text style={styles.menuTitle} numberOfLines={1}>
@@ -1412,11 +1622,11 @@ export default function GroupChatScreen() {
         </Pressable>
       </Modal>
 
-      {/* ── Unified action sheet ── */}
+      {/* Unified action sheet */}
       <MessageActionSheet
         visible={!!actionTarget}
         isMe={isActionTargetMine}
-        currentReaction={actionTarget?.reaction ?? null}
+        currentReaction={actionTargetMyReaction}
         onClose={closeActionSheet}
         onReact={applyReaction}
         onReply={
@@ -1432,7 +1642,74 @@ export default function GroupChatScreen() {
         onUnsend={isActionTargetMine ? confirmDeleteFromSheet : undefined}
         onCopy={copyMessage}
       />
-    </SafeAreaView>
+
+      {/* Who-reacted modal */}
+      <ReactionsList
+        visible={reactionsTarget !== null}
+        onClose={() => setReactionsTarget(null)}
+        summaries={reactionsSummaries}
+        currentUserId={user?.id}
+      />
+      
+      {/* Profile Card */}
+      <ProfileCard
+        userId={profileUserId}
+        visible={!!profileUserId}
+        onClose={() => setProfileUserId(null)}
+      />
+
+      <Modal
+        visible={notice !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotice(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>{notice?.title}</Text>
+            <Text style={styles.noticeText}>{notice?.message}</Text>
+            <TouchableOpacity
+              style={styles.noticeButton}
+              onPress={() => setNotice(null)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.noticeButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={pendingUnsend !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingUnsend(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>Unsend this message?</Text>
+            <Text style={styles.noticeText}>
+              This will remove it for everyone in the group.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.cancelNoticeButton}
+                onPress={() => setPendingUnsend(null)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.cancelNoticeButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.destructiveNoticeButton}
+                onPress={unsendMessage}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.destructiveNoticeButtonText}>Unsend</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </Wrapper>
   );
 }
 
@@ -1473,6 +1750,11 @@ const styles = StyleSheet.create({
     borderRadius: 17.5,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   headerGroupInfo: { marginLeft: 9, flex: 1, minWidth: 0 },
   headerName: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
@@ -1488,6 +1770,55 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(224,112,112,0.22)',
   },
   errorText: { color: CHAT_DANGER, fontSize: 11, textAlign: 'center' },
+  noticeBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 340,
+    padding: 20,
+    borderRadius: CHAT_RADIUS_MODAL,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_PANEL,
+  },
+  noticeTitle: { color: TEXT_PRIMARY, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  noticeText: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 },
+  noticeButton: {
+    alignItems: 'center',
+    marginTop: 18,
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: ACCENT_GOLD,
+  },
+  noticeButtonText: { color: CHAT_BG, fontSize: 12, fontWeight: '800' },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  cancelNoticeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_SUBTLE,
+  },
+  cancelNoticeButtonText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
+  destructiveNoticeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: CHAT_DANGER,
+  },
+  destructiveNoticeButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
   keyboardContainer: { flex: 1 },
   emptyContainer: {
@@ -1755,6 +2086,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  memberAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   memberAvatarText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   memberInfo: { flex: 1 },
@@ -1790,6 +2126,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  menuAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   menuHeaderInfo: { flex: 1, minWidth: 0 },
   menuTitle: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
