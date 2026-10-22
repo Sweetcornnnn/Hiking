@@ -26,6 +26,7 @@ import {
   ANIM,
   BG_AVATAR,
   BG_CARD,
+  BG_DANGER_SUBTLE,
   BG_GOLD_ICON,
   BG_GOLD_TINT,
   BG_PANEL,
@@ -38,9 +39,11 @@ import {
   CHAT_FS_BODY,
   CHAT_FS_TITLE,
   FONT,
+  RADIUS_BTN,
   RADIUS_CARD,
   SPACING,
   TEXT_DANGER,
+  TEXT_FAINT,
   TEXT_MUTED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -531,66 +534,6 @@ function NotePageModal({
   };
 
   return (
-    <View style={styles.card}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <View style={styles.authorRow}>
-          <View style={styles.avatarRing}>
-            <View style={styles.avatar}>
-              {avatarUrl && !avatarFailed ? (
-                <NativeImage
-                  source={{ uri: avatarUrl }}
-                  style={styles.avatarImage}
-                  onError={() => setAvatarFailed(true)}
-                />
-              ) : (
-                <Text style={styles.avatarInitials}>{initials}</Text>
-              )}
-            </View>
-          </View>
-          <View style={styles.authorText}>
-            <Text style={styles.authorName} numberOfLines={1}>
-              {authorName}
-            </Text>
-            <Text style={styles.timestamp}>{formatRelativeTime(entry.created_at)}</Text>
-            {entry.sync_conflict ? (
-              <Text style={styles.syncFailed}>Changed elsewhere; your edit was kept</Text>
-            ) : null}
-            {entry.sync_status ? (
-              <Text style={entry.sync_status === 'failed' ? styles.syncFailed : styles.syncPending}>
-                {entry.sync_status === 'failed' ? 'Sync failed' : 'Waiting to sync'}
-              </Text>
-            ) : null}
-            {entry.sync_status === 'failed' && entry.sync_error ? (
-              <Text style={styles.syncError}>{entry.sync_error}</Text>
-            ) : null}
-          </View>
-        </View>
-
-        <Pressable
-          onPress={onDelete}
-          style={({ pressed }) => [styles.deleteButton, pressed && styles.pressed]}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Delete journal entry"
-        >
-          <Ionicons name="trash-outline" size={16} color={TEXT_DANGER} />
-        </Pressable>
-      </View>
-
-      {images.length === 0 || (!isMulti && photoFailed) ? (
-        <View style={styles.photoPlaceholder}>
-          <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
-          <Text style={styles.placeholderText}>No photo in this entry</Text>
-        </View>
-      ) : (
-        <View style={styles.photoContainer}>
-          <TouchableOpacity
-            onPress={() => onEdit(entry, activeIndex, images[activeIndex])}
-            style={[styles.editPhotoButton, { right: overlayInset }]}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Edit photo"
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleRequestClose}>
       <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Pressable style={styles.modalBackdrop} onPress={editing ? undefined : closeModal}>
@@ -947,13 +890,6 @@ const styles = StyleSheet.create({
   newEntryBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: OVERLAY, borderWidth: 1, borderColor: CHAT_BORDER_STRONG },
   deleteBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: OVERLAY, borderWidth: 1, borderColor: BORDER_DANGER },
   pressed: { opacity: 0.6 },
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, paddingHorizontal: 20, gap: SPACING.gap, borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_DEFAULT },
-  emptyIcon: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: BG_GOLD_ICON, borderWidth: 1, borderColor: BORDER_GOLD_SOFT },
-  emptyTitle: { color: TEXT_PRIMARY, fontSize: CHAT_FS_TITLE, fontWeight: '700' },
-  emptyText: { color: TEXT_MUTED, fontSize: FONT.itemSize, lineHeight: 18, textAlign: 'center', maxWidth: 300 },
-  emptyButton: { marginTop: SPACING.gap, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, backgroundColor: ACCENT_GOLD },
-  emptyButtonText: { color: BG_CARD, fontSize: FONT.itemSize, fontWeight: '800' },
-  card: { paddingBottom: SPACING.cardPadB },
   fill: { flex: 1 },
   skeletonHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.gap, paddingHorizontal: SPACING.cardPadH, paddingTop: SPACING.cardPadT, paddingBottom: SPACING.gapLg },
   row: { flexDirection: 'row', alignItems: 'stretch', gap: 8, paddingHorizontal: 8 },

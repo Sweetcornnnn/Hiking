@@ -8,6 +8,7 @@ import {
   Image,
   Platform,
   Pressable,
+  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import Svg, {
@@ -472,9 +473,10 @@ export default function IntroScreen() {
       </Svg>
 
       {/* Brand block: logo, subtitle, divider, quote */}
-      <View
-        pointerEvents="none"
+      <ScrollView
         style={[styles.brand, { marginTop: insets.top, height: topH + SKY_OVERLAP }]}
+        contentContainerStyle={[styles.brandContent, { minHeight: topH + SKY_OVERLAP }]}
+        showsVerticalScrollIndicator={false}
       >
         <Animated.View
           style={{
@@ -535,7 +537,7 @@ export default function IntroScreen() {
             {'\u201D'}
           </Text>
         </Animated.View>
-      </View>
+      </ScrollView>
 
       {/* Mountains: three layers, far to near. The near range's color carries
           on under the safe area so the Continue button sits on solid ground. */}
@@ -663,6 +665,8 @@ const styles = StyleSheet.create({
   // Brand block
   brand: {
     alignSelf: 'stretch',
+  },
+  brandContent: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
