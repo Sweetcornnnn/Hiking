@@ -1,32 +1,83 @@
-import { useEffect, useState, useRef } from 'react';
+// Admin.tsx — restyled to match ChatScreen (CHAT_* tokens, hairline shell,
+// matching header + empty states). Data layer unchanged from the previous rewrite.
+import { useEffect, useState, useRef, useMemo } from 'react';
 import {
-  FlatList, View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, TextInput, Animated, Easing, Alert,
+  FlatList,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  TextInput,
+  Animated,
+  Easing,
+  Alert,
+  useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useHikesStore } from '../store/hikesStore';
 import { useHikeSafetyStore } from '../store/hikeSafetyStore';
 import { supabase } from '../lib/supabase';
-import { organizationService, type Organization, type HikingEvent } from '../services/organizationService';
+import { organizationService } from '../services/organizationService';
 import type { AdminSafetyRow } from '../services/hikeSafetyService';
+import { hikeSafetyService } from '../services/hikeSafetyService';
+import {
+  adminService,
+  type AdminUserRow,
+  type AdminOrgRow,
+  type AdminEventRow,
+  type AdminJournalRow,
+  type AdminSosRow,
+  type AdminDiscoveryRow,
+  type GlobalStats,
+} from '../services/AdminService';
 import { formatRangeShort } from '../utils/dateRange';
 import UserLocationModal from './UserLocationModal';
+import {
+  CHAT_BG,
+  CHAT_ONLINE,
+  CHAT_BORDER,
+  TEXT_PRIMARY,
+  TEXT_MUTED,
+  ACCENT_GOLD,
+} from '../theme/designTokens';
 
-// ---------- User Store (local, using authToken) ----------
-interface AdminUser {
-  id: string;
-  email: string;
-  name: string | null;
-  contact_number: string | null;
-  is_admin: boolean;
-  created_at: string;
-}
+// Local aliases so the JSX reads like ChatScreen
+const SIDEBAR_W = 196;
+const PANEL_W = 264;
+
+type Tab =
+  | 'overview'
+  | 'hikes'
+  | 'users'
+  | 'orgs'
+  | 'events'
+  | 'safety'
+  | 'emergencies'
+  | 'moderation';
+
+const TABS: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { id: 'overview', label: 'Overview', icon: 'grid-outline' },
+  { id: 'hikes', label: 'Hikes', icon: 'trail-sign-outline' },
+  { id: 'users', label: 'Users', icon: 'people-outline' },
+  { id: 'orgs', label: 'Organizations', icon: 'business-outline' },
+  { id: 'events', label: 'Events', icon: 'calendar-outline' },
+  { id: 'safety', label: 'Safety', icon: 'shield-checkmark-outline' },
+  { id: 'emergencies', label: 'Emergencies', icon: 'alert-circle-outline' },
+  { id: 'moderation', label: 'Moderation', icon: 'eye-outline' },
+];
 
 export default function AdminRoute() {
   const router = useRouter();
-  const { user, profile, authToken, signOut } = useAuthStore();
-  const { allHikes, adminStats, fetchAllHikes, fetchAdminStats, isLoading: hikesLoading } = useHikesStore();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
+  const { user, profile, signOut } = useAuthStore();
+  const { allHikes, fetchAllHikes, isLoading: hikesLoading } = useHikesStore();
   const {
     adminHikes,
     adminEvents,
@@ -35,227 +86,64 @@ export default function AdminRoute() {
     loadAdminSafety,
     markAdminAlertSeen,
   } = useHikeSafetyStore();
-  // Tab state
-  const [activeTab, setActiveTab] = useState<'hikes' | 'users' | 'orgs' | 'events' | 'safety'>('hikes');
 
-  // Organization verification state
-  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+
+  // Data (same as previous Admin)
+  const [stats, setStats] = useState<GlobalStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'hiker' | 'organization' | 'admin'>('all');
+
+  const [orgs, setOrgs] = useState<AdminOrgRow[]>([]);
   const [orgsLoading, setOrgsLoading] = useState(false);
-  const [busyOrgId, setBusyOrgId] = useState<string | null>(null);
   const [orgFilter, setOrgFilter] = useState<'pending' | 'verified' | 'all'>('pending');
+  const [busyOrgId, setBusyOrgId] = useState<string | null>(null);
 
-  const fetchOrgs = async () => {
-    setOrgsLoading(true);
-    try {
-      const list = await organizationService.adminListOrganizations();
-      setOrgs(list);
-    } finally {
-      setOrgsLoading(false);
-    }
-  };
-
-  const handleVerifyOrg = async (org: Organization, verified: boolean) => {
-    setBusyOrgId(org.id);
-    const { error: e } = await organizationService.adminSetVerified(org.id, verified);
-    setBusyOrgId(null);
-    if (e) {
-      showToast('error', 'Update Failed', e);
-      return;
-    }
-    showToast(
-      'success',
-      verified ? 'Organization Verified' : 'Verification Removed',
-      `${org.name} has been ${verified ? 'verified' : 'unverified'}.`
-    );
-    fetchOrgs();
-  };
-
-  const filteredOrgs = orgs.filter((o) =>
-    orgFilter === 'all' ? true : orgFilter === 'verified' ? o.is_verified : !o.is_verified
-  );
-
-  // Event moderation state
-  const [modEvents, setModEvents] = useState<
-    Array<HikingEvent & { organizations: { name: string } | null }>
-  >([]);
+  const [modEvents, setModEvents] = useState<AdminEventRow[]>([]);
   const [modEventsLoading, setModEventsLoading] = useState(false);
   const [busyEventId, setBusyEventId] = useState<string | null>(null);
-  const [eventFilter, setEventFilter] = useState<
-    'all' | 'published' | 'draft' | 'cancelled' | 'completed'
-  >('published');
+  const [eventFilter, setEventFilter] = useState<'all' | 'published' | 'draft' | 'cancelled' | 'completed'>('published');
 
-  const fetchModEvents = async () => {
-    setModEventsLoading(true);
-    try {
-      const list = await organizationService.adminListEvents();
-      setModEvents(list);
-    } finally {
-      setModEventsLoading(false);
-    }
-  };
+  const [safetyFilter, setSafetyFilter] = useState<'all' | 'active' | 'needs_duration' | 'responded'>('all');
 
-  const handleAdminCancelEvent = (eventId: string) => {
-    const ev = modEvents.find((e) => e.id === eventId);
-    if (!ev) return;
-    Alert.alert(
-      'Force-cancel event?',
-      `"${ev.title}" will be marked cancelled and hidden from public discovery.`,
-      [
-        { text: 'Keep it', style: 'cancel' },
-        {
-          text: 'Cancel event',
-          style: 'destructive',
-          onPress: async () => {
-            setBusyEventId(eventId);
-            const { error: e } = await organizationService.adminCancelEvent(eventId);
-            setBusyEventId(null);
-            if (e) {
-              showToast('error', 'Update Failed', e);
-              return;
-            }
-            showToast(
-              'success',
-              'Event Cancelled',
-              'The organizer has been notified by the status change.'
-            );
-            fetchModEvents();
-          },
-        },
-      ]
-    );
-  };
+  const [sosRows, setSosRows] = useState<AdminSosRow[]>([]);
+  const [sosLoading, setSosLoading] = useState(false);
 
-  const handleAdminReinstateEvent = async (eventId: string) => {
-    setBusyEventId(eventId);
-    const { error: e } = await organizationService.adminReinstateEvent(eventId);
-    setBusyEventId(null);
-    if (e) {
-      showToast('error', 'Reinstate Failed', e);
-      return;
-    }
-    showToast('success', 'Event Reinstated', 'The event is visible again.');
-    fetchModEvents();
-  };
+  const [journal, setJournal] = useState<AdminJournalRow[]>([]);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalPublicOnly, setJournalPublicOnly] = useState(true);
+  const [discoveries, setDiscoveries] = useState<AdminDiscoveryRow[]>([]);
+  const [discoveriesLoading, setDiscoveriesLoading] = useState(false);
+  const [moderationTab, setModerationTab] = useState<'journal' | 'discoveries'>('journal');
 
-  const filteredModEvents = modEvents.filter((e) =>
-    eventFilter === 'all' ? true : e.status === eventFilter
-  );
+  const [hikeSearch, setHikeSearch] = useState('');
 
-  // User management state
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-  const [resetModalVisible, setResetModalVisible] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [newPassword, setNewPassword] = useState('');
-
-  // User location modal state
+  // Modals
   const [locationModalVisible, setLocationModalVisible] = useState(false);
-  const [locationModalUser, setLocationModalUser] = useState<AdminUser | null>(null);
-
-  // Make admin modal state
+  const [locationModalUser, setLocationModalUser] = useState<AdminUserRow | null>(null);
   const [makeAdminModalVisible, setMakeAdminModalVisible] = useState(false);
-  const [makeAdminTarget, setMakeAdminTarget] = useState<AdminUser | null>(null);
-
-  // Delete user modal state
+  const [makeAdminTarget, setMakeAdminTarget] = useState<AdminUserRow | null>(null);
   const [deleteUserModalVisible, setDeleteUserModalVisible] = useState(false);
-  const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUser | null>(null);
+  const [deleteUserTarget, setDeleteUserTarget] = useState<AdminUserRow | null>(null);
+  const [deleteJournalModalVisible, setDeleteJournalModalVisible] = useState(false);
+  const [deleteJournalTarget, setDeleteJournalTarget] = useState<AdminJournalRow | null>(null);
+  const [attendeesModalVisible, setAttendeesModalVisible] = useState(false);
+  const [attendeesModalEvent, setAttendeesModalEvent] = useState<AdminEventRow | null>(null);
+  const [attendeesList, setAttendeesList] = useState<any[]>([]);
+  const [attendeesLoading, setAttendeesLoading] = useState(false);
+  const [durationModalVisible, setDurationModalVisible] = useState(false);
+  const [durationTarget, setDurationTarget] = useState<AdminSafetyRow | null>(null);
+  const [durationValue, setDurationValue] = useState('');
 
-  // ---------- Fetch users ----------
-  const fetchUsers = async () => {
-    setUsersLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, contact_number, is_admin, created_at')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      setUsers((data ?? []).map((row) => ({
-        id: row.id,
-        email: row.email ?? '',
-        name: row.full_name,
-        contact_number: row.contact_number,
-        is_admin: !!row.is_admin,
-        created_at: row.created_at,
-      })));
-    } catch (error: any) {
-      showToast('error', 'Fetch Failed', error?.message || 'Failed to fetch users');
-    } finally {
-      setUsersLoading(false);
-    }
-  };
-
-  // ---------- Update user (admin toggle) ----------
-  const updateUserAdmin = async (userId: string, isAdmin: boolean) => {
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_admin: isAdmin,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
-
-      if (error) {
-        throw error;
-      }
-
-      showToast('success', 'Admin Updated', `Privileges have been ${isAdmin ? 'granted' : 'removed'} successfully.`);
-      fetchUsers();
-    } catch (error: any) {
-      showToast('error', 'Update Failed', error?.message || 'Failed to update user');
-    }
-  };
-
-  // ---------- Delete user ----------
-  const deleteUser = async (userId: string) => {
-    try {
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
-
-      if (error) {
-        throw error;
-      }
-
-      showToast('success', 'User Deleted', 'The profile has been removed.');
-      fetchUsers();
-    } catch (error: any) {
-      showToast('error', 'Delete Failed', error?.message || 'User deletion is not allowed from the client.');
-    }
-  };
-
-  // ---------- Initial data fetching ----------
-  useEffect(() => {
-    if (!profile?.is_admin) {
-      router.replace('/Home');
-      return;
-    }
-    fetchAllHikes();
-    fetchAdminStats();
-
-    if (authToken) {
-      fetchUsers();
-    }
-  }, [profile?.is_admin, authToken]);
-
-  useEffect(() => {
-    if (activeTab === 'orgs') {
-      fetchOrgs();
-    } else if (activeTab === 'events') {
-      fetchModEvents();
-    } else if (activeTab === 'safety') {
-      loadAdminSafety();
-    }
-  }, [activeTab, loadAdminSafety]);
-
-  // ── Unified feedback toast ───────────────────────────────────────────────
+  // Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'warning'; title: string; msg: string } | null>(null);
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastY = useRef(new Animated.Value(8)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const showToast = (type: 'success' | 'error' | 'warning', title: string, msg: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ type, title, msg });
@@ -263,483 +151,695 @@ export default function AdminRoute() {
     toastY.setValue(8);
     Animated.parallel([
       Animated.timing(toastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(toastY,       { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(toastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
     toastTimer.current = setTimeout(() => {
       Animated.parallel([
         Animated.timing(toastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(toastY,       { toValue: 8, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(toastY, { toValue: 8, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
       ]).start(() => setToast(null));
     }, 2800);
   };
 
-  // ── Themed logout confirm toast ─────────────────────────────────────────
+  // Logout confirm (same as before)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const logoutToastOpacity = useRef(new Animated.Value(0)).current;
   const logoutToastY = useRef(new Animated.Value(-6)).current;
-
   const openLogoutConfirm = () => {
     setShowLogoutConfirm(true);
     logoutToastOpacity.setValue(0);
     logoutToastY.setValue(-6);
     Animated.parallel([
       Animated.timing(logoutToastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY,       { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
   };
-
   const dismissLogoutConfirm = () => {
     Animated.parallel([
       Animated.timing(logoutToastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY,       { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY, { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
     ]).start(() => setShowLogoutConfirm(false));
   };
-
   const confirmLogout = async () => {
     setShowLogoutConfirm(false);
     await signOut();
     router.replace('/Login');
   };
 
-  // ---------- Render ----------
+  // Fetchers
+  const fetchStats = async () => { setStatsLoading(true); try { setStats(await adminService.fetchGlobalStats()); } finally { setStatsLoading(false); } };
+  const fetchUsers = async () => { setUsersLoading(true); try { setUsers(await adminService.fetchAdminUsers()); } finally { setUsersLoading(false); } };
+  const fetchOrgs = async () => { setOrgsLoading(true); try { setOrgs(await adminService.fetchAdminOrgs()); } finally { setOrgsLoading(false); } };
+  const fetchModEvents = async () => { setModEventsLoading(true); try { setModEvents(await adminService.fetchAdminEvents()); } finally { setModEventsLoading(false); } };
+  const fetchSos = async () => { setSosLoading(true); try { setSosRows(await adminService.fetchAdminSos()); } finally { setSosLoading(false); } };
+  const fetchJournal = async () => { setJournalLoading(true); try { setJournal(await adminService.fetchAdminJournal(journalPublicOnly)); } finally { setJournalLoading(false); } };
+  const fetchDiscoveries = async () => { setDiscoveriesLoading(true); try { setDiscoveries(await adminService.fetchAdminDiscoveries()); } finally { setDiscoveriesLoading(false); } };
+
+  useEffect(() => {
+    if (!profile?.is_admin) { router.replace('/Home'); return; }
+    fetchStats();
+    fetchAllHikes();
+  }, [profile?.is_admin]);
+
+  useEffect(() => {
+    if (activeTab === 'overview') fetchStats();
+    else if (activeTab === 'users') fetchUsers();
+    else if (activeTab === 'orgs') fetchOrgs();
+    else if (activeTab === 'events') fetchModEvents();
+    else if (activeTab === 'safety') loadAdminSafety();
+    else if (activeTab === 'emergencies') fetchSos();
+    else if (activeTab === 'moderation') { if (moderationTab === 'journal') fetchJournal(); else fetchDiscoveries(); }
+  }, [activeTab, moderationTab, journalPublicOnly]);
+
+  const refreshCurrentTab = () => {
+    if (activeTab === 'overview') fetchStats();
+    else if (activeTab === 'hikes') fetchAllHikes();
+    else if (activeTab === 'users') fetchUsers();
+    else if (activeTab === 'orgs') fetchOrgs();
+    else if (activeTab === 'events') fetchModEvents();
+    else if (activeTab === 'safety') loadAdminSafety();
+    else if (activeTab === 'emergencies') fetchSos();
+    else if (activeTab === 'moderation') { if (moderationTab === 'journal') fetchJournal(); else fetchDiscoveries(); }
+  };
+
+  // Actions (same as previous Admin)
+  const updateUserAdmin = async (userId: string, isAdmin: boolean) => {
+    const { error } = await supabase.from('profiles').update({ is_admin: isAdmin, updated_at: new Date().toISOString() }).eq('id', userId);
+    if (error) { showToast('error', 'Update Failed', error.message); return; }
+    showToast('success', 'Admin Updated', `Privileges have been ${isAdmin ? 'granted' : 'removed'}.`);
+    fetchUsers();
+  };
+  const deleteUser = async (userId: string) => {
+    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+    if (error) { showToast('error', 'Delete Failed', error.message); return; }
+    showToast('success', 'User Deleted', 'The profile has been removed.');
+    fetchUsers();
+  };
+  const handleVerifyOrg = async (org: AdminOrgRow, verified: boolean) => {
+    setBusyOrgId(org.id);
+    const { error } = await organizationService.adminSetVerified(org.id, verified);
+    setBusyOrgId(null);
+    if (error) { showToast('error', 'Update Failed', error); return; }
+    showToast('success', verified ? 'Organization Verified' : 'Verification Removed', `${org.name} has been ${verified ? 'verified' : 'unverified'}.`);
+    fetchOrgs(); fetchStats();
+  };
+  const handleAdminCancelEvent = (eventId: string) => {
+    const ev = modEvents.find((e) => e.id === eventId);
+    if (!ev) return;
+    Alert.alert('Force-cancel event?', `"${ev.title}" will be marked cancelled and hidden from public discovery.`, [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Cancel event', style: 'destructive', onPress: async () => {
+        setBusyEventId(eventId);
+        const { error } = await organizationService.adminCancelEvent(eventId);
+        setBusyEventId(null);
+        if (error) { showToast('error', 'Update Failed', error); return; }
+        showToast('success', 'Event Cancelled', 'The organizer has been notified by the status change.');
+        fetchModEvents(); fetchStats();
+      }},
+    ]);
+  };
+  const handleAdminReinstateEvent = async (eventId: string) => {
+    setBusyEventId(eventId);
+    const { error } = await organizationService.adminReinstateEvent(eventId);
+    setBusyEventId(null);
+    if (error) { showToast('error', 'Reinstate Failed', error); return; }
+    showToast('success', 'Event Reinstated', 'The event is visible again.');
+    fetchModEvents(); fetchStats();
+  };
+  const openAttendees = async (event: AdminEventRow) => {
+    setAttendeesModalEvent(event); setAttendeesModalVisible(true); setAttendeesLoading(true);
+    try { setAttendeesList(await organizationService.getEventAttendees(event.id)); } finally { setAttendeesLoading(false); }
+  };
+  const openDurationModal = (row: AdminSafetyRow) => {
+    setDurationTarget(row);
+    setDurationValue(row.event_duration_hours ? String(row.event_duration_hours) : '');
+    setDurationModalVisible(true);
+  };
+  const submitDuration = async () => {
+    if (!durationTarget?.event_id) return;
+    const hrs = Number(durationValue);
+    if (!Number.isFinite(hrs) || hrs <= 0) { showToast('warning', 'Invalid duration', 'Enter a positive number of hours.'); return; }
+    const { error } = await hikeSafetyService.setEventDuration({ eventId: durationTarget.event_id, durationHours: hrs });
+    if (error) { showToast('error', 'Update Failed', error); return; }
+    setDurationModalVisible(false); setDurationTarget(null);
+    showToast('success', 'Duration set', 'The safety check has been re-planned.');
+    loadAdminSafety();
+  };
+  const confirmDeleteJournal = (entry: AdminJournalRow) => { setDeleteJournalTarget(entry); setDeleteJournalModalVisible(true); };
+  const submitDeleteJournal = async () => {
+    if (!deleteJournalTarget) return;
+    const { error } = await adminService.deleteAdminJournal(deleteJournalTarget.id);
+    setDeleteJournalModalVisible(false); setDeleteJournalTarget(null);
+    if (error) { showToast('error', 'Delete Failed', error); return; }
+    showToast('success', 'Journal Deleted', 'The entry and its photos were removed.');
+    fetchJournal();
+  };
+
+  // Derived
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return users.filter((u) => {
+      if (userRoleFilter !== 'all') { const role = u.role ?? (u.is_admin ? 'admin' : 'hiker'); if (role !== userRoleFilter) return false; }
+      if (!q) return true;
+      return u.email.toLowerCase().includes(q) || (u.name ?? '').toLowerCase().includes(q) || (u.username ?? '').toLowerCase().includes(q);
+    });
+  }, [users, userSearch, userRoleFilter]);
+  const filteredOrgs = useMemo(() => orgs.filter((o) => orgFilter === 'all' ? true : orgFilter === 'verified' ? o.is_verified : !o.is_verified), [orgs, orgFilter]);
+  const filteredModEvents = useMemo(() => modEvents.filter((e) => eventFilter === 'all' ? true : e.status === eventFilter), [modEvents, eventFilter]);
+  const filteredHikes = useMemo(() => {
+    const q = hikeSearch.trim().toLowerCase();
+    if (!q) return allHikes;
+    return allHikes.filter((h) => (h.user?.name ?? '').toLowerCase().includes(q) || (h.user?.email ?? '').toLowerCase().includes(q) || (h.mountain_name ?? '').toLowerCase().includes(q));
+  }, [allHikes, hikeSearch]);
+  const matchesSafetyFilter = (row: AdminSafetyRow) => {
+    const active = !!row.active_alert_id && !row.seen;
+    if (safetyFilter === 'active') return active;
+    if (safetyFilter === 'needs_duration') return !!row.needs_duration;
+    if (safetyFilter === 'responded') return row.response_status !== 'pending';
+    return true;
+  };
+  const activeAlertCount = [...adminHikes, ...adminEvents].filter((r) => !!r.active_alert_id && !r.seen).length;
+  const pendingOrgCount = stats?.pendingOrgs ?? orgs.filter((o) => !o.is_verified).length;
+
+  // ── Small building blocks (ChatScreen-flavored) ──
+  const renderTabIcon = (t: typeof TABS[number]) => {
+    const isActive = activeTab === t.id;
+    let badge = 0;
+    if (t.id === 'orgs') badge = pendingOrgCount;
+    if (t.id === 'safety') badge = activeAlertCount;
+    if (t.id === 'emergencies') badge = stats?.sosCount ?? 0;
+    return (
+      <TouchableOpacity
+        key={t.id}
+        onPress={() => setActiveTab(t.id)}
+        activeOpacity={0.75}
+        style={[ss.railItem, isActive && ss.railItemActive]}
+      >
+        <Ionicons name={t.icon} size={16} color={isActive ? ACCENT_GOLD : TEXT_MUTED} />
+        <Text style={[ss.railLabel, isActive && ss.railLabelActive]} numberOfLines={1}>{t.label}</Text>
+        {badge > 0 && (
+          <View style={ss.railBadge}>
+            <Text style={ss.railBadgeText}>{badge > 99 ? '99+' : badge}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderEmpty = (icon: keyof typeof Ionicons.glyphMap, title: string, subtitle: string) => (
+    <View style={ss.emptyState}>
+      <View style={ss.emptyIconWrap}>
+        <Ionicons name={icon} size={44} color={ACCENT_GOLD} />
+      </View>
+      <Text style={ss.emptyTitle}>{title}</Text>
+      <Text style={ss.emptySubtitle}>{subtitle}</Text>
+    </View>
+  );
+
+  const renderStat = (label: string, value: number | string, accent?: string) => (
+    <View style={ss.statCard} key={label}>
+      <Text style={ss.statCardLabel} numberOfLines={1}>{label}</Text>
+      <Text style={[ss.statCardValue, accent ? { color: accent } : null]} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+
+  const renderHeader = (title: string, subtitle?: string, right?: React.ReactNode) => (
+    <View style={ss.panelHeader}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={ss.panelTitle} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={ss.panelSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+      </View>
+      {right ?? null}
+    </View>
+  );
+
+  const renderSearch = (value: string, onChangeText: (v: string) => void, placeholder: string) => (
+    <View style={ss.searchRow}>
+      <View style={ss.searchBox}>
+        <Ionicons name="search-outline" size={13} color="rgba(255,255,255,0.32)" />
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="rgba(255,255,255,0.28)"
+          style={ss.searchInput}
+        />
+      </View>
+    </View>
+  );
+
+  const renderFilterChips = <T extends string>(
+    items: ReadonlyArray<{ id: T; label: string }>,
+    current: T,
+    onChange: (id: T) => void,
+  ) => (
+    <View style={ss.chipRow}>
+      {items.map((f) => (
+        <TouchableOpacity
+          key={f.id}
+          onPress={() => onChange(f.id)}
+          activeOpacity={0.75}
+          style={[ss.chip, current === f.id && ss.chipActive]}
+        >
+          <Text style={[ss.chipText, current === f.id && ss.chipTextActive]}>{f.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  // ── Modals (same look as before, ChatScreen-tinted) ──
+  const renderModalShell = (visible: boolean, onClose: () => void, title: string, icon: keyof typeof Ionicons.glyphMap, children: React.ReactNode, footer?: React.ReactNode) => (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
+      <View style={ss.modalOverlay}>
+        <View style={ss.modalCard}>
+          <View style={ss.modalHeader}>
+            <View style={ss.modalTitleRow}>
+              <View style={ss.modalIconWrap}>
+                <Ionicons name={icon} size={13} color={ACCENT_GOLD} />
+              </View>
+              <Text style={ss.modalTitle} numberOfLines={1}>{title}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={ss.modalClose}>
+              <Ionicons name="close" size={13} color={TEXT_MUTED} />
+            </TouchableOpacity>
+          </View>
+          <View style={ss.modalBody}>{children}</View>
+          {footer ? <View style={ss.modalFooter}>{footer}</View> : null}
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderModalAction = (label: string, onPress: () => void, variant: 'ghost' | 'primary' | 'danger' = 'ghost', icon?: keyof typeof Ionicons.glyphMap) => (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={[
+        ss.modalActionBtn,
+        variant === 'primary' && ss.modalActionPrimary,
+        variant === 'danger' && ss.modalActionDanger,
+      ]}
+    >
+      {icon ? <Ionicons name={icon} size={12} color={variant === 'primary' ? CHAT_BG : variant === 'danger' ? '#fff' : TEXT_MUTED} /> : null}
+      <Text style={[
+        ss.modalActionText,
+        variant === 'primary' && { color: CHAT_BG, fontWeight: '800' },
+        variant === 'danger' && { color: '#fff' },
+      ]}>{label}</Text>
+    </TouchableOpacity>
+  );
+
   return (
     <>
-      {/* User Location Modal */}
       <UserLocationModal
         visible={locationModalVisible}
-        user={locationModalUser}
+        user={locationModalUser ? { id: locationModalUser.id, name: locationModalUser.name, email: locationModalUser.email } : null}
         onClose={() => setLocationModalVisible(false)}
       />
 
-      {/* Make Admin / Remove Admin Modal */}
-      <Modal visible={makeAdminModalVisible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { maxHeight: 280 }]}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <View style={[styles.modalIconWrap, { backgroundColor: 'rgba(201,169,110,0.12)', borderColor: 'rgba(201,169,110,0.2)' }]}>
-                  <Ionicons
-                    name={makeAdminTarget?.is_admin ? 'shield-outline' : 'shield-checkmark'}
-                    size={13}
-                    color="#C9A96E"
-                  />
-                </View>
-                <Text style={styles.modalTitle}>
-                  {makeAdminTarget?.is_admin ? 'Remove Admin Rights' : 'Grant Admin Rights'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setMakeAdminModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
-              </TouchableOpacity>
+      {/* Make / remove admin */}
+      {renderModalShell(
+        makeAdminModalVisible,
+        () => setMakeAdminModalVisible(false),
+        makeAdminTarget?.is_admin ? 'Remove admin rights' : 'Grant admin rights',
+        makeAdminTarget?.is_admin ? 'shield-outline' : 'shield-checkmark',
+        <>
+          <View style={ss.userPill}>
+            <View style={ss.userPillAvatar}>
+              <Text style={ss.userPillAvatarText}>{(makeAdminTarget?.name || makeAdminTarget?.email || '?')[0].toUpperCase()}</Text>
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={ss.userPillName} numberOfLines={1}>{makeAdminTarget?.name || 'No name'}</Text>
+              <Text style={ss.userPillEmail} numberOfLines={1}>{makeAdminTarget?.email}</Text>
+            </View>
+          </View>
+          <Text style={ss.modalDesc}>
+            {makeAdminTarget?.is_admin
+              ? 'This user will lose all admin privileges and access to the admin panel.'
+              : 'This user will gain full admin privileges and access to the admin panel.'}
+          </Text>
+        </>,
+        <>
+          {renderModalAction('Cancel', () => setMakeAdminModalVisible(false))}
+          {renderModalAction(makeAdminTarget?.is_admin ? 'Remove Admin' : 'Make Admin', () => {
+            if (makeAdminTarget) updateUserAdmin(makeAdminTarget.id, !makeAdminTarget.is_admin);
+            setMakeAdminModalVisible(false); setMakeAdminTarget(null);
+          }, 'primary', 'shield-checkmark')}
+        </>
+      )}
 
-            <View style={styles.modalBody}>
-              {/* User pill */}
-              <View style={styles.userPill}>
-                <View style={styles.userPillAvatar}>
-                  <Text style={styles.userPillAvatarText}>
-                    {(makeAdminTarget?.name || makeAdminTarget?.email || '?')[0].toUpperCase()}
-                  </Text>
-                </View>
-                <View>
-                  <Text style={styles.userPillName}>{makeAdminTarget?.name || 'No name'}</Text>
-                  <Text style={styles.userPillEmail}>{makeAdminTarget?.email}</Text>
-                </View>
-              </View>
-              <Text style={styles.modalDesc}>
-                {makeAdminTarget?.is_admin
-                  ? 'This user will lose all admin privileges and access to the admin panel.'
-                  : 'This user will gain full admin privileges and access to the admin panel.'}
-              </Text>
+      {/* Delete user */}
+      {renderModalShell(
+        deleteUserModalVisible,
+        () => setDeleteUserModalVisible(false),
+        'Delete user',
+        'trash',
+        <>
+          <View style={ss.userPill}>
+            <View style={[ss.userPillAvatar, { backgroundColor: 'rgba(224,112,112,0.12)', borderColor: 'rgba(224,112,112,0.2)' }]}>
+              <Text style={[ss.userPillAvatarText, { color: '#E07070' }]}>{(deleteUserTarget?.name || deleteUserTarget?.email || '?')[0].toUpperCase()}</Text>
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={ss.userPillName} numberOfLines={1}>{deleteUserTarget?.name || 'No name'}</Text>
+              <Text style={ss.userPillEmail} numberOfLines={1}>{deleteUserTarget?.email}</Text>
+            </View>
+          </View>
+          <Text style={ss.modalDesc}>This will permanently delete the user and all their hikes, requests, and data. This action cannot be undone.</Text>
+        </>,
+        <>
+          {renderModalAction('Cancel', () => setDeleteUserModalVisible(false))}
+          {renderModalAction('Delete User', () => {
+            if (deleteUserTarget) deleteUser(deleteUserTarget.id);
+            setDeleteUserModalVisible(false); setDeleteUserTarget(null);
+          }, 'danger', 'trash-outline')}
+        </>
+      )}
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setMakeAdminModalVisible(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, styles.modalConfirmGold]}
-                onPress={() => {
-                  if (makeAdminTarget) updateUserAdmin(makeAdminTarget.id, !makeAdminTarget.is_admin);
-                  setMakeAdminModalVisible(false);
-                  setMakeAdminTarget(null);
-                }}
-              >
-                <Ionicons name="shield-checkmark" size={13} color="#0E1520" />
-                <Text style={styles.modalConfirmText}>
-                  {makeAdminTarget?.is_admin ? 'Remove Admin' : 'Make Admin'}
-                </Text>
+      {/* Delete journal */}
+      {renderModalShell(
+        deleteJournalModalVisible,
+        () => setDeleteJournalModalVisible(false),
+        'Delete journal entry',
+        'trash',
+        <Text style={ss.modalDesc} numberOfLines={3}>“{deleteJournalTarget?.title || 'Untitled'}” by {deleteJournalTarget?.author_name || deleteJournalTarget?.author_email || 'unknown'} will be removed with its photos.</Text>,
+        <>
+          {renderModalAction('Cancel', () => setDeleteJournalModalVisible(false))}
+          {renderModalAction('Delete', submitDeleteJournal, 'danger', 'trash-outline')}
+        </>
+      )}
+
+      {/* Set duration */}
+      {renderModalShell(
+        durationModalVisible,
+        () => setDurationModalVisible(false),
+        'Set event duration',
+        'timer-outline',
+        <>
+          <Text style={ss.modalDesc} numberOfLines={2}>“{durationTarget?.title}” has no usable end time. Enter its duration in hours to re-plan the safety check.</Text>
+          <View style={ss.inputWrapper}>
+            <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.35)" />
+            <TextInput
+              style={ss.inputField}
+              value={durationValue}
+              onChangeText={setDurationValue}
+              keyboardType="numeric"
+              placeholder="e.g. 6"
+              placeholderTextColor="rgba(255,255,255,0.28)"
+            />
+          </View>
+        </>,
+        <>
+          {renderModalAction('Cancel', () => setDurationModalVisible(false))}
+          {renderModalAction('Save', submitDuration, 'primary', 'checkmark')}
+        </>
+      )}
+
+      {/* Attendees */}
+      <Modal visible={attendeesModalVisible} transparent animationType="fade" onRequestClose={() => setAttendeesModalVisible(false)}>
+        <View style={ss.modalOverlay}>
+          <View style={[ss.modalCard, { maxHeight: 460 }]}>
+            <View style={ss.modalHeader}>
+              <View style={ss.modalTitleRow}>
+                <View style={ss.modalIconWrap}><Ionicons name="people-outline" size={13} color={ACCENT_GOLD} /></View>
+                <Text style={ss.modalTitle} numberOfLines={1}>Attendees · {attendeesModalEvent?.title ?? ''}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAttendeesModalVisible(false)} style={ss.modalClose}>
+                <Ionicons name="close" size={13} color={TEXT_MUTED} />
               </TouchableOpacity>
             </View>
+            <ScrollView contentContainerStyle={{ padding: 12, gap: 6 }}>
+              {attendeesLoading ? <Text style={ss.emptyStateText}>Loading attendees…</Text>
+                : attendeesList.length === 0 ? <Text style={ss.emptyStateText}>No RSVPs yet.</Text>
+                : attendeesList.map((a) => (
+                  <View key={a.rsvp_id} style={ss.attendeeRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={ss.rowTitle} numberOfLines={1}>{a.full_name || a.email || 'Unknown'}</Text>
+                      <Text style={ss.rowSub} numberOfLines={1}>{a.email ?? '—'} · {a.contact_number ?? 'no phone'}</Text>
+                    </View>
+                    <View style={[ss.miniBadge, { borderColor: a.status === 'confirmed' ? 'rgba(111,175,138,0.35)' : 'rgba(201,169,110,0.35)' }]}>
+                      <Text style={[ss.miniBadgeText, { color: a.status === 'confirmed' ? '#6FAF8A' : ACCENT_GOLD }]}>{a.status}</Text>
+                    </View>
+                    <Text style={ss.attendeeGuests}>{a.guest_count}×</Text>
+                  </View>
+                ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* Delete User Modal */}
-      <Modal visible={deleteUserModalVisible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { maxHeight: 280 }]}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <View style={[styles.modalIconWrap, { backgroundColor: 'rgba(224,112,112,0.1)', borderColor: 'rgba(224,112,112,0.2)' }]}>
-                  <Ionicons name="trash" size={13} color="#E07070" />
-                </View>
-                <Text style={styles.modalTitle}>Delete User</Text>
-              </View>
-              <TouchableOpacity onPress={() => setDeleteUserModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={13} color="rgba(255,255,255,0.4)" />
+      {/* MAIN SHELL — ChatScreen-style */}
+      <SafeAreaView style={ss.screen} edges={['top', 'left', 'right']}>
+        <View style={ss.shell}>
+          {/* ── SIDEBAR (rail) ── */}
+          <View style={ss.sidebar}>
+            <View style={ss.sidebarHeader}>
+              <TouchableOpacity onPress={() => router.back()} style={ss.backBtn} hitSlop={8} activeOpacity={0.85}>
+                <Ionicons name="arrow-back" size={16} color={TEXT_PRIMARY} />
               </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <View style={styles.userPill}>
-                <View style={[styles.userPillAvatar, { backgroundColor: 'rgba(224,112,112,0.12)', borderColor: 'rgba(224,112,112,0.2)' }]}>
-                  <Text style={[styles.userPillAvatarText, { color: '#E07070' }]}>
-                    {(deleteUserTarget?.name || deleteUserTarget?.email || '?')[0].toUpperCase()}
-                  </Text>
-                </View>
-                <View>
-                  <Text style={styles.userPillName}>{deleteUserTarget?.name || 'No name'}</Text>
-                  <Text style={styles.userPillEmail}>{deleteUserTarget?.email}</Text>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={ss.sidebarTitle} numberOfLines={1}>Admin</Text>
+                <View style={ss.statusRow}>
+                  <View style={ss.statusDot} />
+                  <Text style={ss.statusText}>Signed in</Text>
                 </View>
               </View>
-              <Text style={styles.modalDesc}>
-                This will permanently delete the user and all their hikes, requests, and data. This action cannot be undone.
-              </Text>
             </View>
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setDeleteUserModalVisible(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ss.railContent}>
+              {TABS.map(renderTabIcon)}
+            </ScrollView>
+
+            <View style={ss.sidebarFooter}>
+              <TouchableOpacity onPress={() => { refreshCurrentTab(); fetchStats(); }} activeOpacity={0.85} style={ss.footerBtn}>
+                <Ionicons name="refresh" size={13} color={TEXT_MUTED} />
+                <Text style={ss.footerBtnText}>Refresh</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, styles.modalConfirmRed]}
-                onPress={() => {
-                  if (deleteUserTarget) deleteUser(deleteUserTarget.id);
-                  setDeleteUserModalVisible(false);
-                  setDeleteUserTarget(null);
-                }}
-              >
-                <Ionicons name="trash-outline" size={13} color="#FFFFFF" />
-                <Text style={[styles.modalConfirmText, { color: '#FFFFFF' }]}>Delete User</Text>
+              <TouchableOpacity onPress={openLogoutConfirm} activeOpacity={0.85} style={[ss.footerBtn, ss.footerBtnDanger]}>
+                <Ionicons name="log-out-outline" size={13} color="#E07070" />
+                <Text style={[ss.footerBtnText, { color: '#E07070' }]}>Logout</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
 
-      {/* Main Admin Panel */}
-      <View style={styles.screen}>
-        <View style={styles.card}>
-          {/* Left Panel */}
-          <View style={styles.leftPanel}>
-            <Text style={styles.title}>Admin</Text>
-            <Text style={styles.subtitle}>Dashboard</Text>
-            <View style={styles.dividerH} />
-
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{adminStats?.total_hikes || 0}</Text>
-              <Text style={styles.statLbl}>hikes</Text>
-            </View>
-            <View style={styles.statSep} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{adminStats?.total_users || 0}</Text>
-              <Text style={styles.statLbl}>users</Text>
-            </View>
-
-            <View style={{ flex: 1 }} />
-
-            <TouchableOpacity style={styles.refreshBtn} onPress={fetchAllHikes}>
-              <Ionicons name="refresh" size={13} color="rgba(255,255,255,0.7)" />
-              <Text style={styles.refreshBtnText}>Refresh</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.logoutBtn} onPress={openLogoutConfirm}>
-              <Ionicons name="log-out-outline" size={13} color="#E07070" />
-              <Text style={styles.logoutBtnText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.dividerV} />
-
-          {/* Right Panel with Tabs */}
-          <View style={styles.rightPanel}>
-            <View style={styles.listHeader}>
-              <View style={styles.tabContainer}>
-                <TouchableOpacity
-                  style={[styles.tab, activeTab === 'hikes' && styles.activeTab]}
-                  onPress={() => setActiveTab('hikes')}
-                >
-                  <Text style={[styles.tabText, activeTab === 'hikes' && styles.activeTabText]}>Hikes</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tab, activeTab === 'users' && styles.activeTab]}
-                  onPress={() => setActiveTab('users')}
-                >
-                  <Text style={[styles.tabText, activeTab === 'users' && styles.activeTabText]}>Users</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tab, activeTab === 'orgs' && styles.activeTab]}
-                  onPress={() => setActiveTab('orgs')}
-                >
-                  <Text style={[styles.tabText, activeTab === 'orgs' && styles.activeTabText]}>
-                    Orgs
-                  </Text>
-                  {orgs.filter((o) => !o.is_verified).length > 0 && (
-                    <View style={styles.tabBadge}>
-                      <Text style={styles.tabBadgeText}>
-                        {orgs.filter((o) => !o.is_verified).length}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tab, activeTab === 'events' && styles.activeTab]}
-                  onPress={() => setActiveTab('events')}
-                >
-                  <Text style={[styles.tabText, activeTab === 'events' && styles.activeTabText]}>
-                    Events
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tab, activeTab === 'safety' && styles.activeTab]}
-                  onPress={() => setActiveTab('safety')}
-                >
-                  <Text style={[styles.tabText, activeTab === 'safety' && styles.activeTabText]}>
-                    Safety
-                  </Text>
-                  {adminHikes.concat(adminEvents).some((row) => row.active_alert_id && !row.seen) && (
-                    <View style={styles.tabBadge}>
-                      <Text style={styles.tabBadgeText}>
-                        {adminHikes.concat(adminEvents).filter((row) => row.active_alert_id && !row.seen).length}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+          {/* ── MAIN PANEL ── */}
+          <View style={ss.main}>
+            {renderHeader(
+              TABS.find((t) => t.id === activeTab)?.label ?? 'Admin',
+              statsLoading && !stats ? 'Loading overview…' : 'Signed in as admin',
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={ss.headerPill}>
+                  <Text style={ss.headerPillText}>{stats?.totalUsers ?? 0} users</Text>
+                </View>
+                <View style={[ss.headerPill, { borderColor: 'rgba(224,112,112,0.35)' }]}>
+                  <Text style={[ss.headerPillText, { color: '#E07070' }]}>{stats?.activeAlerts ?? 0} alerts</Text>
+                </View>
               </View>
-            </View>
+            )}
 
+            {/* ── OVERVIEW ── */}
+            {activeTab === 'overview' && (
+              statsLoading && !stats ? (
+                <View style={ss.emptyState}>
+                  <Ionicons name="hourglass-outline" size={20} color={TEXT_MUTED} />
+                  <Text style={ss.emptySubtitle}>Loading overview…</Text>
+                </View>
+              ) : (
+                <ScrollView contentContainerStyle={ss.mainContent} showsVerticalScrollIndicator={false}>
+                  <Text style={ss.sectionLabel}>SYSTEM TOTALS</Text>
+                  <View style={ss.statGrid}>
+                    {renderStat('Total hikes', stats?.totalHikes ?? 0)}
+                    {renderStat('Total users', stats?.totalUsers ?? 0)}
+                    {renderStat('Total orgs', stats?.totalOrgs ?? 0)}
+                    {renderStat('Total events', stats?.totalEvents ?? 0)}
+                  </View>
+                  <Text style={ss.sectionLabel}>VERIFICATION</Text>
+                  <View style={ss.statGrid}>
+                    {renderStat('Verified orgs', stats?.verifiedOrgs ?? 0, '#6FAF8A')}
+                    {renderStat('Pending orgs', stats?.pendingOrgs ?? 0, ACCENT_GOLD)}
+                  </View>
+                  <Text style={ss.sectionLabel}>EVENTS</Text>
+                  <View style={ss.statGrid}>
+                    {renderStat('Published', stats?.publishedEvents ?? 0, '#6FAF8A')}
+                    {renderStat('Drafts', stats?.draftEvents ?? 0)}
+                    {renderStat('Cancelled', stats?.cancelledEvents ?? 0, '#E07070')}
+                    {renderStat('Upcoming', stats?.upcomingEvents ?? 0, '#6FAF8A')}
+                  </View>
+                  <Text style={ss.sectionLabel}>ATTENDANCE</Text>
+                  <View style={ss.statGrid}>
+                    {renderStat('Confirmed RSVPs', stats?.confirmedRsvps ?? 0, '#6FAF8A')}
+                    {renderStat('Waitlist', stats?.waitlistRsvps ?? 0, ACCENT_GOLD)}
+                  </View>
+                  <Text style={ss.sectionLabel}>SAFETY</Text>
+                  <View style={ss.statGrid}>
+                    {renderStat('Pending checks', stats?.pendingSafetyChecks ?? 0)}
+                    {renderStat('Active alerts', stats?.activeAlerts ?? 0, '#E07070')}
+                    {renderStat('SOS (recent)', stats?.sosCount ?? 0, '#E07070')}
+                  </View>
+                </ScrollView>
+              )
+            )}
+
+            {/* ── HIKES ── */}
             {activeTab === 'hikes' && (
-              hikesLoading ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>Loading hikes...</Text>
-                </View>
-              ) : allHikes.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>No hikes yet.</Text>
-                </View>
-              ) : (
-                <FlatList
-                  data={allHikes}
-                  keyExtractor={(h) => h.id}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.listContent}
-                  renderItem={({ item: hike, index }) => (
-                    <View style={[styles.hikeRow, index === allHikes.length - 1 && styles.hikeRowLast]}>
-                      <View style={styles.hikeDot} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.hikeName} numberOfLines={1}>
-                          {hike.user?.name || hike.user?.email || 'Unknown'}
-                        </Text>
-                        <Text style={styles.hikeSub} numberOfLines={1}>
-                          {(hike.mountain_name || hike.mountain_id) ? `${hike.mountain_name || hike.mountain_id} · ` : ''}{hike.start_time} → {hike.end_time}  ·  {hike.tagalongs} along
-                        </Text>
-                        <Text style={styles.hikeMeta} numberOfLines={1}>
-                          Contact: {hike.contact_number || 'N/A'} · Emergency: {hike.emergency_contact || 'N/A'}
+              <>
+                {renderSearch(hikeSearch, setHikeSearch, 'Search user or mountain')}
+                {hikesLoading ? (
+                  <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading hikes…</Text></View>
+                ) : filteredHikes.length === 0 ? (
+                  renderEmpty('trail-sign-outline', 'No hikes yet', 'Personal hikes will appear here once hikers schedule them.')
+                ) : (
+                  <FlatList
+                    data={filteredHikes}
+                    keyExtractor={(h) => h.id}
+                    contentContainerStyle={ss.mainContent}
+                    showsVerticalScrollIndicator={false}
+                    renderItem={({ item: hike, index }) => (
+                      <View style={[ss.row, index === filteredHikes.length - 1 && ss.rowLast]}>
+                        <View style={ss.rowDot} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={ss.rowTitle} numberOfLines={1}>{hike.user?.name || hike.user?.email || 'Unknown'}</Text>
+                          <Text style={ss.rowSub} numberOfLines={1}>
+                            {(hike.mountain_name || hike.mountain_id) ? `${hike.mountain_name || hike.mountain_id} · ` : ''}
+                            {hike.start_time} → {hike.end_time} · {hike.tagalongs} along
+                          </Text>
+                          <Text style={ss.rowMeta} numberOfLines={1}>Contact: {hike.contact_number || 'N/A'} · Emergency: {hike.emergency_contact || 'N/A'}</Text>
+                        </View>
+                        <Text style={ss.rowMetaRight}>
+                          {hike.end_date && hike.end_date !== hike.date
+                            ? formatRangeShort(hike.date, hike.end_date)
+                            : new Date(hike.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </Text>
                       </View>
-                      <Text style={styles.hikeMeta}>
-                        {hike.end_date && hike.end_date !== hike.date
-                          ? formatRangeShort(hike.date, hike.end_date)
-                          : new Date(hike.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </Text>
-                    </View>
-                  )}
-                />
-              )
+                    )}
+                  />
+                )}
+              </>
             )}
 
+            {/* ── USERS ── */}
             {activeTab === 'users' && (
-              usersLoading ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>Loading users...</Text>
-                </View>
-              ) : users.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateText}>No users found.</Text>
-                </View>
-              ) : (
-                <FlatList
-                  data={users}
-                  keyExtractor={(u) => u.id}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.listContent}
-                  renderItem={({ item: u }) => (
-                    <View style={styles.userRow}>
-                      <View style={styles.userInfo}>
-                        <Text style={styles.userName}>{u.name || 'No name'}</Text>
-                        <Text style={styles.userEmail}>{u.email}</Text>
-                        <Text style={styles.userMeta}>Phone: {u.contact_number || 'N/A'}</Text>
-                        <Text style={styles.userMeta}>
-                          Joined {new Date(u.created_at).toLocaleDateString()}
-                        </Text>
-                      </View>
-                      <View style={styles.userActions}>
-                        {/* Location button */}
-                        <TouchableOpacity
-                          onPress={() => {
-                            setLocationModalUser(u);
-                            setLocationModalVisible(true);
-                          }}
-                          style={styles.actionIcon}
-                        >
-                          <Ionicons name="location-outline" size={16} color="#C9A96E" />
-                        </TouchableOpacity>
-
-                        {/* Admin toggle button */}
-                        <TouchableOpacity
-                          onPress={() => {
-                            if (u.id === user?.id) {
-                              showToast('warning', 'Not Allowed', 'You cannot change your own admin status.');
-                              return;
-                            }
-                            setMakeAdminTarget(u);
-                            setMakeAdminModalVisible(true);
-                          }}
-                          style={styles.actionIcon}
-                        >
-                          <Ionicons
-                            name={u.is_admin ? 'shield-checkmark' : 'shield-outline'}
-                            size={16}
-                            color={u.is_admin ? '#C9A96E' : 'rgba(255,255,255,0.5)'}
-                          />
-                        </TouchableOpacity>
-
-                        {/* Delete button */}
-                        <TouchableOpacity
-                          onPress={() => {
-                            if (u.id === user?.id) {
-                              showToast('warning', 'Not Allowed', 'You cannot delete your own account from here.');
-                              return;
-                            }
-                            setDeleteUserTarget(u);
-                            setDeleteUserModalVisible(true);
-                          }}
-                          style={styles.actionIcon}
-                        >
-                          <Ionicons name="trash-outline" size={16} color="#E07070" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                />
-              )
+              <>
+                {renderSearch(userSearch, setUserSearch, 'Search name, email, username')}
+                {renderFilterChips(
+                  [
+                    { id: 'all', label: 'All' },
+                    { id: 'hiker', label: 'Hikers' },
+                    { id: 'organization', label: 'Organizers' },
+                    { id: 'admin', label: 'Admins' },
+                  ] as const,
+                  userRoleFilter,
+                  setUserRoleFilter,
+                )}
+                {usersLoading ? (
+                  <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading users…</Text></View>
+                ) : filteredUsers.length === 0 ? (
+                  renderEmpty('people-outline', 'No users match', 'Try a different search or role filter.')
+                ) : (
+                  <FlatList
+                    data={filteredUsers}
+                    keyExtractor={(u) => u.id}
+                    contentContainerStyle={ss.mainContent}
+                    showsVerticalScrollIndicator={false}
+                    renderItem={({ item: u }) => {
+                      const role = u.role ?? (u.is_admin ? 'admin' : 'hiker');
+                      const online = u.status === 'online';
+                      return (
+                        <View style={ss.userRow}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <View style={ss.userNameRow}>
+                              <View style={[ss.onlineDot, { backgroundColor: online ? CHAT_ONLINE : 'rgba(255,255,255,0.2)' }]} />
+                              <Text style={ss.rowTitle} numberOfLines={1}>{u.name || 'No name'}</Text>
+                              {u.is_admin && <Ionicons name="shield-checkmark" size={11} color={ACCENT_GOLD} style={{ marginLeft: 4 }} />}
+                            </View>
+                            <Text style={ss.rowSub} numberOfLines={1}>{u.email}{u.username ? ` · @${u.username}` : ''}</Text>
+                            <Text style={ss.rowMeta} numberOfLines={1}>
+                              {role}{u.organization_id ? ' · org' : ''}{u.is_verified ? ' · verified' : ''} · {u.contact_number || 'no phone'}
+                            </Text>
+                            <Text style={ss.rowMeta}>
+                              Joined {new Date(u.created_at).toLocaleDateString()}{u.last_seen ? ` · seen ${new Date(u.last_seen).toLocaleDateString()}` : ''}
+                            </Text>
+                          </View>
+                          <View style={ss.userActions}>
+                            <TouchableOpacity onPress={() => { setLocationModalUser(u); setLocationModalVisible(true); }} style={ss.iconAction}>
+                              <Ionicons name="location-outline" size={16} color={ACCENT_GOLD} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => {
+                                if (u.id === user?.id) { showToast('warning', 'Not Allowed', 'You cannot change your own admin status.'); return; }
+                                setMakeAdminTarget(u); setMakeAdminModalVisible(true);
+                              }}
+                              style={ss.iconAction}
+                            >
+                              <Ionicons name={u.is_admin ? 'shield-checkmark' : 'shield-outline'} size={16} color={u.is_admin ? ACCENT_GOLD : TEXT_MUTED} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => {
+                                if (u.id === user?.id) { showToast('warning', 'Not Allowed', 'You cannot delete your own account from here.'); return; }
+                                setDeleteUserTarget(u); setDeleteUserModalVisible(true);
+                              }}
+                              style={ss.iconAction}
+                            >
+                              <Ionicons name="trash-outline" size={16} color="#E07070" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    }}
+                  />
+                )}
+              </>
             )}
 
+            {/* ── ORGS ── */}
             {activeTab === 'orgs' && (
               <>
-                <View style={styles.filterTabs}>
-                  {(['pending', 'verified', 'all'] as const).map((f) => (
-                    <TouchableOpacity
-                      key={f}
-                      style={[styles.filterTab, orgFilter === f && styles.filterTabActive]}
-                      onPress={() => setOrgFilter(f)}
-                    >
-                      <Text
-                        style={[
-                          styles.filterTabText,
-                          orgFilter === f && styles.filterTabTextActive,
-                        ]}
-                      >
-                        {f.charAt(0).toUpperCase() + f.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
+                {renderFilterChips(
+                  [
+                    { id: 'pending', label: 'Pending' },
+                    { id: 'verified', label: 'Verified' },
+                    { id: 'all', label: 'All' },
+                  ] as const,
+                  orgFilter,
+                  setOrgFilter,
+                )}
                 {orgsLoading ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>Loading organizations…</Text>
-                  </View>
+                  <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading organizations…</Text></View>
                 ) : filteredOrgs.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Ionicons
-                      name={orgFilter === 'pending' ? 'checkmark-circle' : 'business-outline'}
-                      size={36}
-                      color={orgFilter === 'pending' ? '#6FAF8A' : 'rgba(255,255,255,0.25)'}
-                    />
-                    <Text style={styles.emptyStateText}>
-                      {orgFilter === 'pending'
-                        ? 'No pending organizations'
-                        : `No ${orgFilter} organizations`}
-                    </Text>
-                  </View>
+                  renderEmpty('business-outline', orgFilter === 'pending' ? 'No pending organizations' : `No ${orgFilter} organizations`, 'New organizations will show up here for verification.')
                 ) : (
                   <FlatList
                     data={filteredOrgs}
                     keyExtractor={(o) => o.id}
+                    contentContainerStyle={ss.mainContent}
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
                     renderItem={({ item: o }) => (
-                      <View style={styles.requestCard}>
-                        <View style={styles.requestHeader}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.requestName} numberOfLines={1}>
-                              {o.name}
-                            </Text>
-                            <Text style={styles.requestEmail} numberOfLines={1}>
-                              {o.contact_email || o.slug}
-                            </Text>
+                      <View style={ss.card}>
+                        <View style={ss.cardHeader}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={ss.rowTitle} numberOfLines={1}>{o.name}</Text>
+                            <Text style={ss.rowSub} numberOfLines={1}>{o.contact_email || o.slug}{o.website ? ` · ${o.website}` : ''}</Text>
                           </View>
-                          <View
-                            style={[
-                              styles.statusBadge,
-                              o.is_verified ? styles.statusApproved : styles.statusPending,
-                            ]}
-                          >
-                            <Text
-                              style={
-                                o.is_verified ? styles.statusTextApproved : styles.statusText
-                              }
-                            >
-                              {o.is_verified ? 'verified' : 'pending'}
-                            </Text>
+                          <View style={[ss.statusBadge, o.is_verified ? ss.statusApproved : ss.statusPending]}>
+                            <Text style={o.is_verified ? ss.statusTextApproved : ss.statusText}>{o.is_verified ? 'verified' : 'pending'}</Text>
                           </View>
                         </View>
-
-                        {o.description ? (
-                          <Text style={styles.requestDate} numberOfLines={2}>
-                            {o.description}
-                          </Text>
-                        ) : null}
-
-                        <Text style={styles.requestDate}>
-                          Registered {new Date(o.created_at).toLocaleDateString()}
-                          {o.contact_phone ? ` · ${o.contact_phone}` : ''}
+                        {o.description ? <Text style={ss.rowMeta} numberOfLines={2}>{o.description}</Text> : null}
+                        <Text style={ss.rowMeta}>
+                          Registered {new Date(o.created_at).toLocaleDateString()}{o.contact_phone ? ` · ${o.contact_phone}` : ''}
                         </Text>
-
-                        <View style={styles.actionButtonsContainer}>
+                        <Text style={[ss.rowMeta, { color: ACCENT_GOLD, fontWeight: '600' }]}>
+                          {o.member_count} member{o.member_count === 1 ? '' : 's'} · {o.event_count} event{o.event_count === 1 ? '' : 's'}
+                        </Text>
+                        <View style={ss.cardActions}>
                           {!o.is_verified ? (
-                            <TouchableOpacity
-                              style={[styles.actionBtn, styles.approveButton]}
-                              onPress={() => handleVerifyOrg(o, true)}
-                              disabled={busyOrgId === o.id}
-                            >
-                              <Ionicons name="shield-checkmark" size={13} color="#6FAF8A" />
-                              <Text style={styles.approveBtnText}>
-                                {busyOrgId === o.id ? 'Verifying…' : 'Verify'}
-                              </Text>
+                            <TouchableOpacity style={[ss.smallBtn, ss.smallBtnSuccess]} onPress={() => handleVerifyOrg(o, true)} disabled={busyOrgId === o.id}>
+                              <Ionicons name="shield-checkmark" size={12} color="#6FAF8A" />
+                              <Text style={ss.smallBtnSuccessText}>{busyOrgId === o.id ? 'Verifying…' : 'Verify'}</Text>
                             </TouchableOpacity>
                           ) : (
-                            <TouchableOpacity
-                              style={[styles.actionBtn, styles.rejectButton]}
-                              onPress={() => handleVerifyOrg(o, false)}
-                              disabled={busyOrgId === o.id}
-                            >
-                              <Ionicons name="shield-outline" size={13} color="#E07070" />
-                              <Text style={styles.rejectBtnText}>
-                                {busyOrgId === o.id ? 'Updating…' : 'Remove verification'}
-                              </Text>
+                            <TouchableOpacity style={[ss.smallBtn, ss.smallBtnDanger]} onPress={() => handleVerifyOrg(o, false)} disabled={busyOrgId === o.id}>
+                              <Ionicons name="shield-outline" size={12} color="#E07070" />
+                              <Text style={ss.smallBtnDangerText}>{busyOrgId === o.id ? 'Updating…' : 'Remove verification'}</Text>
                             </TouchableOpacity>
                           )}
                         </View>
@@ -750,213 +850,309 @@ export default function AdminRoute() {
               </>
             )}
 
+            {/* ── EVENTS ── */}
             {activeTab === 'events' && (
               <>
-                <View style={styles.filterTabs}>
-                  {(['published', 'draft', 'cancelled', 'completed', 'all'] as const).map((f) => (
-                    <TouchableOpacity
-                      key={f}
-                      style={[styles.filterTab, eventFilter === f && styles.filterTabActive]}
-                      onPress={() => setEventFilter(f)}
-                    >
-                      <Text
-                        style={[
-                          styles.filterTabText,
-                          eventFilter === f && styles.filterTabTextActive,
-                        ]}
-                      >
-                        {f.charAt(0).toUpperCase() + f.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
+                {renderFilterChips(
+                  [
+                    { id: 'published', label: 'Published' },
+                    { id: 'draft', label: 'Drafts' },
+                    { id: 'cancelled', label: 'Cancelled' },
+                    { id: 'completed', label: 'Completed' },
+                    { id: 'all', label: 'All' },
+                  ] as const,
+                  eventFilter,
+                  setEventFilter,
+                )}
                 {modEventsLoading ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>Loading events…</Text>
-                  </View>
+                  <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading events…</Text></View>
                 ) : filteredModEvents.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Ionicons
-                      name="calendar-clear-outline"
-                      size={36}
-                      color="rgba(255,255,255,0.25)"
-                    />
-                    <Text style={styles.emptyStateText}>No {eventFilter} events</Text>
-                  </View>
+                  renderEmpty('calendar-outline', `No ${eventFilter} events`, 'Events will show up here once organizers post them.')
                 ) : (
                   <FlatList
                     data={filteredModEvents}
                     keyExtractor={(e) => e.id}
+                    contentContainerStyle={ss.mainContent}
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item: e }) => (
-                      <View style={styles.requestCard}>
-                        <View style={styles.requestHeader}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.requestName} numberOfLines={1}>
-                              {e.title}
-                            </Text>
-                            <Text style={styles.requestEmail} numberOfLines={1}>
-                              {e.organizations?.name ?? 'Unknown org'} · {e.end_date && e.end_date !== e.event_date
-                                ? `${e.event_date} – ${e.end_date}`
-                                : e.event_date}
+                    renderItem={({ item: e }) => {
+                      const hasCap = e.capacity !== null && e.capacity !== undefined;
+                      const pct = hasCap && (e.capacity as number) > 0 ? Math.min(100, (e.rsvp_confirmed / (e.capacity as number)) * 100) : 0;
+                      return (
+                        <View style={ss.card}>
+                          <View style={ss.cardHeader}>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text style={ss.rowTitle} numberOfLines={1}>{e.title}</Text>
+                              <Text style={ss.rowSub} numberOfLines={1}>
+                                {e.organization_name ?? 'Unknown org'}
+                                {e.organization_verified ? ' · verified' : ''} · {e.end_date && e.end_date !== e.event_date ? `${e.event_date} – ${e.end_date}` : e.event_date}
+                              </Text>
+                            </View>
+                            <View style={[
+                              ss.statusBadge,
+                              e.status === 'published' ? ss.statusApproved : e.status === 'cancelled' ? ss.statusRejected : ss.statusPending,
+                            ]}>
+                              <Text style={
+                                e.status === 'published' ? ss.statusTextApproved : e.status === 'cancelled' ? ss.statusTextRejected : ss.statusText
+                              }>{e.status}</Text>
+                            </View>
+                          </View>
+                          <Text style={ss.rowMeta} numberOfLines={2}>
+                            {e.difficulty} · {e.start_time}{e.end_time ? ` – ${e.end_time}` : e.duration_hours ? ` · ${e.duration_hours}h` : ''} · {e.meeting_point}
+                          </Text>
+                          <Text style={ss.rowMeta} numberOfLines={1}>
+                            {e.is_public ? 'Public' : 'Private'} · {e.allow_walkins ? 'Walk-ins allowed' : 'No walk-ins'} · capacity {e.capacity ?? '∞'}
+                          </Text>
+
+                          <View style={ss.attendRow}>
+                            <Text style={ss.attendLabel}>Attending</Text>
+                            <Text style={ss.attendValue}>
+                              {e.rsvp_confirmed}{hasCap ? <Text style={ss.attendSub}>{` / ${e.capacity}`}</Text> : null}
                             </Text>
                           </View>
-                          <View
-                            style={[
-                              styles.statusBadge,
-                              e.status === 'published'
-                                ? styles.statusApproved
-                                : e.status === 'cancelled'
-                                ? styles.statusRejected
-                                : styles.statusPending,
-                            ]}
-                          >
-                            <Text
-                              style={
-                                e.status === 'published'
-                                  ? styles.statusTextApproved
-                                  : e.status === 'cancelled'
-                                  ? styles.statusTextRejected
-                                  : styles.statusText
-                              }
-                            >
-                              {e.status}
-                            </Text>
+                          {hasCap && (
+                            <View style={ss.meter}>
+                              <View style={[ss.meterFill, { width: `${pct}%`, backgroundColor: pct >= 100 ? '#E67E22' : '#6FAF8A' }]} />
+                            </View>
+                          )}
+                          {e.rsvp_waitlist > 0 && <Text style={ss.waitlistText}>{e.rsvp_waitlist} on the waitlist</Text>}
+
+                          <View style={ss.cardActions}>
+                            {(e.status === 'published' || e.status === 'draft') && (
+                              <TouchableOpacity style={[ss.smallBtn, ss.smallBtnDanger]} onPress={() => handleAdminCancelEvent(e.id)} disabled={busyEventId === e.id}>
+                                <Ionicons name="close-circle-outline" size={12} color="#E07070" />
+                                <Text style={ss.smallBtnDangerText}>{busyEventId === e.id ? 'Cancelling…' : 'Force-cancel'}</Text>
+                              </TouchableOpacity>
+                            )}
+                            {e.status === 'cancelled' && (
+                              <TouchableOpacity style={[ss.smallBtn, ss.smallBtnSuccess]} onPress={() => handleAdminReinstateEvent(e.id)} disabled={busyEventId === e.id}>
+                                <Ionicons name="refresh" size={12} color="#6FAF8A" />
+                                <Text style={ss.smallBtnSuccessText}>{busyEventId === e.id ? 'Reinstating…' : 'Reinstate'}</Text>
+                              </TouchableOpacity>
+                            )}
+                            <TouchableOpacity style={[ss.smallBtn, ss.smallBtnGold]} onPress={() => openAttendees(e)}>
+                              <Ionicons name="people-outline" size={12} color={ACCENT_GOLD} />
+                              <Text style={ss.smallBtnGoldText}>Attendees</Text>
+                            </TouchableOpacity>
                           </View>
                         </View>
-
-                        <Text style={styles.requestDate} numberOfLines={2}>
-                          {e.difficulty} · {e.start_time}
-                          {e.capacity !== null ? ` · capacity ${e.capacity}` : ''}
-                          {e.is_public ? ' · public' : ' · private'}
-                        </Text>
-
-                        <View style={styles.actionButtonsContainer}>
-                          {e.status === 'published' || e.status === 'draft' ? (
-                            <TouchableOpacity
-                              style={[styles.actionBtn, styles.rejectButton]}
-                              onPress={() => handleAdminCancelEvent(e.id)}
-                              disabled={busyEventId === e.id}
-                            >
-                              <Ionicons name="close-circle-outline" size={13} color="#E07070" />
-                              <Text style={styles.rejectBtnText}>
-                                {busyEventId === e.id ? 'Cancelling…' : 'Force-cancel'}
-                              </Text>
-                            </TouchableOpacity>
-                          ) : e.status === 'cancelled' ? (
-                            <TouchableOpacity
-                              style={[styles.actionBtn, styles.approveButton]}
-                              onPress={() => handleAdminReinstateEvent(e.id)}
-                              disabled={busyEventId === e.id}
-                            >
-                              <Ionicons name="refresh" size={13} color="#6FAF8A" />
-                              <Text style={styles.approveBtnText}>
-                                {busyEventId === e.id ? 'Reinstating…' : 'Reinstate'}
-                              </Text>
-                            </TouchableOpacity>
-                          ) : null}
-                        </View>
-                      </View>
-                    )}
+                      );
+                    }}
                   />
                 )}
               </>
             )}
 
+            {/* ── SAFETY ── */}
             {activeTab === 'safety' && (
-              <ScrollView contentContainerStyle={styles.listContent}>
-                <View style={styles.filterTabs}>
-                  <Text style={styles.filterTabText}>Personal hikes</Text>
-                </View>
-                {adminLoading ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>Loading safety checks…</Text>
-                  </View>
-                ) : adminError ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>{adminError}</Text>
-                  </View>
-                ) : adminHikes.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No hike safety checks.</Text>
-                  </View>
-                ) : (
-                  adminHikes.map((row) => (
-                    <SafetyRow key={row.check_id} row={row} onMarkSeen={markAdminAlertSeen} />
-                  ))
+              <>
+                {renderFilterChips(
+                  [
+                    { id: 'all', label: 'All' },
+                    { id: 'active', label: 'Active alerts' },
+                    { id: 'needs_duration', label: 'Needs duration' },
+                    { id: 'responded', label: 'Responded' },
+                  ] as const,
+                  safetyFilter,
+                  setSafetyFilter,
                 )}
+                <ScrollView contentContainerStyle={ss.mainContent} showsVerticalScrollIndicator={false}>
+                  <Text style={ss.sectionLabel}>PERSONAL HIKES</Text>
+                  {adminLoading ? (
+                    <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading safety checks…</Text></View>
+                  ) : adminError ? (
+                    <View style={ss.emptyState}><Text style={ss.emptyStateText}>{adminError}</Text></View>
+                  ) : adminHikes.filter(matchesSafetyFilter).length === 0 ? (
+                    <View style={ss.emptyState}><Text style={ss.emptyStateText}>No hike safety checks match.</Text></View>
+                  ) : (
+                    adminHikes.filter(matchesSafetyFilter).map((row) => (
+                      <SafetyRow key={row.check_id} row={row} onMarkSeen={markAdminAlertSeen} onSetDuration={openDurationModal} />
+                    ))
+                  )}
 
-                <View style={styles.filterTabs}>
-                  <Text style={styles.filterTabText}>Organization events</Text>
+                  <Text style={ss.sectionLabel}>ORGANIZATION EVENTS</Text>
+                  {adminLoading ? null : adminEvents.filter(matchesSafetyFilter).length === 0 ? (
+                    <View style={ss.emptyState}><Text style={ss.emptyStateText}>No event safety checks match.</Text></View>
+                  ) : (
+                    adminEvents.filter(matchesSafetyFilter).map((row) => (
+                      <SafetyRow key={row.check_id} row={row} onMarkSeen={markAdminAlertSeen} onSetDuration={openDurationModal} />
+                    ))
+                  )}
+                </ScrollView>
+              </>
+            )}
+
+            {/* ── EMERGENCIES ── */}
+            {activeTab === 'emergencies' && (
+              <ScrollView contentContainerStyle={ss.mainContent} showsVerticalScrollIndicator={false}>
+                <View style={ss.alertBanner}>
+                  <Ionicons name="alert-circle" size={16} color="#E07070" />
+                  <Text style={ss.alertBannerText}>
+                    {sosRows.length} recent SOS ping{sosRows.length === 1 ? '' : 's'}. Contact hikers and authorities if any are live.
+                  </Text>
                 </View>
-                {adminLoading ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>Loading safety checks…</Text>
-                  </View>
-                ) : adminError ? null : adminEvents.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No event safety checks.</Text>
-                  </View>
+                {sosLoading ? (
+                  <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading SOS…</Text></View>
+                ) : sosRows.length === 0 ? (
+                  renderEmpty('shield-checkmark-outline', 'No SOS pings', 'Recent SOS locations will appear here.')
                 ) : (
-                  adminEvents.map((row) => (
-                    <SafetyRow key={row.check_id} row={row} onMarkSeen={markAdminAlertSeen} />
+                  sosRows.map((row) => (
+                    <View key={String(row.id)} style={[ss.card, { borderColor: 'rgba(224,112,112,0.35)' }]}>
+                      <View style={ss.cardHeader}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={ss.rowTitle} numberOfLines={1}>SOS · {new Date(row.timestamp).toLocaleString()}</Text>
+                          <Text style={ss.rowSub} numberOfLines={1}>
+                            {row.latitude.toFixed(5)}, {row.longitude.toFixed(5)} · ±{row.accuracy?.toFixed(0) ?? '?'}m
+                          </Text>
+                        </View>
+                        <View style={[ss.statusBadge, ss.statusRejected]}>
+                          <Text style={ss.statusTextRejected}>SOS</Text>
+                        </View>
+                      </View>
+                      {row.altitude != null && <Text style={ss.rowMeta}>Altitude {row.altitude.toFixed(0)}m</Text>}
+                      {row.user_id && <Text style={ss.rowMeta}>User {row.user_id}</Text>}
+                    </View>
                   ))
                 )}
               </ScrollView>
             )}
+
+            {/* ── MODERATION ── */}
+            {activeTab === 'moderation' && (
+              <>
+                {renderFilterChips(
+                  [
+                    { id: 'journal', label: 'Journal' },
+                    { id: 'discoveries', label: 'Discoveries' },
+                  ] as const,
+                  moderationTab,
+                  setModerationTab,
+                )}
+
+                {moderationTab === 'journal' && (
+                  <>
+                    {renderFilterChips(
+                      [
+                        { id: 'public', label: 'Public only' },
+                        { id: 'all', label: 'All entries' },
+                      ] as const,
+                      journalPublicOnly ? 'public' : 'all',
+                      (id) => setJournalPublicOnly(id === 'public'),
+                    )}
+                    {journalLoading ? (
+                      <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading journal…</Text></View>
+                    ) : journal.length === 0 ? (
+                      renderEmpty('book-outline', 'No journal entries', 'Journal entries will appear here for moderation.')
+                    ) : (
+                      <FlatList
+                        data={journal}
+                        keyExtractor={(j) => j.id}
+                        contentContainerStyle={ss.mainContent}
+                        showsVerticalScrollIndicator={false}
+                        renderItem={({ item: j }) => (
+                          <View style={ss.card}>
+                            <View style={ss.cardHeader}>
+                              <View style={{ flex: 1, minWidth: 0 }}>
+                                <Text style={ss.rowTitle} numberOfLines={1}>{j.title || 'Untitled'}</Text>
+                                <Text style={ss.rowSub} numberOfLines={1}>{j.author_name || j.author_email || 'Unknown'} · {new Date(j.created_at).toLocaleDateString()}</Text>
+                              </View>
+                              <View style={[ss.statusBadge, j.is_public ? ss.statusApproved : ss.statusPending]}>
+                                <Text style={j.is_public ? ss.statusTextApproved : ss.statusText}>{j.is_public ? 'public' : 'private'}</Text>
+                              </View>
+                            </View>
+                            <Text style={ss.rowMeta} numberOfLines={2}>{j.content}</Text>
+                            <Text style={ss.rowMeta}>{j.images.length} photo{j.images.length === 1 ? '' : 's'} · ♥ {j.like_count}{j.rating ? ` · ★ ${j.rating}` : ''}</Text>
+                            <View style={ss.cardActions}>
+                              <TouchableOpacity style={[ss.smallBtn, ss.smallBtnDanger]} onPress={() => confirmDeleteJournal(j)}>
+                                <Ionicons name="trash-outline" size={12} color="#E07070" />
+                                <Text style={ss.smallBtnDangerText}>Delete entry</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                      />
+                    )}
+                  </>
+                )}
+
+                {moderationTab === 'discoveries' && (
+                  <>
+                    {discoveriesLoading ? (
+                      <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading discoveries…</Text></View>
+                    ) : discoveries.length === 0 ? (
+                      renderEmpty('leaf-outline', 'No discoveries', 'Species discoveries will appear here.')
+                    ) : (
+                      <FlatList
+                        data={discoveries}
+                        keyExtractor={(d) => String(d.id)}
+                        contentContainerStyle={ss.mainContent}
+                        showsVerticalScrollIndicator={false}
+                        renderItem={({ item: d }) => (
+                          <View style={ss.row}>
+                            <View style={ss.rowDot} />
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text style={ss.rowTitle} numberOfLines={1}>{d.species_name || d.species_scientific || `Species #${d.species_id}`}</Text>
+                              <Text style={ss.rowSub} numberOfLines={1}>{d.species_scientific ?? '—'} · mountain {d.mountain_id}</Text>
+                              <Text style={ss.rowMeta} numberOfLines={1}>user {d.user_id}</Text>
+                            </View>
+                            <Text style={ss.rowMetaRight}>{new Date(d.discovered_at).toLocaleDateString()}</Text>
+                          </View>
+                        )}
+                      />
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </View>
         </View>
-      </View>
+      </SafeAreaView>
 
-      {/* ── Logout confirm toast ── */}
+      {/* Logout confirm */}
       {showLogoutConfirm && (
-        <Animated.View style={[styles.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
-          <View style={styles.logoutToastBar} />
-          <View style={styles.logoutToastInner}>
-            <Text style={styles.logoutToastTitle}>Sign out?</Text>
-            <Text style={styles.logoutToastMsg}>You'll be logged out of the admin panel.</Text>
-            <View style={styles.logoutToastActions}>
-              <TouchableOpacity style={styles.logoutToastCancel} onPress={dismissLogoutConfirm}>
-                <Text style={styles.logoutToastCancelText}>Cancel</Text>
+        <Animated.View style={[ss.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
+          <View style={ss.logoutToastBar} />
+          <View style={ss.logoutToastInner}>
+            <Text style={ss.logoutToastTitle}>Sign out?</Text>
+            <Text style={ss.logoutToastMsg}>You'll be logged out of the admin panel.</Text>
+            <View style={ss.logoutToastActions}>
+              <TouchableOpacity style={ss.logoutToastCancel} onPress={dismissLogoutConfirm}>
+                <Text style={ss.logoutToastCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.logoutToastConfirm} onPress={confirmLogout}>
-                <Ionicons name="log-out-outline" size={11} color="#0E1520" />
-                <Text style={styles.logoutToastConfirmText}>Sign out</Text>
+              <TouchableOpacity style={ss.logoutToastConfirm} onPress={confirmLogout}>
+                <Ionicons name="log-out-outline" size={11} color={CHAT_BG} />
+                <Text style={ss.logoutToastConfirmText}>Sign out</Text>
               </TouchableOpacity>
             </View>
           </View>
         </Animated.View>
       )}
 
-      {/* ── Feedback toast ── */}
+      {/* Feedback toast */}
       {toast && (
         <Animated.View
           style={[
-            styles.feedbackToast,
-            toast.type === 'success' && styles.feedbackToastSuccess,
-            toast.type === 'error'   && styles.feedbackToastError,
-            toast.type === 'warning' && styles.feedbackToastWarning,
+            ss.feedbackToast,
+            toast.type === 'success' && ss.feedbackToastSuccess,
+            toast.type === 'error' && ss.feedbackToastError,
+            toast.type === 'warning' && ss.feedbackToastWarning,
             { opacity: toastOpacity, transform: [{ translateY: toastY }] },
           ]}
         >
-          <View style={[
-            styles.feedbackToastBar,
+          <View style={[ss.feedbackToastBar,
             toast.type === 'success' && { backgroundColor: '#6FAF8A' },
-            toast.type === 'error'   && { backgroundColor: '#E07070' },
-            toast.type === 'warning' && { backgroundColor: '#C9A96E' },
+            toast.type === 'error' && { backgroundColor: '#E07070' },
+            toast.type === 'warning' && { backgroundColor: ACCENT_GOLD },
           ]} />
-          <View style={styles.feedbackToastIcon}>
+          <View style={ss.feedbackToastIcon}>
             <Ionicons
               name={toast.type === 'success' ? 'checkmark-circle' : toast.type === 'error' ? 'alert-circle' : 'warning'}
               size={15}
-              color={toast.type === 'success' ? '#6FAF8A' : toast.type === 'error' ? '#E07070' : '#C9A96E'}
+              color={toast.type === 'success' ? '#6FAF8A' : toast.type === 'error' ? '#E07070' : ACCENT_GOLD}
             />
           </View>
-          <View style={styles.feedbackToastContent}>
-            <Text style={styles.feedbackToastTitle}>{toast.title}</Text>
-            <Text style={styles.feedbackToastMsg}>{toast.msg}</Text>
+          <View style={ss.feedbackToastContent}>
+            <Text style={ss.feedbackToastTitle}>{toast.title}</Text>
+            <Text style={ss.feedbackToastMsg}>{toast.msg}</Text>
           </View>
         </Animated.View>
       )}
@@ -964,792 +1160,321 @@ export default function AdminRoute() {
   );
 }
 
+/* ─────────── SafetyRow (ChatScreen-tinted) ─────────── */
 function SafetyRow({
   row,
   onMarkSeen,
+  onSetDuration,
 }: {
   row: AdminSafetyRow;
   onMarkSeen: (id: string) => Promise<void>;
+  onSetDuration: (row: AdminSafetyRow) => void;
 }) {
   const isActive = !!row.active_alert_id && !row.seen;
   const statusColor =
-    row.response_status === 'got_home'
-      ? '#6FAF8A'
-      : row.response_status === 'not_home_yet'
-        ? '#E07070'
-        : 'rgba(255,255,255,0.55)';
+    row.response_status === 'got_home' ? '#6FAF8A'
+      : row.response_status === 'not_home_yet' ? '#E07070'
+      : TEXT_MUTED;
 
   return (
-    <View style={[styles.requestCard, isActive && styles.requestCardPending]}>
-      <View style={styles.requestHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.requestName} numberOfLines={1}>
-            {row.subject_name ?? row.subject_email ?? row.subject_user_id}
-          </Text>
-          <Text style={styles.requestEmail} numberOfLines={1}>{row.title}</Text>
+    <View style={[ss.card, isActive && ss.cardAlert]}>
+      <View style={ss.cardHeader}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={ss.rowTitle} numberOfLines={1}>{row.subject_name ?? row.subject_email ?? row.subject_user_id}</Text>
+          <Text style={ss.rowSub} numberOfLines={1}>{row.title}{row.event_id ? ` · event ${row.event_id.slice(0, 8)}…` : ''}</Text>
         </View>
-        <View style={[styles.statusBadge, { borderColor: statusColor, backgroundColor: 'transparent', borderWidth: 1 }]}>
-          <Text style={[styles.statusText, { color: statusColor, textTransform: 'none' }]}>
-            {row.response_status.replace(/_/g, ' ')}
-          </Text>
+        <View style={[ss.statusBadge, { borderColor: statusColor, backgroundColor: 'transparent' }]}>
+          <Text style={[ss.statusText, { color: statusColor, textTransform: 'none' }]}>{row.response_status.replace(/_/g, ' ')}</Text>
         </View>
       </View>
-      <Text style={styles.requestDate}>
+      <Text style={ss.rowMeta}>
         Planned finish {new Date(row.planned_finish_at).toLocaleString()}
         {row.responded_at ? ` · Responded ${new Date(row.responded_at).toLocaleTimeString()}` : ''}
       </Text>
-      {row.needs_duration && (
-        <Text style={[styles.requestDate, { color: '#C9A96E' }]}>Needs duration</Text>
-      )}
+      {row.event_duration_hours ? <Text style={ss.rowMeta}>Duration {row.event_duration_hours}h</Text> : null}
+      {row.needs_duration && <Text style={[ss.rowMeta, { color: ACCENT_GOLD }]}>Needs duration</Text>}
       {row.active_alert_id && (
-        <View style={styles.actionButtonsContainer}>
+        <View style={ss.cardActions}>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: isActive ? '#E07070' : 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '700' }}>
+            <Text style={{ color: isActive ? '#E07070' : TEXT_MUTED, fontSize: 10.5, fontWeight: '700' }}>
               {row.active_alert_type === 'not_home_yet' ? 'Not home yet' : 'No response (1h)'}
-              {row.active_alert_triggered_at
-                ? ` · ${new Date(row.active_alert_triggered_at).toLocaleTimeString()}`
-                : ''}
+              {row.active_alert_triggered_at ? ` · ${new Date(row.active_alert_triggered_at).toLocaleTimeString()}` : ''}
             </Text>
           </View>
           {isActive && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.approveButton]}
-              onPress={() => { void onMarkSeen(row.active_alert_id!); }}
-            >
-              <Ionicons name="checkmark" size={13} color="#6FAF8A" />
-              <Text style={styles.approveBtnText}>Mark seen</Text>
+            <TouchableOpacity style={[ss.smallBtn, ss.smallBtnSuccess]} onPress={() => { void onMarkSeen(row.active_alert_id!); }}>
+              <Ionicons name="checkmark" size={12} color="#6FAF8A" />
+              <Text style={ss.smallBtnSuccessText}>Mark seen</Text>
             </TouchableOpacity>
           )}
+        </View>
+      )}
+      {row.needs_duration && row.event_id && (
+        <View style={ss.cardActions}>
+          <TouchableOpacity style={[ss.smallBtn, ss.smallBtnGold]} onPress={() => onSetDuration(row)}>
+            <Ionicons name="timer-outline" size={12} color={ACCENT_GOLD} />
+            <Text style={ss.smallBtnGoldText}>Set duration</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
   );
 }
 
-// ---------- Styles ----------
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#0E1520',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+/* ─────────── Styles ─────────── */
+const ss = StyleSheet.create({
+  // Shell
+  screen: { flex: 1, backgroundColor: CHAT_BG },
+  shell: { flex: 1, flexDirection: 'row', backgroundColor: CHAT_BG },
+
+  // Sidebar (icon rail)
+  sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: CHAT_BORDER, backgroundColor: CHAT_BG },
+  sidebarHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 10, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: CHAT_BORDER,
   },
+  backBtn: {
+    width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sidebarTitle: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '700', letterSpacing: -0.1 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 },
+  statusDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: CHAT_ONLINE },
+  statusText: { fontSize: 9.5, color: TEXT_MUTED, fontWeight: '500', letterSpacing: 0.2 },
+
+  railContent: { padding: 8, gap: 2 },
+  railItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 10, height: 34, borderRadius: 9,
+  },
+  railItemActive: { backgroundColor: 'rgba(201,169,110,0.12)' },
+  railLabel: { flex: 1, color: TEXT_MUTED, fontSize: 12, fontWeight: '600' },
+  railLabelActive: { color: TEXT_PRIMARY },
+  railBadge: {
+    minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4,
+    backgroundColor: '#E07070', alignItems: 'center', justifyContent: 'center',
+  },
+  railBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+
+  sidebarFooter: { padding: 8, gap: 6, borderTopWidth: 1, borderTopColor: CHAT_BORDER },
+  footerBtn: {
+    height: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+  },
+  footerBtnDanger: { backgroundColor: 'rgba(224,112,112,0.06)', borderColor: 'rgba(224,112,112,0.2)' },
+  footerBtnText: { color: TEXT_MUTED, fontSize: 11, fontWeight: '600' },
+
+  // Main panel
+  main: { flex: 1, minWidth: 0, backgroundColor: CHAT_BG },
+  panelHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    height: 52, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: CHAT_BORDER,
+  },
+  panelTitle: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '700', letterSpacing: -0.1 },
+  panelSubtitle: { color: TEXT_MUTED, fontSize: 10.5, marginTop: 1 },
+
+  headerPill: {
+    height: 22, paddingHorizontal: 8, borderRadius: 11,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerPillText: { color: TEXT_MUTED, fontSize: 10, fontWeight: '600' },
+
+  mainContent: { padding: 14, gap: 8 },
+
+  // Search & chips
+  searchRow: { paddingHorizontal: 14, paddingTop: 12 },
+  searchBox: {
+    height: 32, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10,
+    borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  searchInput: { flex: 1, color: TEXT_PRIMARY, fontSize: 12, paddingVertical: 0 },
+
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 10 },
+  chip: {
+    height: 24, paddingHorizontal: 9, borderRadius: 8, justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  chipActive: { backgroundColor: 'rgba(201,169,110,0.12)', borderColor: 'rgba(201,169,110,0.35)' },
+  chipText: { color: TEXT_MUTED, fontSize: 10.5, fontWeight: '600' },
+  chipTextActive: { color: ACCENT_GOLD },
+
+  // Section + stat grid
+  sectionLabel: {
+    color: 'rgba(255,255,255,0.32)', fontSize: 9, fontWeight: '600',
+    letterSpacing: 0.6, marginTop: 6, marginBottom: 4,
+  },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statCard: {
+    width: '48%', paddingVertical: 8, paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+  },
+  statCardLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 8.5, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
+  statCardValue: { color: TEXT_PRIMARY, fontSize: 18, fontWeight: '800', marginTop: 2 },
+
+  // Rows
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
+  rowLast: { borderBottomWidth: 0 },
+  rowDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: ACCENT_GOLD },
+  rowTitle: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
+  rowSub: { color: TEXT_MUTED, fontSize: 10, marginTop: 1 },
+  rowMeta: { color: 'rgba(255,255,255,0.32)', fontSize: 9.5, marginTop: 2 },
+  rowMetaRight: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '600' },
+
+  userRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
+  userNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  onlineDot: { width: 7, height: 7, borderRadius: 4 },
+  userActions: { flexDirection: 'row', gap: 8, marginLeft: 8 },
+  iconAction: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+
+  // Cards (for orgs/events/journal/safety)
   card: {
-    flexDirection: 'row',
-    width: '100%',
-    maxWidth: 640,
-    flex: 1,
-    maxHeight: 560,
-    backgroundColor: '#0E1520',
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    padding: 12, gap: 4,
   },
-  leftPanel: {
-    width: 150,
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 16,
-    alignItems: 'flex-start',
-    backgroundColor: '#111927',
+  cardAlert: { borderColor: 'rgba(201,169,110,0.3)', backgroundColor: 'rgba(201,169,110,0.04)' },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  cardActions: { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
+
+  // Status badges
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
+  statusPending: { backgroundColor: 'rgba(201,169,110,0.1)', borderColor: 'rgba(201,169,110,0.3)' },
+  statusApproved: { backgroundColor: 'rgba(111,175,138,0.1)', borderColor: 'rgba(111,175,138,0.3)' },
+  statusRejected: { backgroundColor: 'rgba(224,112,112,0.1)', borderColor: 'rgba(224,112,112,0.3)' },
+  statusText: { fontSize: 9.5, fontWeight: '700', textTransform: 'capitalize', color: ACCENT_GOLD },
+  statusTextApproved: { fontSize: 9.5, fontWeight: '700', textTransform: 'capitalize', color: '#6FAF8A' },
+  statusTextRejected: { fontSize: 9.5, fontWeight: '700', textTransform: 'capitalize', color: '#E07070' },
+
+  // Small pill buttons inside cards
+  smallBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  smallBtnSuccess: { backgroundColor: 'rgba(111,175,138,0.1)', borderColor: 'rgba(111,175,138,0.3)' },
+  smallBtnDanger: { backgroundColor: 'rgba(224,112,112,0.1)', borderColor: 'rgba(224,112,112,0.3)' },
+  smallBtnGold: { backgroundColor: 'rgba(201,169,110,0.1)', borderColor: 'rgba(201,169,110,0.3)' },
+  smallBtnSuccessText: { color: '#6FAF8A', fontSize: 10.5, fontWeight: '700' },
+  smallBtnDangerText: { color: '#E07070', fontSize: 10.5, fontWeight: '700' },
+  smallBtnGoldText: { color: ACCENT_GOLD, fontSize: 10.5, fontWeight: '700' },
+
+  // Attendance
+  attendRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  attendLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 9, fontWeight: '600', letterSpacing: 0.4 },
+  attendValue: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '800' },
+  attendSub: { color: TEXT_MUTED, fontSize: 10.5, fontWeight: '600' },
+  meter: { height: 4, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 2, overflow: 'hidden', marginTop: 4 },
+  meterFill: { height: '100%', borderRadius: 2 },
+  waitlistText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '600', marginTop: 4 },
+
+  // Empty state (ChatScreen-style)
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, backgroundColor: CHAT_BG },
+  emptyIconWrap: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: 'rgba(201,169,110,0.08)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 20, borderWidth: 1, borderColor: 'rgba(201,169,110,0.2)',
   },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  subtitle: {
-    color: 'rgba(255,255,255,0.38)',
-    fontSize: 11,
-    marginBottom: 12,
-  },
-  dividerH: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    alignSelf: 'stretch',
-    marginBottom: 12,
-  },
-  statItem: {
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  statNum: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '700',
-    lineHeight: 28,
-  },
-  statLbl: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 9,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
-  statSep: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    alignSelf: 'stretch',
-    marginBottom: 10,
-  },
-  notifBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'stretch',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginBottom: 6,
-    justifyContent: 'center',
-  },
-  notifBtnText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  notifBadge: {
-    backgroundColor: '#E07070',
-    borderRadius: 8,
-    minWidth: 14,
-    height: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 3,
-  },
-  notifBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  refreshBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'stretch',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginBottom: 6,
-    justifyContent: 'center',
-  },
-  refreshBtnText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'stretch',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: 'rgba(224,112,112,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.2)',
-    justifyContent: 'center',
-  },
-  logoutBtnText: {
-    color: '#E07070',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  dividerV: {
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  rightPanel: {
-    flex: 1,
-    paddingTop: 14,
-    paddingBottom: 14,
-  },
-  listHeader: {
-    paddingHorizontal: 14,
-    marginBottom: 8,
-  },
-  listTitle: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  listContent: {
-    paddingHorizontal: 14,
-  },
-  hikeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.04)',
-  },
-  hikeRowLast: {
-    borderBottomWidth: 0,
-  },
-  hikeDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#C9A96E',
-  },
-  hikeName: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  hikeSub: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 10,
-    marginTop: 1,
-  },
-  hikeMeta: {
-    color: '#C9A96E',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 40,
-  },
-  emptyStateText: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.35)',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: TEXT_PRIMARY, marginBottom: 8, letterSpacing: -0.3 },
+  emptySubtitle: { fontSize: 13, color: TEXT_MUTED, textAlign: 'center', lineHeight: 20, maxWidth: 280, marginBottom: 24 },
+  emptyStateText: { fontSize: 12, color: TEXT_MUTED, textAlign: 'center' },
+
+  // Modals
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalCard: {
-    width: '100%',
-    maxWidth: 440,
-    maxHeight: 560,
-    backgroundColor: '#111927',
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    width: '100%', maxWidth: 460, maxHeight: 560,
+    backgroundColor: CHAT_BG, borderRadius: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: CHAT_BORDER,
   },
-  modalTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  closeBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  filterTabs: {
-    flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
-  },
-  filterTab: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  filterTabActive: {
-    backgroundColor: '#C9A96E',
-    borderColor: '#C9A96E',
-  },
-  filterTabText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.5)',
-  },
-  filterTabTextActive: {
-    color: '#0E1520',
-  },
-  modalScroll: {
-    padding: 14,
-  },
-  requestCard: {
-    backgroundColor: '#0E1520',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-  },
-  requestCardPending: {
-    borderColor: 'rgba(201,169,110,0.3)',
-    backgroundColor: 'rgba(201,169,110,0.04)',
-  },
-  requestHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-    gap: 8,
-  },
-  requestName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  requestEmail: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.38)',
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  statusPending: {
-    backgroundColor: 'rgba(201,169,110,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.3)',
-  },
-  statusApproved: {
-    backgroundColor: 'rgba(111,175,138,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(111,175,138,0.3)',
-  },
-  statusRejected: {
-    backgroundColor: 'rgba(224,112,112,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.3)',
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-    color: '#C9A96E',
-  },
-  statusTextApproved: {
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-    color: '#6FAF8A',
-  },
-  statusTextRejected: {
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-    color: '#E07070',
-  },
-  requestDate: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.35)',
-    marginBottom: 6,
-  },
-  respondedDate: {
-    fontSize: 10,
-    color: '#6FAF8A',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 999,
-    gap: 4,
-  },
-  approveButton: {
-    backgroundColor: 'rgba(111,175,138,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(111,175,138,0.3)',
-  },
-  rejectButton: {
-    backgroundColor: 'rgba(224,112,112,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.3)',
-  },
-  approveBtnText: {
-    color: '#6FAF8A',
-    fontWeight: '600',
-    fontSize: 11,
-  },
-  rejectBtnText: {
-    color: '#E07070',
-    fontWeight: '600',
-    fontSize: 11,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 12,
-  },
-  tab: {
-    paddingBottom: 6,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: '#C9A96E',
-  },
-  tabText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  tabBadge: {
-    marginLeft: 4,
-    backgroundColor: '#E07070',
-    borderRadius: 8,
-    minWidth: 14,
-    height: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 3,
-  },
-  tabBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  activeTabText: {
-    color: '#C9A96E',
-  },
-  userRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.04)',
-  },
-  userInfo: {
-    flex: 1,
-  },
-  userName: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  userEmail: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  userMeta: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 9,
-    marginTop: 2,
-  },
-  userActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginLeft: 12,
-  },
-  actionIcon: {
-    padding: 4,
-  },
-  logoutToast: {
-    position: 'absolute',
-    bottom: 40,
-    left: '50%',
-    marginLeft: -140,
-    width: 280,
-    flexDirection: 'row',
-    backgroundColor: '#141E2D',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.2)',
-    overflow: 'hidden',
-    zIndex: 100,
-    elevation: 10,
-  },
-  logoutToastBar: {
-    width: 3,
-    backgroundColor: '#BF6A6A',
-    alignSelf: 'stretch',
-  },
-  logoutToastInner: {
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-  },
-  logoutToastTitle: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  logoutToastMsg: {
-    color: 'rgba(255,255,255,0.42)',
-    fontSize: 10,
-    lineHeight: 13,
-    marginBottom: 8,
-  },
-  logoutToastActions: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  logoutToastCancel: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  logoutToastCancelText: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  logoutToastConfirm: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 5,
-    borderRadius: 6,
-    backgroundColor: '#BF6A6A',
-  },
-  logoutToastConfirmText: {
-    color: '#0E1520',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  // ── Shared modal layout ──────────────────────────────────────────────────
-  modalTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   modalIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    backgroundColor: 'rgba(111,175,138,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(111,175,138,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 26, height: 26, borderRadius: 8,
+    backgroundColor: 'rgba(201,169,110,0.1)', borderWidth: 1, borderColor: 'rgba(201,169,110,0.22)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  modalBody: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 10,
-  },
-  modalDesc: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.45)',
-    lineHeight: 18,
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-  },
-  modalCancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+  modalTitle: { fontSize: 14, fontWeight: '700', color: TEXT_PRIMARY },
+  modalClose: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+  modalBody: { paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
+  modalDesc: { fontSize: 12, color: TEXT_MUTED, lineHeight: 18 },
+  modalActionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  modalCancelText: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  modalConfirmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-  },
-  modalConfirmGreen: {
-    backgroundColor: '#6FAF8A',
-  },
-  modalConfirmGold: {
-    backgroundColor: '#C9A96E',
-  },
-  modalConfirmRed: {
-    backgroundColor: '#E07070',
-  },
-  modalConfirmDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  modalConfirmText: {
-    color: '#0E1520',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  modalConfirmTextDisabled: {
-    color: 'rgba(255,255,255,0.25)',
-  },
+  modalActionPrimary: { backgroundColor: ACCENT_GOLD, borderColor: ACCENT_GOLD },
+  modalActionDanger: { backgroundColor: '#E07070', borderColor: '#E07070' },
+  modalActionText: { color: TEXT_MUTED, fontSize: 12, fontWeight: '600' },
 
-  // ── Password input ───────────────────────────────────────────────────────
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0E1520',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
-    paddingHorizontal: 10,
-    height: 42,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 10, height: 42, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
-  inputIcon: {
-    marginRight: 2,
-  },
-  inputField: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 13,
-    paddingVertical: 0,
-  },
-  inputEye: {
-    padding: 4,
-  },
-  inputHint: {
-    fontSize: 11,
-    color: '#E07070',
-    marginTop: -4,
-  },
+  inputField: { flex: 1, color: TEXT_PRIMARY, fontSize: 13, paddingVertical: 0 },
 
-  // ── User pill (admin / delete confirm) ───────────────────────────────────
   userPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    padding: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 10,
   },
   userPillAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(201,169,110,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: 'rgba(201,169,110,0.12)', borderWidth: 1, borderColor: 'rgba(201,169,110,0.2)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  userPillAvatarText: {
-    color: '#C9A96E',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  userPillName: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  userPillEmail: {
-    color: 'rgba(255,255,255,0.38)',
-    fontSize: 10,
-    marginTop: 1,
-  },
+  userPillAvatarText: { color: ACCENT_GOLD, fontSize: 13, fontWeight: '700' },
+  userPillName: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '600' },
+  userPillEmail: { color: TEXT_MUTED, fontSize: 10, marginTop: 1 },
 
-  // ── Feedback toast ───────────────────────────────────────────────────────
+  attendeeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  miniBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
+  miniBadgeText: { fontSize: 9, fontWeight: '700', textTransform: 'capitalize' },
+  attendeeGuests: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
+
+  // Emergency banner
+  alertBanner: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: 'rgba(224,112,112,0.08)', borderWidth: 1, borderColor: 'rgba(224,112,112,0.3)',
+    borderRadius: 10, padding: 10,
+  },
+  alertBannerText: { flex: 1, color: 'rgba(255,255,255,0.75)', fontSize: 11, lineHeight: 15 },
+
+  // Toasts (ChatScreen-consistent)
+  logoutToast: {
+    position: 'absolute', bottom: 40, left: '50%', marginLeft: -140, width: 280,
+    flexDirection: 'row', backgroundColor: '#141E2D', borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(224,112,112,0.2)', overflow: 'hidden', zIndex: 100, elevation: 10,
+  },
+  logoutToastBar: { width: 3, backgroundColor: '#BF6A6A', alignSelf: 'stretch' },
+  logoutToastInner: { flex: 1, paddingHorizontal: 10, paddingVertical: 9 },
+  logoutToastTitle: { color: TEXT_PRIMARY, fontSize: 11, fontWeight: '700', marginBottom: 2 },
+  logoutToastMsg: { color: 'rgba(255,255,255,0.42)', fontSize: 10, lineHeight: 13, marginBottom: 8 },
+  logoutToastActions: { flexDirection: 'row', gap: 6 },
+  logoutToastCancel: { flex: 1, alignItems: 'center', paddingVertical: 5, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  logoutToastCancelText: { color: TEXT_MUTED, fontSize: 10, fontWeight: '600' },
+  logoutToastConfirm: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 5, borderRadius: 6, backgroundColor: '#BF6A6A' },
+  logoutToastConfirmText: { color: CHAT_BG, fontSize: 10, fontWeight: '700' },
+
   feedbackToast: {
-    position: 'absolute',
-    bottom: 16,
-    left: '50%',
-    marginLeft: -148,
-    width: 296,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#141E2D',
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
-    zIndex: 200,
-    elevation: 12,
+    position: 'absolute', bottom: 16, left: '50%', marginLeft: -148, width: 296,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#141E2D',
+    borderRadius: 10, borderWidth: 1, overflow: 'hidden', zIndex: 200, elevation: 12,
   },
-  feedbackToastSuccess: {
-    borderColor: 'rgba(111,175,138,0.25)',
-  },
-  feedbackToastError: {
-    borderColor: 'rgba(224,112,112,0.25)',
-  },
-  feedbackToastWarning: {
-    borderColor: 'rgba(201,169,110,0.25)',
-  },
-  feedbackToastBar: {
-    width: 3,
-    alignSelf: 'stretch',
-  },
-  feedbackToastIcon: {
-    paddingLeft: 10,
-    paddingRight: 2,
-    justifyContent: 'center',
-  },
-  feedbackToastContent: {
-    flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-  },
-  feedbackToastTitle: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    marginBottom: 1,
-  },
-  feedbackToastMsg: {
-    color: 'rgba(255,255,255,0.42)',
-    fontSize: 10,
-    lineHeight: 14,
-  },
+  feedbackToastSuccess: { borderColor: 'rgba(111,175,138,0.25)' },
+  feedbackToastError: { borderColor: 'rgba(224,112,112,0.25)' },
+  feedbackToastWarning: { borderColor: 'rgba(201,169,110,0.25)' },
+  feedbackToastBar: { width: 3, alignSelf: 'stretch' },
+  feedbackToastIcon: { paddingLeft: 10, paddingRight: 2, justifyContent: 'center' },
+  feedbackToastContent: { flex: 1, paddingHorizontal: 8, paddingVertical: 10 },
+  feedbackToastTitle: { color: TEXT_PRIMARY, fontSize: 11, fontWeight: '700', marginBottom: 1 },
+  feedbackToastMsg: { color: 'rgba(255,255,255,0.42)', fontSize: 10, lineHeight: 14 },
 });

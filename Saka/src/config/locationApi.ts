@@ -15,6 +15,7 @@ export interface LocationData {
   speed?: number;
   timestamp: string;
   is_sos?: boolean;
+  user_id?: string;
 }
 
 /**
@@ -30,8 +31,13 @@ export async function uploadLocationToSupabase(
   isSOS: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) return { success: false, error: 'Sign in before uploading location data.' };
+
     // Prepare upload data
     const uploadData = {
+      user_id: user.id,
       latitude: location.latitude,
       longitude: location.longitude,
       accuracy: location.accuracy,
@@ -43,36 +49,14 @@ export async function uploadLocationToSupabase(
     };
 
     // Insert into hiker_locations table
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('hiker_locations')
       .insert([uploadData]);
 
     if (error) {
-      // Table might not exist in development mode
-      if (error.code === 'PGRST116') {
-        console.warn('Note: hiker_locations table not found. Create this table in Supabase:');
-        console.warn(`
-          CREATE TABLE hiker_locations (
-            id bigint primary key generated always as identity,
-            latitude float8 not null,
-            longitude float8 not null,
-            accuracy float8 not null,
-            altitude float8,
-            heading float8,
-            speed float8,
-            timestamp timestamp not null,
-            is_sos boolean default false,
-            user_id uuid references auth.users,
-            created_at timestamp default now()
-          );
-        `);
-        return { success: true, error: 'Table not configured, but location saved locally' };
-      }
-
       throw error;
     }
 
-    console.log('✓ Location uploaded successfully');
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -92,16 +76,18 @@ export async function getLocationHistory(
   limit: number = 100
 ): Promise<LocationData[]> {
   try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) return [];
+
     const { data, error } = await supabase
       .from('hiker_locations')
       .select('*')
+      .eq('user_id', user.id)
       .order('timestamp', { ascending: false })
       .limit(limit);
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return [];
-      }
       throw error;
     }
 
@@ -128,7 +114,7 @@ export async function getSOSAlerts(): Promise<LocationData[]> {
       .limit(20);
 
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === 'PGRST205') {
         return [];
       }
       throw error;
