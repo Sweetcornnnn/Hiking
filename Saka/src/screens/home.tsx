@@ -849,24 +849,6 @@ const styles = StyleSheet.create({
   logoutToastCancelText: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '600' },
   logoutToastConfirm: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8, backgroundColor: '#BF6A6A' },
   logoutToastConfirmText: { color: '#0E1520', fontSize: 12, fontWeight: '700' },
-  headerRightButtons: { flexDirection: 'row', alignItems: 'center' },
-  logoutToastCancelText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  logoutToastConfirm: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#BF6A6A',
-  },
-  logoutToastConfirmText: {
-    color: '#0E1520',
-    fontSize: 12,
-    fontWeight: '700',
-  },
   headerRightButtons: {
     flexDirection: 'row',
     alignItems: 'center',

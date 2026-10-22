@@ -4,9 +4,9 @@ import {
   View,
   Text,
   FlatList,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
@@ -30,11 +30,41 @@ type OnlineUser = {
   is_online: boolean | null;
 };
 
-export default function OnlineUsersList({
-  onSelectUser,
+function OnlineUserAvatar({
+  user,
+  name,
 }: {
-  onSelectUser?: (userId: string) => void;
+  user: OnlineUser;
+  name: string;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const avatarUrl = user.avatar_url?.trim();
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatarUrl]);
+
+  return (
+    <View
+      style={[
+        styles.avatar,
+        { backgroundColor: getAvatarColor(user.id) },
+      ]}
+    >
+      {avatarUrl && !imageFailed ? (
+        <Image
+          source={{ uri: avatarUrl }}
+          style={styles.avatarImage}
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <Text style={styles.avatarText}>{getInitials(name)}</Text>
+      )}
+    </View>
+  );
+}
+
+export default function OnlineUsersList() {
   const [users, setUsers] = useState<OnlineUser[]>([]);
   const [loading, setLoading] = useState(true);
   const currentUser = useAuthStore((s) => s.user);
@@ -58,7 +88,7 @@ export default function OnlineUsersList({
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 30_000);
+    const interval = setInterval(load, 15_000);
     const channel = supabase
       .channel(`online-users-${Date.now()}`)
       .on(
@@ -106,20 +136,9 @@ export default function OnlineUsersList({
             const name = item.full_name || item.username || 'Anonymous';
             const status = item.status || 'Online';
             return (
-              <TouchableOpacity
-                style={styles.row}
-                activeOpacity={0.7}
-                onPress={() => onSelectUser?.(item.id)}
-              >
+              <View style={styles.row}>
                 <View style={styles.avatarWrap}>
-                  <View
-                    style={[
-                      styles.avatar,
-                      { backgroundColor: getAvatarColor(item.id) },
-                    ]}
-                  >
-                    <Text style={styles.avatarText}>{getInitials(name)}</Text>
-                  </View>
+                  <OnlineUserAvatar user={item} name={name} />
                   <View style={styles.onlineDot} />
                 </View>
                 <View style={styles.info}>
@@ -130,7 +149,7 @@ export default function OnlineUsersList({
                     {status}
                   </Text>
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           }}
         />
@@ -189,6 +208,11 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   onlineDot: {
