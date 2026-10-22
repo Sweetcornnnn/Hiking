@@ -381,10 +381,10 @@ export default function ProfileCard({
                     <TouchableOpacity
                       key={action.id}
                       style={styles.quickBtn}
-                      onPress={() => setView(action.id)}
+                      onPress={() => openScreen(action.id)}
                       activeOpacity={0.8}
                       accessibilityRole="button"
-                      accessibilityLabel={`Show ${action.label}`}
+                      accessibilityLabel={`Open ${action.label}`}
                     >
                       <View style={styles.quickIconWrap}>
                         <Ionicons name={action.icon as any} size={22} color="#C9A96E" />
@@ -411,7 +411,7 @@ export default function ProfileCard({
                 <View style={styles.journalCard}>
                   <TouchableOpacity
                     style={styles.journalBtn}
-                    onPress={() => setView('journal')}
+                    onPress={() => openScreen('journal')}
                     activeOpacity={0.8}
                     accessibilityRole="button"
                     accessibilityLabel="Open Journal"
@@ -466,7 +466,7 @@ export default function ProfileCard({
 
                   <TouchableOpacity
                     style={styles.miniBtn}
-                    onPress={() => setView('location')}
+                    onPress={() => openScreen('location')}
                     activeOpacity={0.8}
                     accessibilityRole="button"
                     accessibilityLabel="Open Location"
