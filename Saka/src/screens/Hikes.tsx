@@ -22,6 +22,7 @@ import Toast, { ToastHandle } from '../components/Toast';
 import { dateInRange, effectiveEnd, formatRangeShort } from '../utils/dateRange';
 import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
+import { HikeCardFace, getCardShell, CARD_VARIANT } from '../components/HikeCardFace';
 
 const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
 
@@ -52,13 +53,6 @@ const WIPE_STOPS = [0, 0.22, 0.45, 0.7, 1];
 const WIPE_FILL_COLORS = ['#F2994A', '#EB5757', '#D64545', '#A5222B', '#4A0E0E'];
 const WIPE_EDGE_COLORS = ['#FFD08A', '#FF8A65', '#FF5252', '#FF3B30', '#FF6B4A'];
 const WIPE_BORDER_COLORS = ['rgba(255,255,255,0.07)', '#F2994A', '#EB5757', '#D64545', '#FF3B30'];
-
-// Your own hikes keep the gold accent used throughout the app. Hikes other
-// people put on the calendar get a distinct cool blue instead, so ownership
-// reads at a glance from the icon badge, the left accent bar, and the
-// "Shared" tag — not just a small eye icon buried in the corner.
-const OWN_ACCENT = '#C9A96E';
-const SHARED_ACCENT = '#7CA8FF';
 
 const keyExtractor = (hike: Hike) => hike.id;
 
@@ -222,6 +216,7 @@ const HikeCard = React.memo(function HikeCard({
     if (canEdit) onEdit(hike);
   };
 
+  const shell = getCardShell(CARD_VARIANT, canEdit);
   const wipeWidth = fillAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, cardWidth],
@@ -239,7 +234,7 @@ const HikeCard = React.memo(function HikeCard({
   // Card border catches the same heat as it commits.
   const cardBorderColor = fillAnim.interpolate({
     inputRange: WIPE_STOPS,
-    outputRange: WIPE_BORDER_COLORS,
+    outputRange: [(shell.borderColor as string) ?? WIPE_BORDER_COLORS[0], ...WIPE_BORDER_COLORS.slice(1)],
   });
   // Trash icon fades in on the right as a "you're about to lose this" cue.
   const trashOpacity = fillAnim.interpolate({
@@ -261,13 +256,14 @@ const HikeCard = React.memo(function HikeCard({
   const isMultiDay = !!(hike.end_date && hike.end_date !== hike.date);
   const isFirstDay = hike.date === displayDate;
   const isLastDay = effectiveEnd(hike.date, hike.end_date) === displayDate;
-  const timeText = !isMultiDay
-    ? `${formatTimeShort(hike.start_time)}–${formatTimeShort(hike.end_time)}`
-    : isFirstDay && !isLastDay
-      ? `Starts ${formatTimeShort(hike.start_time)}`
-      : isLastDay && !isFirstDay
-        ? `Ends ${formatTimeShort(hike.end_time)}`
-        : `${formatTimeShort(hike.start_time)}–${formatTimeShort(hike.end_time)}`;
+  // Big part + small part, so each card design can give the time real weight.
+  const showEndOnly = isMultiDay && isLastDay && !isFirstDay;
+  const timePrimary = showEndOnly ? formatTimeShort(hike.end_time) : formatTimeShort(hike.start_time);
+  const timeSecondary = showEndOnly
+    ? 'ends'
+    : isMultiDay && isFirstDay && !isLastDay
+      ? 'starts'
+      : `until ${formatTimeShort(hike.end_time)}`;
 
   return (
     <Pressable
@@ -279,45 +275,25 @@ const HikeCard = React.memo(function HikeCard({
       <Animated.View
         style={[
           styles.card,
-          !canEdit && styles.cardShared,
+          shell,
           canEdit ? { borderColor: cardBorderColor } : null,
           { transform: [{ translateX }, { scale: cardScale }] },
         ]}
       >
-        <View style={[styles.accentBar, { backgroundColor: canEdit ? OWN_ACCENT : SHARED_ACCENT }]} />
-
-        <View style={styles.cardTopRow}>
-          <View style={[styles.cardIconWrap, !canEdit && styles.cardIconWrapShared]}>
-            <Ionicons name="trail-sign" size={16} color={canEdit ? OWN_ACCENT : SHARED_ACCENT} />
-          </View>
-          <View style={styles.cardBadgeStack}>
-            {weather ? (
-              <Ionicons name={getWeatherIconName(weather.icon)} size={12} color={getWeatherIconColor(weather.icon)} />
-            ) : null}
-            {!canEdit ? (
-              <View style={styles.sharedPill}>
-                <Ionicons name="eye-outline" size={9} color={SHARED_ACCENT} />
-                <Text style={styles.sharedPillText}>Shared</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        <View style={styles.cardInfoBlock}>
-          <Text style={styles.cardTime}>
-            {timeText}
-          </Text>
-          <View style={styles.cardRow}>
-            <Ionicons name="calendar-outline" size={10} color="rgba(201,169,110,0.7)" />
-            <Text style={styles.cardRowText}>
-              {formatRangeShort(hike.date, hike.end_date)}
-            </Text>
-          </View>
-          <View style={styles.cardRow}>
-            <Ionicons name="people-outline" size={10} color="rgba(255,255,255,0.5)" />
-            <Text style={styles.cardRowText}>{hike.tagalongs}</Text>
-          </View>
-        </View>
+        <HikeCardFace
+          variant={CARD_VARIANT}
+          canEdit={canEdit}
+          hikeId={hike.id}
+          timePrimary={timePrimary}
+          timeSecondary={timeSecondary}
+          dateText={formatRangeShort(hike.date, hike.end_date)}
+          group={hike.tagalongs}
+          weather={
+            weather
+              ? { name: getWeatherIconName(weather.icon), code: weather.icon, color: getWeatherIconColor(weather.icon) }
+              : null
+          }
+        />
 
         {canEdit ? (
           <>
@@ -631,95 +607,13 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'stretch',
     minHeight: 92,
-    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    backgroundColor: '#0E1520',
-    padding: 10,
-    gap: 8,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 3,
-  },
-  // Other people's hikes get a subtle cool-blue tint on the card itself —
-  // just enough to read as "different" at a glance, still calm at rest.
-  cardShared: {
-    borderColor: 'rgba(124,168,255,0.22)',
-    backgroundColor: '#101724',
-  },
-  // A thin left accent bar in the ownership color (gold for yours, blue for
-  // shared) — the fastest thing to scan across a whole grid of cards.
-  accentBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-    opacity: 0.85,
-  },
-  cardIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(201,169,110,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardIconWrapShared: {
-    backgroundColor: 'rgba(124,168,255,0.12)',
-    borderColor: 'rgba(124,168,255,0.22)',
-  },
-  cardBadgeStack: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    gap: 4,
-    minHeight: 32,
-  },
-  cardInfoBlock: {
-    minWidth: 0,
-    gap: 5,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  cardTime: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  cardRowText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 10,
-    flexShrink: 1,
-  },
-  sharedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: 'rgba(124,168,255,0.14)',
-  },
-  sharedPillText: {
-    color: '#AECBFF',
-    fontSize: 8,
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
   // The main fill of the hold-to-delete wipe. Its backgroundColor is driven
   // by an Animated interpolation, so it visibly shifts hue (amber → red →
