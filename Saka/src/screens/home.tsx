@@ -21,6 +21,7 @@ import { useVideoPlayer, VideoView, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
+import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
 import GlobalChatNotifier from '../components/chat/GlobalChatNotifier'; // <-- NEW
 import { mountainService, Mountain } from '../services/mountainService';
 import { persistProfileAvatarLocally } from '../services/profileAvatarService';
@@ -241,7 +242,6 @@ export default function HomeScreen() {
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
-  const [mountainsUpdatedAt, setMountainsUpdatedAt] = useState(() => mountainService.getMountainsLastUpdatedAt());
 
   // ── NOTIFICATION BANNER STATE ──
   const [bannerData, setBannerData] = useState<{ type: string; id: string; senderName: string; content: string } | null>(null);
@@ -282,9 +282,8 @@ export default function HomeScreen() {
   const isPortrait = dimensions.height > dimensions.width;
 
   useEffect(() => {
-    const unsubscribe = mountainService.subscribeToCache((updatedMountains, updatedAt) => {
+    const unsubscribe = mountainService.subscribeToCache((updatedMountains) => {
       setMountains(updatedMountains);
-      setMountainsUpdatedAt(updatedAt);
     });
     if (mountains.length === 0) {
       void mountainService.fetchMountains().catch((fetchError) => {
@@ -519,11 +518,6 @@ export default function HomeScreen() {
             <Text style={styles.profileName} numberOfLines={1}>
               {user?.name?.split(' ')[0] || 'Hiker'}
             </Text>
-            {mountainsUpdatedAt ? (
-              <Text style={styles.cacheTimestamp} numberOfLines={1}>
-                Trail data saved {new Date(mountainsUpdatedAt).toLocaleDateString()}
-              </Text>
-            ) : null}
           </View>
           <View style={styles.profileChevronWrap}>
             <Ionicons name="chevron-down" size={11} color="#C9A96E" />
@@ -531,6 +525,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerRightButtons}>
+          <OfflineStatusIndicator />
           <TutorialHelpButton onPress={tutorial.open} style={styles.helpButton} />
           {profile?.role === 'organization' && (
             <TouchableOpacity
@@ -820,7 +815,6 @@ const styles = StyleSheet.create({
   profileTextContainer: { justifyContent: 'center', marginRight: 8 },
   profileGreeting: { color: 'rgba(255,255,255,0.38)', fontSize: 9, lineHeight: 11, fontWeight: '500', letterSpacing: 0.3 },
   profileName: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 16, letterSpacing: 0.1 },
-  cacheTimestamp: { color: 'rgba(255,255,255,0.58)', fontSize: 8, lineHeight: 10, marginTop: 1 },
   profileChevronWrap: {
     width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(201,169,110,0.12)',
