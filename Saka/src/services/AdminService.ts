@@ -111,6 +111,19 @@ export interface AdminSosRow {
   user_id?: string | null;
 }
 
+export interface AdminEmergencyContactRow {
+  user_id: string;
+  user_name: string | null;
+  user_email: string | null;
+  contacts: {
+    id: string;
+    name: string;
+    relationship: string;
+    phone: string;
+  }[];
+  updated_at: string;
+}
+
 export interface AdminDiscoveryRow {
   id: number;
   user_id: string;
@@ -506,6 +519,42 @@ export async function fetchAdminSos(): Promise<AdminSosRow[]> {
   }
 }
 
+export async function fetchAdminEmergencyContacts(): Promise<AdminEmergencyContactRow[]> {
+  const { data, error } = await supabase
+    .from('emergency_contact_lists')
+    .select('user_id, contacts, updated_at')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Unable to load emergency contacts: ${error.message}`);
+  }
+
+  const rows = data ?? [];
+  const userIds = rows.map((row) => row.user_id);
+  const { data: profiles, error: profilesError } = userIds.length
+    ? await supabase.from('profiles').select('id, full_name, email').in('id', userIds)
+    : { data: [], error: null };
+
+  if (profilesError) {
+    throw new Error(`Unable to load contact owners: ${profilesError.message}`);
+  }
+
+  const profilesById = new Map(
+    (profiles ?? []).map((profile) => [profile.id, profile]),
+  );
+
+  return rows.map((row) => {
+    const owner = profilesById.get(row.user_id);
+    return {
+      user_id: row.user_id,
+      user_name: owner?.full_name ?? null,
+      user_email: owner?.email ?? null,
+      contacts: row.contacts ?? [],
+      updated_at: row.updated_at,
+    };
+  });
+}
+
 /* ───────────────────────── discoveries (view-only) ───────────────────────── */
 
 export async function fetchAdminDiscoveries(): Promise<AdminDiscoveryRow[]> {
@@ -539,6 +588,7 @@ export const adminService = {
   fetchAdminJournal,
   deleteAdminJournal,
   fetchAdminSos,
+  fetchAdminEmergencyContacts,
   fetchAdminDiscoveries,
 };
 
