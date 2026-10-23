@@ -1,6 +1,7 @@
 import React from 'react';
 import InfoSection from '../InfoSection';
-import { ACCENT_GOLD } from '../../../theme/designTokens';
+import PreparationScene from '../scenes/PreparationScene';
+import { PALETTE } from '../scenes/Primitives';
 
 export interface PreparationSectionProps {
   items: string[];
@@ -11,11 +12,9 @@ export default function PreparationSection({ items }: PreparationSectionProps) {
     <InfoSection
       title="Preparation & Requirements"
       subtitle="What to bring before you go."
-      icon="clipboard-outline"
-      iconColor={ACCENT_GOLD}
+      accent={PALETTE.gold}
+      scene={<PreparationScene />}
       items={items}
-      compact
-      showArrow={false}
     />
   );
 }

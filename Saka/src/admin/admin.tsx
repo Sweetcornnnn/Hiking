@@ -32,6 +32,7 @@ import {
   type AdminEventRow,
   type AdminJournalRow,
   type AdminSosRow,
+  type AdminEmergencyContactRow,
   type AdminDiscoveryRow,
   type GlobalStats,
 } from '../services/AdminService';
@@ -112,6 +113,9 @@ export default function AdminRoute() {
 
   const [sosRows, setSosRows] = useState<AdminSosRow[]>([]);
   const [sosLoading, setSosLoading] = useState(false);
+  const [emergencyContacts, setEmergencyContacts] = useState<AdminEmergencyContactRow[]>([]);
+  const [emergencyContactsLoading, setEmergencyContactsLoading] = useState(false);
+  const [emergencyContactsError, setEmergencyContactsError] = useState<string | null>(null);
 
   const [journal, setJournal] = useState<AdminJournalRow[]>([]);
   const [journalLoading, setJournalLoading] = useState(false);
@@ -192,6 +196,19 @@ export default function AdminRoute() {
   const fetchOrgs = async () => { setOrgsLoading(true); try { setOrgs(await adminService.fetchAdminOrgs()); } finally { setOrgsLoading(false); } };
   const fetchModEvents = async () => { setModEventsLoading(true); try { setModEvents(await adminService.fetchAdminEvents()); } finally { setModEventsLoading(false); } };
   const fetchSos = async () => { setSosLoading(true); try { setSosRows(await adminService.fetchAdminSos()); } finally { setSosLoading(false); } };
+  const fetchEmergencyContacts = async () => {
+    setEmergencyContactsLoading(true);
+    setEmergencyContactsError(null);
+    try {
+      setEmergencyContacts(await adminService.fetchAdminEmergencyContacts());
+    } catch (error) {
+      setEmergencyContactsError(
+        error instanceof Error ? error.message : 'Unable to load emergency contacts.',
+      );
+    } finally {
+      setEmergencyContactsLoading(false);
+    }
+  };
   const fetchJournal = async () => { setJournalLoading(true); try { setJournal(await adminService.fetchAdminJournal(journalPublicOnly)); } finally { setJournalLoading(false); } };
   const fetchDiscoveries = async () => { setDiscoveriesLoading(true); try { setDiscoveries(await adminService.fetchAdminDiscoveries()); } finally { setDiscoveriesLoading(false); } };
 
@@ -207,7 +224,7 @@ export default function AdminRoute() {
     else if (activeTab === 'orgs') fetchOrgs();
     else if (activeTab === 'events') fetchModEvents();
     else if (activeTab === 'safety') loadAdminSafety();
-    else if (activeTab === 'emergencies') fetchSos();
+    else if (activeTab === 'emergencies') { fetchSos(); fetchEmergencyContacts(); }
     else if (activeTab === 'moderation') { if (moderationTab === 'journal') fetchJournal(); else fetchDiscoveries(); }
   }, [activeTab, moderationTab, journalPublicOnly]);
 
@@ -218,7 +235,7 @@ export default function AdminRoute() {
     else if (activeTab === 'orgs') fetchOrgs();
     else if (activeTab === 'events') fetchModEvents();
     else if (activeTab === 'safety') loadAdminSafety();
-    else if (activeTab === 'emergencies') fetchSos();
+    else if (activeTab === 'emergencies') { fetchSos(); fetchEmergencyContacts(); }
     else if (activeTab === 'moderation') { if (moderationTab === 'journal') fetchJournal(); else fetchDiscoveries(); }
   };
 
@@ -1010,6 +1027,46 @@ export default function AdminRoute() {
                       </View>
                       {row.altitude != null && <Text style={ss.rowMeta}>Altitude {row.altitude.toFixed(0)}m</Text>}
                       {row.user_id && <Text style={ss.rowMeta}>User {row.user_id}</Text>}
+                    </View>
+                  ))
+                )}
+
+                <Text style={ss.sectionLabel}>SAVED EMERGENCY CONTACTS</Text>
+                <Text style={ss.rowMeta}>
+                  These are user-provided contact details for emergency response. Use only when needed.
+                </Text>
+                {emergencyContactsLoading ? (
+                  <View style={ss.emptyState}><Text style={ss.emptyStateText}>Loading saved contacts…</Text></View>
+                ) : emergencyContactsError ? (
+                  <View style={ss.emptyState}><Text style={ss.emptyStateText}>{emergencyContactsError}</Text></View>
+                ) : emergencyContacts.length === 0 ? (
+                  renderEmpty('people-outline', 'No saved contacts', 'Users have not added emergency contacts.')
+                ) : (
+                  emergencyContacts.map((row) => (
+                    <View key={row.user_id} style={ss.card}>
+                      <View style={ss.cardHeader}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={ss.rowTitle} numberOfLines={1}>
+                            {row.user_name || row.user_email || row.user_id}
+                          </Text>
+                          {row.user_email ? (
+                            <Text style={ss.rowSub} numberOfLines={1}>{row.user_email}</Text>
+                          ) : null}
+                        </View>
+                        <Text style={ss.rowMeta}>
+                          Updated {new Date(row.updated_at).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      {row.contacts.map((contact) => (
+                        <View key={contact.id} style={ss.attendeeRow}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={ss.rowTitle}>{contact.name}</Text>
+                            <Text style={ss.rowSub}>
+                              {[contact.relationship, contact.phone].filter(Boolean).join(' · ')}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
                     </View>
                   ))
                 )}

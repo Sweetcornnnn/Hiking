@@ -7,8 +7,6 @@ import {
   BG_DANGER_SUBTLE,
   BG_GOLD_TINT,
   BG_SUBTLE,
-  FONT,
-  RADIUS_BTN,
   SPACING,
   TEXT_DANGER,
   TEXT_MUTED,
@@ -23,17 +21,17 @@ const ALERT_STYLES = {
   danger: {
     color: TEXT_DANGER,
     background: BG_DANGER_SUBTLE,
-    icon: 'alert-circle-outline' as const,
+    icon: 'alert-circle' as const,
   },
   warning: {
     color: ACCENT_GOLD,
     background: BG_GOLD_TINT,
-    icon: 'warning-outline' as const,
+    icon: 'warning' as const,
   },
   info: {
     color: TEXT_MUTED,
     background: BG_SUBTLE,
-    icon: 'information-circle-outline' as const,
+    icon: 'information-circle' as const,
   },
 };
 
@@ -42,21 +40,14 @@ export default function AlertCard({ alert }: AlertCardProps) {
 
   return (
     <View
-      style={[styles.card, { backgroundColor: appearance.background, borderLeftColor: appearance.color }]}
+      style={[styles.card, { backgroundColor: appearance.background, borderColor: appearance.color }]}
       accessibilityRole="alert"
     >
-      <Ionicons
-        name={appearance.icon}
-        size={20}
-        color={appearance.color}
-        style={styles.icon}
-      />
+      <Ionicons name={appearance.icon} size={22} color={appearance.color} style={styles.icon} />
       <View style={styles.content}>
-        <View style={styles.titleRow}>
-          <Text style={[styles.title, { color: appearance.color }]}>{alert.title}</Text>
-          {alert.date ? <Text style={styles.date}>{alert.date}</Text> : null}
-        </View>
+        <Text style={[styles.title, { color: appearance.color }]}>{alert.title}</Text>
         <Text style={styles.message}>{alert.message}</Text>
+        {alert.date ? <Text style={styles.date}>{alert.date}</Text> : null}
       </View>
     </View>
   );
@@ -66,38 +57,32 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    borderLeftWidth: 3,
-    borderRadius: RADIUS_BTN,
-    padding: SPACING.gapLg,
-    marginTop: SPACING.gap,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: SPACING.gapLg,
+    paddingVertical: 14,
   },
   icon: {
-    marginRight: SPACING.gapLg,
+    marginRight: 12,
     marginTop: 1,
   },
   content: {
     flex: 1,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    marginBottom: SPACING.gap / 2,
-  },
   title: {
-    flexShrink: 1,
-    fontSize: FONT.itemSize,
+    fontSize: 16,
     fontWeight: '700',
-    marginRight: 8,
-  },
-  date: {
-    color: TEXT_MUTED,
-    fontSize: FONT.tagSize,
+    lineHeight: 22,
   },
   message: {
     color: TEXT_SECONDARY,
-    fontSize: FONT.itemSize,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 2,
+  },
+  date: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    marginTop: 8,
   },
 });

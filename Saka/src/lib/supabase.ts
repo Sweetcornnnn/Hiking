@@ -247,6 +247,16 @@ export type Tables = {
     checked_in?: boolean | null;
     created_at: string;
   };
+  emergency_contact_lists: {
+    user_id: string;
+    contacts: {
+      id: string;
+      name: string;
+      relationship: string;
+      phone: string;
+    }[];
+    updated_at: string;
+  };
   hike_safety_checks: HikeSafetyCheckRow;
   event_safety_checks: EventSafetyCheckRow;
   admin_alerts: AdminAlertRow;
