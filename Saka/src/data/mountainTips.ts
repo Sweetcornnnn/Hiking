@@ -177,4 +177,48 @@ export const MOUNTAIN_TIPS: MountainTips[] = [
       },
     ],
   },
+  {
+    id: 'e8dbcdf2-2120-4ed4-a677-69f9a2c7dc65',
+    mountainName: 'Mt. Nangtud',
+    preparation: [
+      'Mt. Nangtud is a remote, high-elevation climb commonly listed at about 2,073 m. Treat it as a strenuous expedition and plan for a multi-day itinerary unless local organizers confirm otherwise.',
+      'Contact the relevant municipal or barangay tourism office before booking to confirm the current route, required guide, permits, registration, fees, and trail status.',
+      'Build up hiking fitness in advance. Pack broken-in hiking footwear, layered clothing, rain protection, a headlamp with spare power, first-aid supplies, navigation and communication equipment, and enough food and water for the confirmed itinerary.',
+      'Share your itinerary and expected return time with someone at home. Arrange check-ins and an emergency plan with your group and guide before leaving.',
+    ],
+    safety: [
+      'Weather, trail duration, water availability, and communications can change quickly in remote mountain terrain. Check the forecast and current local advisories shortly before departure.',
+      'Stay with your group and follow your local guide’s instructions. Do not continue onto exposed or unfamiliar sections when visibility, weather, or your condition deteriorates.',
+      'Turn back if anyone develops signs of altitude illness, hypothermia, injury, or severe exhaustion. Know the agreed evacuation and emergency-contact plan before the climb.',
+      'Do not rely on mobile coverage or unverified trail reports; carry a charged phone and a backup means of communication appropriate to the route.',
+    ],
+    transportation: [
+      'Confirm the official jump-off point and road conditions with the local tourism office or your organizer. Nangtud access routes and transfer arrangements can depend on the chosen itinerary.',
+      'Arrange return transport and a check-in time with your driver or host in advance. Confirm schedules, fares, and whether transport reaches the jump-off before traveling.',
+      'Exact public-transport connections, guide contacts, and current fees should be verified locally; do not rely on outdated online listings.',
+    ],
+    trailTips: [
+      'Treat the commonly listed elevation of about 2,073 m as an approximate reference; confirm the route profile and expected hiking hours with your local guide.',
+      'Ask your guide where the reliable water sources are and how much water to carry between them. Purify untreated water and do not assume a source will be available.',
+      'Use a steady pace, take planned breaks, and keep a warm, dry layer accessible. Mountain weather can feel much colder and wetter than conditions at the jump-off.',
+      'Trail-specific waypoint, campsite, and itinerary details are not verified here. Get the current route briefing from the local guide before setting out.',
+    ],
+    etiquette: [
+      'Pack out all rubbish, including food scraps and hygiene waste. Leave plants, wildlife, and natural features undisturbed.',
+      'Respect local communities, customary practices, and any sacred or restricted areas. Ask before photographing residents or entering private land.',
+      'Use established campsites and trails where directed, and follow local guidance on fires, water sources, and sanitation.',
+    ],
+    alerts: [
+      {
+        type: 'warning',
+        title: 'Confirm local requirements before departure',
+        message: 'Current guide rules, permits, fees, access, route conditions, and itinerary are not verified in this guide. Contact the local tourism office or an authorized organizer before traveling.',
+      },
+      {
+        type: 'info',
+        title: 'Plan as a remote, strenuous climb',
+        message: 'Prepare for high elevation and limited services. Confirm water, communications, emergency procedures, and return transport with your guide.',
+      },
+    ],
+  },
 ];

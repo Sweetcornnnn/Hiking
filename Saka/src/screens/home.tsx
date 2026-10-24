@@ -28,7 +28,15 @@ import {
   preloadHomeVideoPosters,
   MOUNTAIN_VIDEOS,
 } from '../services/homeVideoAssets';
-import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
+import { MOUNTAIN_TIPS } from '../data/mountainTips';
+import {
+  ACCENT_GOLD,
+  BG_CARD,
+  BG_SUBTLE,
+  BORDER_SUBTLE,
+  SPACING,
+  TEXT_DANGER,
+} from '../theme/designTokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
@@ -225,6 +233,11 @@ const MountainSlide = memo(function MountainSlide({
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
   const localVideo = MOUNTAIN_VIDEOS[mountain.id];
+  const normalizedMountainName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const alertCount = MOUNTAIN_TIPS.find((tips) =>
+    tips.id === mountain.id ||
+    tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedMountainName
+  )?.alerts.length ?? 0;
 
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
@@ -279,9 +292,20 @@ const MountainSlide = memo(function MountainSlide({
             onPress={() => onOpenTips(mountain)}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel={`Open ${mountain.name} tips and guide`}
+            accessibilityLabel={
+              alertCount > 0
+                ? `Open ${mountain.name} tips and guide, ${alertCount} alerts`
+                : `Open ${mountain.name} tips and guide`
+            }
           >
             <Ionicons name="information-circle-outline" size={22} color={ACCENT_GOLD} />
+            {alertCount > 0 ? (
+              <View style={styles.guideAlertBadge} pointerEvents="none">
+                <Text style={styles.guideAlertBadgeText}>
+                  {alertCount > 9 ? '9+' : alertCount}
+                </Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
 
@@ -791,6 +815,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
+  },
+  guideAlertBadge: {
+    position: 'absolute',
+    top: 1,
+    right: 1,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TEXT_DANGER,
+    borderWidth: 1.5,
+    borderColor: BG_CARD,
+  },
+  guideAlertBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
   },
   elevationPill: {
     flexDirection: 'row',
