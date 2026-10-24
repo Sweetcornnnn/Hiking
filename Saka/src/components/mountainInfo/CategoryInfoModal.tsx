@@ -1,24 +1,13 @@
 import React, { type ReactNode } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SceneFrame, withAlpha } from './scenes/Primitives';
 import {
-  ACCENT_GOLD,
   BG_CARD,
-  BG_GOLD_ICON,
   BG_PANEL,
   BG_SUBTLE,
   BORDER_DEFAULT,
-  FONT,
-  RADIUS_BTN,
-  SPACING,
+  TEXT_FAINT,
   TEXT_MUTED,
   TEXT_PRIMARY,
 } from '../../theme/designTokens';
@@ -26,7 +15,10 @@ import {
 interface CategoryInfoModalProps {
   visible: boolean;
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  subtitle: string;
+  accent: string;
+  /** The same animated scene as the tile, shown small in the header. */
+  scene: ReactNode;
   onClose: () => void;
   children: ReactNode;
 }
@@ -34,7 +26,9 @@ interface CategoryInfoModalProps {
 export default function CategoryInfoModal({
   visible,
   title,
-  icon,
+  subtitle,
+  accent,
+  scene,
   onClose,
   children,
 }: CategoryInfoModalProps) {
@@ -44,6 +38,7 @@ export default function CategoryInfoModal({
       transparent
       animationType="fade"
       statusBarTranslucent
+      supportedOrientations={['portrait', 'landscape']}
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
@@ -53,24 +48,27 @@ export default function CategoryInfoModal({
           accessibilityRole="button"
           accessibilityLabel={`Close ${title}`}
         />
-        <View style={styles.panel}>
+        <View style={[styles.panel, { borderColor: withAlpha(accent, 0.35) }]}>
           <View style={styles.header}>
-            <View style={styles.iconWrap}>
-              <Ionicons name={icon} size={20} color={ACCENT_GOLD} />
+            <SceneFrame accent={accent} style={styles.thumb}>
+              {scene}
+            </SceneFrame>
+            <View style={styles.headerText}>
+              <Text style={styles.title} numberOfLines={2}>{title}</Text>
+              <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text>
             </View>
-            <Text style={styles.title} numberOfLines={2}>{title}</Text>
-            <TouchableOpacity
-              style={styles.closeButton}
+            <Pressable
               onPress={onClose}
+              hitSlop={8}
+              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
               accessibilityRole="button"
               accessibilityLabel={`Close ${title}`}
-              hitSlop={8}
             >
               <Ionicons name="close" size={20} color={TEXT_MUTED} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
           <ScrollView
-            style={styles.scrollView}
+            style={styles.scroll}
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
           >
@@ -85,63 +83,67 @@ export default function CategoryInfoModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    backgroundColor: 'rgba(0,0,0,0.68)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
   panel: {
-    width: '78%',
-    maxWidth: 500,
-    height: '78%',
-    maxHeight: 520,
-    overflow: 'hidden',
-    borderRadius: 16,
+    width: '100%',
+    maxWidth: 620,
+    maxHeight: '100%',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
     backgroundColor: BG_CARD,
+    overflow: 'hidden',
   },
   header: {
-    minHeight: 62,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.cardPadH,
-    paddingVertical: SPACING.gap,
+    gap: 14,
+    padding: 12,
     backgroundColor: BG_PANEL,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: BORDER_DEFAULT,
   },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: SPACING.gapLg,
-    borderRadius: 18,
-    backgroundColor: BG_GOLD_ICON,
+  thumb: {
+    width: 96,
+    height: 62,
+    borderRadius: 12,
+  },
+  headerText: {
+    flex: 1,
   },
   title: {
-    flex: 1,
     color: TEXT_PRIMARY,
-    fontSize: FONT.itemSize,
+    fontSize: 18,
     fontWeight: '700',
-    marginRight: SPACING.gap,
+    lineHeight: 23,
+  },
+  subtitle: {
+    color: TEXT_FAINT,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
   },
   closeButton: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: RADIUS_BTN,
     backgroundColor: BG_SUBTLE,
   },
-  scrollView: {
-    flex: 1,
+  scroll: {
+    flexShrink: 1,
   },
   content: {
-    paddingHorizontal: SPACING.cardPadH,
-    paddingTop: SPACING.gap,
-    paddingBottom: SPACING.cardPadB,
+    paddingHorizontal: 18,
+    paddingTop: 6,
+    paddingBottom: 22,
+  },
+  pressed: {
+    opacity: 0.7,
   },
 });

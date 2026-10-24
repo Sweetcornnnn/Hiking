@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/authStore';
 import { MessageBubble } from '../../components/chat/MessageBubble';
 import MessageInput from '../../components/chat/MessageInput';
 import ProfileCard from '../../components/chat/ProfileCard';
+import OnlineUsersList from '../../components/chat/OnlineUsersList';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -27,11 +28,18 @@ import {
   CHAT_RADIUS_BTN,
 } from '../../theme/designTokens';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  getQueuedTextMessages,
+  queueTextMessage,
+  subscribeToQueuedMessages,
+} from '../../services/offlineMessageQueue';
 
 export default function WorldChatScreen({
   embedded = false,
+  onSelectUser,
 }: {
   embedded?: boolean;
+  onSelectUser?: (userId: string) => void;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<any[]>([]);
@@ -96,10 +104,14 @@ export default function WorldChatScreen({
   const handleProfileMessage = (uid: string) => {
     setShowProfile(false);
     setProfileUserId(null);
-    router.push({
-      pathname: '/chat/Conversation',
-      params: { userId: uid },
-    } as any);
+    if (onSelectUser) {
+      onSelectUser(uid);
+    } else {
+      router.push({
+        pathname: '/chat/Conversation',
+        params: { userId: uid },
+      } as any);
+    }
   };
 
   const loadMessages = useCallback(async (refresh = false) => {
@@ -130,7 +142,27 @@ export default function WorldChatScreen({
 
       initialPositionPendingRef.current = true;
 
-      setMessages(data || []);
+      const queued = user
+        ? await getQueuedTextMessages('world', user.id)
+        : [];
+      setMessages([
+        ...(data || []),
+        ...queued.map((entry) => ({
+          id: entry.id,
+          user_id: user?.id,
+          content: String(entry.payload.content ?? ''),
+          type: 'text',
+          media_url: null,
+          created_at: entry.createdAt,
+          updated_at: entry.createdAt,
+          profiles: {
+            full_name: user?.user_metadata?.full_name || null,
+            username: user?.user_metadata?.username || null,
+            avatar_url: null,
+          },
+          sync_status: entry.status,
+        })),
+      ]);
       setTimeout(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
       }, 300);
@@ -140,7 +172,11 @@ export default function WorldChatScreen({
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [user]);
+
+  useEffect(() => subscribeToQueuedMessages(() => {
+    if (mountedRef.current) void loadMessages(true);
+  }), [loadMessages]);
 
   const fetchOnlineCount = useCallback(async () => {
     try {
@@ -236,8 +272,18 @@ export default function WorldChatScreen({
       const idx = pids.indexOf(tempId);
       if (idx !== -1) pids.splice(idx, 1);
       if (pids.length === 0) pendingMessagesRef.current.delete(pendingKey);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setError('Failed to send message');
+      try {
+        await queueTextMessage('world', user.id, {
+          user_id: user.id,
+          content: text,
+        }, tempId);
+        setMessages((prev) => prev.map((message) => (
+          message.id === tempId ? { ...message, sync_status: 'pending' } : message
+        )));
+      } catch {
+        setMessages((prev) => prev.filter((message) => message.id !== tempId));
+        setError('Message could not be sent or saved on this device.');
+      }
     }
   };
 
@@ -317,7 +363,7 @@ export default function WorldChatScreen({
     </View>
   );
 
-  return (
+  const chatContent = (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
@@ -340,6 +386,7 @@ export default function WorldChatScreen({
           const isMe = item.user_id === user?.id;
           const profile = item.profiles || item.users || {};
           const senderName = profile.full_name || profile.username || 'Anonymous';
+          const senderAvatar = profile.avatar_url || null;
           const time = item.created_at
             ? new Date(item.created_at).toLocaleTimeString([], {
                 hour: '2-digit',
@@ -354,11 +401,16 @@ export default function WorldChatScreen({
                 content={item.content}
                 time={time}
                 isMe={isMe}
+                deliveryStatus={item.sync_status}
                 showReadReceipt={false}
-                showAvatar={false}
-                showSenderHeader={!isMe}
+                showAvatar={true}
+                showSenderHeader={false}
                 senderName={senderName}
                 senderColorSeed={item.user_id}
+                senderAvatarUrl={senderAvatar}
+                avatarUri={senderAvatar}
+                avatarLabel={senderName}
+                disableAvatarLift={true}
                 onPressSender={
                   canOpenProfile ? () => openProfile(item.user_id) : undefined
                 }
@@ -404,6 +456,18 @@ export default function WorldChatScreen({
       />
     </KeyboardAvoidingView>
   );
+
+  if (embedded) {
+    return (
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        <View style={{ flex: 1 }}>{chatContent}</View>
+        {/* Removed onSelectUser prop entirely */}
+        <OnlineUsersList />
+      </View>
+    );
+  }
+
+  return chatContent;
 }
 
 const styles = StyleSheet.create({

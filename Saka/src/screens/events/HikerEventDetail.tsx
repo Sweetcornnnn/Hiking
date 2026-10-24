@@ -1,5 +1,14 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  Image,
+  Pressable,
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -8,6 +17,7 @@ import {
   type PublicEvent,
   type EventRsvpCounts,
   type MyRsvpWithSafetyCheck,
+  type EventAttendee,
 } from '../../services/eventService';
 import { hikeSafetyService } from '../../services/hikeSafetyService';
 import { cancelCheck, scheduleCheck } from '../../services/hikeSafetyNotifications';
@@ -20,49 +30,48 @@ import {
   getWeatherSafetyAdvice,
   type WeatherCondition,
 } from '../../services/weatherService';
+import ProfileCard from '../../components/chat/ProfileCard';
 import {
-  OrgLandscapeShell,
-  RailButton,
-  CenteredState,
-  Banner,
-  Card,
-  Pill,
-  InfoRow,
-  Block,
-  Grid,
-  PC,
-  SP,
-  FS,
-} from '../../components/organizations/OrgLandscapeShell';
+  useHikePermit,
+  buildPermitDetails,
+  type SavedHikeLike,
+  type PermitDetails,
+} from '../../components/HikePermitModal';
+import { getAvatarColor, getInitials } from '../../utils/colors';
+import {
+  D,
+  Shell,
+  Sidebar,
+  Center,
+  RightPane,
+  CenterMessage,
+  SidebarHeader,
+  SectionLabel,
+  ActionButton,
+  Badge,
+  MetaRow,
+  Meter,
+  Panel,
+  todayISO,
+  parseISO,
+  formatTime,
+  type IconName,
+} from '../../components/events/DesktopKit';
 
-const formatDate = (iso: string) => {
-  const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('en-US', {
+// ── SAKA logo for the permit stamp ─────────────────────────
+const sakaLogo = require('../../../assets/images/SakaLogo.png');
+
+const formatDate = (iso: string) =>
+  parseISO(iso).toLocaleDateString('en-US', {
     weekday: 'short',
-    month: 'long',
+    month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
-};
-
-const formatTime = (t: string) => {
-  const [h, m] = t.split(':').map(Number);
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const hh = h % 12 === 0 ? 12 : h % 12;
-  return `${hh}:${String(m).padStart(2, '0')} ${suffix}`;
-};
-
-const todayISO = () => {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-};
 
 const daysUntil = (isoDate: string): number => {
-  const today = new Date(todayISO() + 'T00:00:00');
-  const target = new Date(isoDate + 'T00:00:00');
+  const today = parseISO(todayISO());
+  const target = parseISO(isoDate);
   return Math.round((target.getTime() - today.getTime()) / 86_400_000);
 };
 
@@ -92,33 +101,31 @@ function getWeatherSeverity(w: WeatherCondition): Severity {
 type WeatherState =
   | { mode: 'hidden' }
   | { mode: 'loading' }
-  | { mode: 'forecast-soon' }        // event is >5 days away
-  | { mode: 'current'; weather: WeatherCondition }   // event is today
+  | { mode: 'forecast-soon' }
+  | { mode: 'current'; weather: WeatherCondition }
   | { mode: 'forecast'; weather: WeatherCondition; approximate: boolean };
 
-function WeatherBanner({ state }: { state: WeatherState }) {
+function WeatherCard({ state }: { state: WeatherState }) {
   if (state.mode === 'hidden') return null;
 
   if (state.mode === 'loading') {
     return (
-      <View style={[styles.weatherBanner, styles.weatherBannerNeutral]}>
-        <ActivityIndicator size="small" color="rgba(255,255,255,0.45)" />
-        <Text style={styles.weatherLoadingText}>Checking mountain weather…</Text>
-      </View>
+      <Panel style={styles.weatherRow}>
+        <ActivityIndicator size="small" color={D.muted} />
+        <Text style={styles.weatherQuiet}>Checking mountain weather…</Text>
+      </Panel>
     );
   }
 
   if (state.mode === 'forecast-soon') {
     return (
-      <View style={[styles.weatherBanner, styles.weatherBannerNeutral]}>
-        <Ionicons name="calendar-outline" size={16} color="rgba(255,255,255,0.5)" />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.weatherNeutralLabel}>Forecast not available yet</Text>
-          <Text style={styles.weatherNeutralText}>
-            Reliable forecasts open 5 days before the hike. Check back closer to the date.
-          </Text>
+      <Panel style={{ gap: 3 }}>
+        <View style={styles.weatherHead}>
+          <Ionicons name="calendar-outline" size={13} color={D.muted} />
+          <Text style={styles.weatherQuietTitle}>Forecast not available yet</Text>
         </View>
-      </View>
+        <Text style={styles.weatherQuiet}>Forecasts open 5 days before the hike.</Text>
+      </Panel>
     );
   }
 
@@ -126,60 +133,139 @@ function WeatherBanner({ state }: { state: WeatherState }) {
   const severity = getWeatherSeverity(weather);
   const config =
     severity === 'danger'
-      ? {
-          icon: 'alert-circle' as const,
-          color: '#E07070',
-          bg: 'rgba(224,112,112,0.08)',
-          border: 'rgba(224,112,112,0.32)',
-          label: 'Weather warning',
-        }
+      ? { icon: 'alert-circle' as IconName, color: D.red, bg: 'rgba(224,112,112,0.08)', border: 'rgba(224,112,112,0.3)', label: 'Weather warning' }
       : severity === 'caution'
-      ? {
-          icon: 'warning' as const,
-          color: '#C9A96E',
-          bg: 'rgba(201,169,110,0.08)',
-          border: 'rgba(201,169,110,0.32)',
-          label: 'Weather advisory',
-        }
-      : {
-          icon: 'checkmark-circle' as const,
-          color: '#3FD69D',
-          bg: 'rgba(63,214,157,0.06)',
-          border: 'rgba(63,214,157,0.26)',
-          label: 'Weather looks good',
-        };
+      ? { icon: 'warning' as IconName, color: D.gold, bg: D.goldSoft, border: D.goldLine, label: 'Weather advisory' }
+      : { icon: 'checkmark-circle' as IconName, color: D.green, bg: 'rgba(63,214,157,0.06)', border: 'rgba(63,214,157,0.26)', label: 'Weather looks good' };
 
   const advice = getWeatherSafetyAdvice(weather);
-
   const contextLine =
     state.mode === 'current'
-      ? 'Current mountain conditions'
+      ? 'Current conditions'
       : state.approximate
       ? 'Nearest available forecast'
       : 'Forecast for hike start';
 
   return (
-    <View
-      style={[
-        styles.weatherBanner,
-        { backgroundColor: config.bg, borderColor: config.border },
-      ]}
-    >
-      <Ionicons name={config.icon} size={18} color={config.color} />
-      <View style={{ flex: 1, gap: 2 }}>
+    <Panel style={{ gap: 3, backgroundColor: config.bg, borderColor: config.border }}>
+      <View style={styles.weatherHead}>
+        <Ionicons name={config.icon} size={14} color={config.color} />
         <Text style={[styles.weatherLabel, { color: config.color }]}>{config.label}</Text>
-        <Text style={styles.weatherContext}>{contextLine}</Text>
-        <Text style={styles.weatherMeta}>
-          {weather.description} · {weather.temperature.toFixed(0)}°C · Wind{' '}
-          {weather.windSpeed.toFixed(0)} m/s · Humidity {weather.humidity}%
-        </Text>
-        {advice ? (
-          <Text style={styles.weatherAdvice} numberOfLines={3}>
-            {advice}
-          </Text>
-        ) : null}
       </View>
+      <Text style={styles.weatherMeta}>
+        {weather.description}, {weather.temperature.toFixed(0)}°C
+      </Text>
+      <Text style={styles.weatherQuiet}>
+        Wind {weather.windSpeed.toFixed(0)} m/s, humidity {weather.humidity}%
+      </Text>
+      <Text style={styles.weatherContext}>{contextLine}</Text>
+      {advice ? (
+        <Text style={styles.weatherAdvice} numberOfLines={4}>
+          {advice}
+        </Text>
+      ) : null}
+    </Panel>
+  );
+}
+
+function Fact({ icon, label, value }: { icon: IconName; label: string; value: string }) {
+  return (
+    <View style={styles.fact}>
+      <View style={styles.factLabelRow}>
+        <Ionicons name={icon} size={11} color={D.faint} />
+        <Text style={styles.factLabel}>{label}</Text>
+      </View>
+      <Text style={styles.factValue} numberOfLines={2}>
+        {value}
+      </Text>
     </View>
+  );
+}
+
+function TextPanel({
+  icon,
+  title,
+  text,
+  accent,
+  flex = 1,
+}: {
+  icon: IconName;
+  title: string;
+  text: string;
+  accent?: boolean;
+  flex?: number;
+}) {
+  return (
+    <Panel style={[styles.textPanel, { flex }, accent && { borderColor: D.goldLine }]}>
+      <View style={styles.textPanelHead}>
+        <Ionicons name={icon} size={12} color={accent ? D.gold : D.muted} />
+        <Text style={[styles.textPanelTitle, accent && { color: D.gold }]}>{title}</Text>
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
+        <Text style={styles.bodyText}>{text}</Text>
+      </ScrollView>
+    </Panel>
+  );
+}
+
+// ── Attendee card (one per hiker) ─────────────────────────
+const AVATAR_SIZE = 34;
+
+function AttendeeCard({
+  attendee,
+  onPress,
+}: {
+  attendee: EventAttendee;
+  onPress: (userId: string) => void;
+}) {
+  const name = attendee.fullName || attendee.username || 'Hiker';
+  const color = getAvatarColor(attendee.userId);
+  const isWaitlist = attendee.status === 'waitlist';
+
+  return (
+    <Pressable
+      onPress={() => onPress(attendee.userId)}
+      style={({ pressed }) => [styles.attendeeCard, pressed && { opacity: 0.85 }]}
+    >
+      <View style={[styles.attendeeCardAvatar, { backgroundColor: color }]}>
+        {attendee.avatarUrl ? (
+          <Image source={{ uri: attendee.avatarUrl }} style={styles.attendeeCardAvatarImage} />
+        ) : (
+          <Text style={styles.attendeeCardInitials}>{getInitials(name)}</Text>
+        )}
+      </View>
+
+      <View style={styles.attendeeCardBody}>
+        <Text style={styles.attendeeCardName} numberOfLines={1}>
+          {name}
+        </Text>
+        {attendee.username ? (
+          <Text style={styles.attendeeCardUsername} numberOfLines={1}>
+            @{attendee.username}
+          </Text>
+        ) : (
+          <Text style={styles.attendeeCardUsername} numberOfLines={1}>
+            {isWaitlist ? 'On the waitlist' : 'Going'}
+          </Text>
+        )}
+      </View>
+
+      <View
+        style={[
+          styles.attendeeCardPill,
+          isWaitlist ? styles.attendeeCardPillWaitlist : styles.attendeeCardPillGoing,
+        ]}
+      >
+        <Text
+          style={[
+            styles.attendeeCardPillText,
+            { color: isWaitlist ? D.gold : D.green },
+          ]}
+        >
+          {isWaitlist ? 'WAITLIST' : 'GOING'}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -192,11 +278,18 @@ export default function HikerEventDetail() {
   const [mountain, setMountain] = useState<Mountain | null>(null);
   const [counts, setCounts] = useState<EventRsvpCounts>({ confirmed: 0, waitlist: 0, total: 0 });
   const [myRsvp, setMyRsvp] = useState<MyRsvpWithSafetyCheck | null>(null);
+  const [attendees, setAttendees] = useState<EventAttendee[]>([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [weatherState, setWeatherState] = useState<WeatherState>({ mode: 'hidden' });
+
+  // Profile card modal
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
+
+  // Hike permit animation — replaces the confirmation Alerts.
+  const permit = useHikePermit(sakaLogo);
 
   const fetchAll = useCallback(async () => {
     if (!eventId) {
@@ -206,9 +299,10 @@ export default function HikerEventDetail() {
     }
     setError(null);
     try {
-      const [evt, rsvp] = await Promise.all([
+      const [evt, rsvp, attendeeList] = await Promise.all([
         eventService.getEventById(eventId),
         eventService.getMyRsvpForEventWithCheck(eventId),
+        eventService.getEventAttendees(eventId),
       ]);
       if (!evt) {
         setError('Event not found');
@@ -216,6 +310,7 @@ export default function HikerEventDetail() {
       }
       setEvent(evt);
       setMyRsvp(rsvp);
+      setAttendees(attendeeList);
 
       const cached = mountainService.getCachedMountainById(evt.mountain_id);
       if (cached) {
@@ -241,16 +336,13 @@ export default function HikerEventDetail() {
   useEffect(() => {
     if (!event || !mountain) return;
 
-    // Weather is intentionally anchored to the event's start date and trailhead.
     const days = daysUntil(event.event_date);
 
-    // Past event — nothing meaningful to show.
     if (days < 0) {
       setWeatherState({ mode: 'hidden' });
       return;
     }
 
-    // >5 days out — OWM's free forecast window is ~5 days.
     if (days > 5) {
       setWeatherState({ mode: 'forecast-soon' });
       return;
@@ -279,7 +371,6 @@ export default function HikerEventDetail() {
         if (!w) {
           setWeatherState({ mode: 'forecast-soon' });
         } else {
-          // Mark as approximate if the target hour fell between 3-hour slots.
           const eventHour = Number(event.start_time.split(':')[0]) || 0;
           const slotHour = Math.round(eventHour / 3) * 3;
           const approximate = Math.abs(eventHour - slotHour) > 1;
@@ -305,6 +396,20 @@ export default function HikerEventDetail() {
   const hasActiveRsvp =
     myRsvp && ['confirmed', 'pending', 'waitlist'].includes(myRsvp.status);
 
+  const buildPermitForEvent = useCallback(
+    (evt: PublicEvent, mountainName?: string | null): PermitDetails => {
+      const hikeLike: SavedHikeLike = {
+        date: evt.event_date,
+        end_date: evt.end_date ?? null,
+        start_time: evt.start_time,
+        end_time: evt.end_time ?? evt.start_time,
+        tagalongs: (evt as any).capacity ?? undefined,
+      };
+      return buildPermitDetails(hikeLike, mountainName ?? mountain?.name ?? null);
+    },
+    [mountain]
+  );
+
   const handleRsvp = async () => {
     if (!event) return;
 
@@ -317,12 +422,8 @@ export default function HikerEventDetail() {
         return;
       }
 
-      if (status === 'waitlist') {
-        Alert.alert(
-          "You're on the waitlist",
-          "We'll notify you if a slot opens up."
-        );
-      }
+      const details = buildPermitForEvent(event);
+      permit.show('approved', details);
 
       const plannedFinishAt = eventPlannedFinish(event);
       if (plannedFinishAt && plannedFinishAt.getTime() > Date.now()) {
@@ -360,39 +461,43 @@ export default function HikerEventDetail() {
     }
   };
 
+  const doCancel = useCallback(async () => {
+    if (!myRsvp || !event) return;
+    setWorking(true);
+    try {
+      const { error: e } = await eventService.cancelMyRsvp(myRsvp.id);
+      if (e) {
+        Alert.alert('Cancel failed', e);
+        return;
+      }
+
+      const details = buildPermitForEvent(event);
+      permit.show('cancelled', details);
+
+      if (myRsvp.safety_check_id) await cancelCheck(myRsvp.safety_check_id);
+      await hikeSafetyService.deleteEventCheck(myRsvp.id);
+      await fetchAll();
+    } catch (err: any) {
+      Alert.alert('Cancel failed', err?.message ?? String(err));
+    } finally {
+      setWorking(false);
+    }
+  }, [myRsvp, event, buildPermitForEvent, permit]);
+
   const handleCancel = () => {
     if (!myRsvp) return;
-    Alert.alert('Cancel RSVP?', 'You will lose your slot.', [
-      { text: 'Keep it', style: 'cancel' },
-      {
-        text: 'Cancel RSVP',
-        style: 'destructive',
-        onPress: async () => {
-          setWorking(true);
-          try {
-            const { error: e } = await eventService.cancelMyRsvp(myRsvp.id);
-            if (e) {
-              Alert.alert('Cancel failed', e);
-              return;
-            }
-
-            if (myRsvp.safety_check_id) await cancelCheck(myRsvp.safety_check_id);
-            await hikeSafetyService.deleteEventCheck(myRsvp.id);
-            await fetchAll();
-          } catch (err: any) {
-            Alert.alert('Cancel failed', err?.message ?? String(err));
-          } finally {
-            setWorking(false);
-          }
-        },
-      },
-    ]);
+    doCancel();
   };
 
-  if (loading) return <CenteredState loading message="Loading event…" />;
+  const goingCount = useMemo(
+    () => attendees.filter((a) => a.status !== 'waitlist').length,
+    [attendees]
+  );
+
+  if (loading) return <CenterMessage loading message="Loading hike…" />;
   if (error || !event) {
     return (
-      <CenteredState
+      <CenterMessage
         message={error ?? 'Event not found'}
         actionLabel="Go back"
         onAction={() => router.back()}
@@ -402,227 +507,305 @@ export default function HikerEventDetail() {
 
   const hasCapacity = event.capacity !== null && event.capacity !== undefined;
   const isWaitlisted = myRsvp?.status === 'waitlist';
+  const verified = !!event.organizations?.is_verified;
+  const multiDay = !!event.end_date && event.end_date !== event.event_date;
+  const pct =
+    hasCapacity && (event.capacity as number) > 0
+      ? (counts.confirmed / (event.capacity as number)) * 100
+      : 0;
+
+  const hasSecondary = !!(event.safety_notes || event.required_gear);
+  const hasAnyText = !!(event.description || hasSecondary);
 
   return (
-    <OrgLandscapeShell
-      onBack={() => router.back()}
-      backLabel="Events"
-      title={event.title}
-      titleLines={3}
-      badge={
-        <View style={styles.pillRow}>
-          <Pill
-            label={event.difficulty}
-            bg="rgba(201,169,110,0.12)"
-            color={PC.gold}
-            border="rgba(201,169,110,0.3)"
-            uppercase={false}
-          />
-          {event.is_public ? (
-            <Pill
-              label="Public"
-              icon="eye-outline"
-              bg="rgba(255,255,255,0.05)"
-              color="rgba(255,255,255,0.7)"
-              border="rgba(255,255,255,0.1)"
-              uppercase={false}
-            />
-          ) : null}
-          {event.allow_walkins ? (
-            <Pill
-              label="Walk-ins"
-              icon="walk-outline"
-              bg="rgba(255,255,255,0.05)"
-              color="rgba(255,255,255,0.7)"
-              border="rgba(255,255,255,0.1)"
-              uppercase={false}
-            />
-          ) : null}
-        </View>
-      }
-      rail={
-        <>
-          {/* Organizer */}
-          <Card style={styles.orgHeader}>
-            <View style={styles.orgAvatar}>
-              <Ionicons name="business-outline" size={16} color={PC.gold} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.orgName} numberOfLines={1}>
-                {event.organizations?.name ?? 'Organizer'}
-              </Text>
-              <View style={styles.orgMeta}>
-                {event.organizations?.is_verified ? (
-                  <>
-                    <Ionicons name="shield-checkmark" size={11} color={PC.green} />
-                    <Text style={styles.orgVerified}>Verified organizer</Text>
-                  </>
-                ) : (
-                  <Text style={styles.orgUnverified}>Unverified organizer</Text>
-                )}
-              </View>
-            </View>
-          </Card>
-
-          {/* Capacity meter */}
-          <Card style={styles.capacityCard}>
-            <View style={styles.capacityHeader}>
-              <Text style={styles.capacityLabel}>Attending</Text>
-              <Text style={styles.capacityValue}>
-                {counts.confirmed}
-                {hasCapacity ? (
-                  <Text style={styles.capacityValueSub}>{` / ${event.capacity}`}</Text>
-                ) : null}
-              </Text>
-            </View>
-            {hasCapacity && (event.capacity as number) > 0 && (
-              <View style={styles.capacityTrack}>
-                <View
-                  style={[
-                    styles.capacityFill,
-                    {
-                      width: `${Math.min(100, (counts.confirmed / (event.capacity as number)) * 100)}%`,
-                      backgroundColor: isFull ? PC.orange : PC.green,
-                    },
-                  ]}
+    <Shell>
+      {/* ── Sidebar: organizer, tags, RSVP ── */}
+      <Sidebar
+        footer={
+          hasActiveRsvp ? (
+            <>
+              <View style={styles.rsvpState}>
+                <Ionicons
+                  name={isWaitlisted ? 'hourglass-outline' : 'checkmark-circle'}
+                  size={14}
+                  color={isWaitlisted ? D.gold : D.green}
                 />
+                <Text style={styles.rsvpStateText}>
+                  {isWaitlisted ? "You're on the waitlist" : "You're going. See you on the trail."}
+                </Text>
               </View>
-            )}
-            {counts.waitlist > 0 && (
-              <Text style={styles.waitlistText}>{counts.waitlist} on the waitlist</Text>
-            )}
-          </Card>
-        </>
-      }
-      railFooter={
-        hasActiveRsvp ? (
-          <>
-            <Banner tone={isWaitlisted ? 'info' : 'success'} icon={isWaitlisted ? 'hourglass-outline' : 'checkmark-circle'}>
-              {isWaitlisted ? "You're on the waitlist" : "You're going — see you on the trail"}
-            </Banner>
-            <RailButton
-              icon="close-circle-outline"
-              label="Cancel RSVP"
-              variant="danger"
+              <ActionButton
+                icon="close-circle-outline"
+                label="Cancel RSVP"
+                variant="danger"
+                loading={working}
+                disabled={working}
+                onPress={handleCancel}
+              />
+            </>
+          ) : (
+            <ActionButton
+              icon={isFull ? 'hourglass-outline' : 'checkmark-circle-outline'}
+              label={isFull ? 'Join waitlist' : 'RSVP to this hike'}
               loading={working}
               disabled={working}
-              onPress={handleCancel}
+              onPress={handleRsvp}
             />
-          </>
-        ) : (
-          <RailButton
-            icon={isFull ? 'hourglass-outline' : 'checkmark-circle-outline'}
-            label={isFull ? 'Join waitlist' : 'RSVP to this hike'}
-            variant="primary"
-            loading={working}
-            disabled={working}
-            onPress={handleRsvp}
-          />
-        )
-      }
-    >
-      {/* Weather banner — driven by event proximity */}
-      <WeatherBanner state={weatherState} />
-
-      {/* Info blocks, two per row */}
-      <Grid>
-        <InfoRow icon="trail-sign-outline" label="Mountain" value={mountain?.name ?? '—'} />
-        <InfoRow
-          icon="calendar-outline"
-          label="Date"
-          value={event.end_date && event.end_date !== event.event_date
-            ? `${formatDate(event.event_date)} – ${formatDate(event.end_date)}`
-            : formatDate(event.event_date)}
+          )
+        }
+      >
+        <SidebarHeader
+          onBack={() => router.back()}
+          backLabel="Events"
+          title="Event details"
         />
-        <InfoRow
-          icon="time-outline"
-          label="Time"
-          value={event.end_time
-            ? `${formatTime(event.start_time)} – ${formatTime(event.end_time)}`
-            : `${formatTime(event.start_time)}${event.duration_hours ? ` · ~${event.duration_hours}h` : ''}`}
-        />
-        <InfoRow icon="location-outline" label="Meeting point" value={event.meeting_point} />
-      </Grid>
 
-      {event.description ? (
-        <Block label="ABOUT THIS HIKE">
-          <Text style={styles.blockText}>{event.description}</Text>
-        </Block>
-      ) : null}
+        <Panel style={styles.orgCard}>
+          <View style={styles.orgAvatar}>
+            <Ionicons name="business-outline" size={14} color={D.gold} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.orgName} numberOfLines={2}>
+              {event.organizations?.name ?? 'Organizer'}
+            </Text>
+            <View style={styles.orgMeta}>
+              {verified ? (
+                <>
+                  <Ionicons name="shield-checkmark" size={10} color={D.green} />
+                  <Text style={styles.orgVerified}>Verified</Text>
+                </>
+              ) : (
+                <Text style={styles.orgUnverified}>Unverified</Text>
+              )}
+            </View>
+          </View>
+        </Panel>
 
-      {event.safety_notes ? (
-        <Block label="SAFETY NOTES" accent="rgba(201,169,110,0.2)">
-          <Text style={styles.blockText}>{event.safety_notes}</Text>
-        </Block>
-      ) : null}
+        <SectionLabel>DETAILS</SectionLabel>
+        <View style={{ gap: 6 }}>
+          <Badge label={event.difficulty} />
+          {event.is_public ? <MetaRow icon="eye-outline" text="Open to the public" /> : null}
+          {event.allow_walkins ? <MetaRow icon="walk-outline" text="Walk-ins welcome" /> : null}
+        </View>
+      </Sidebar>
 
-      {event.required_gear ? (
-        <Block label="REQUIRED GEAR">
-          <Text style={styles.blockText}>{event.required_gear}</Text>
-        </Block>
-      ) : null}
-    </OrgLandscapeShell>
+      {/* ── Centre: title, facts, text panels ── */}
+      <Center>
+        <View style={styles.centerInner}>
+          <Text style={styles.title} numberOfLines={2}>
+            {event.title}
+          </Text>
+
+          <Panel style={styles.facts}>
+            <Fact
+              icon="calendar-outline"
+              label="Date"
+              value={multiDay ? `${formatDate(event.event_date)} – ${formatDate(event.end_date as string)}` : formatDate(event.event_date)}
+            />
+            <Fact
+              icon="time-outline"
+              label="Time"
+              value={event.end_time
+                ? `${formatTime(event.start_time)} – ${formatTime(event.end_time)}`
+                : `${formatTime(event.start_time)}${event.duration_hours ? ` · ~${event.duration_hours}h` : ''}`}
+            />
+            <Fact icon="trail-sign-outline" label="Mountain" value={mountain?.name ?? '—'} />
+            <Fact icon="location-outline" label="Meeting point" value={event.meeting_point} />
+          </Panel>
+
+          {hasAnyText ? (
+            <View style={styles.textRow}>
+              {event.description ? (
+                <TextPanel icon="reader-outline" title="About this hike" text={event.description} flex={1.4} />
+              ) : null}
+              {hasSecondary ? (
+                <View style={styles.textStack}>
+                  {event.safety_notes ? (
+                    <TextPanel icon="shield-outline" title="Safety notes" text={event.safety_notes} accent />
+                  ) : null}
+                  {event.required_gear ? (
+                    <TextPanel icon="bag-handle-outline" title="Required gear" text={event.required_gear} />
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.emptyText}>
+              <Text style={styles.weatherQuiet}>The organizer hasn't added more details yet.</Text>
+            </View>
+          )}
+        </View>
+      </Center>
+
+      {/* ── Right pane: weather + attendance + attendee cards ── */}
+      <RightPane>
+        <WeatherCard state={weatherState} />
+
+        <Panel style={{ gap: 6 }}>
+          <View style={styles.attendRow}>
+            <Text style={styles.attendLabel}>ATTENDING</Text>
+            <Text style={styles.attendValue}>
+              {counts.confirmed}
+              {hasCapacity ? <Text style={styles.attendSub}>{` / ${event.capacity}`}</Text> : null}
+            </Text>
+          </View>
+          {hasCapacity && (event.capacity as number) > 0 ? (
+            <Meter value={pct} color={isFull ? D.orange : D.green} />
+          ) : null}
+          {counts.waitlist > 0 ? (
+            <Text style={styles.waitlist}>{counts.waitlist} on the waitlist</Text>
+          ) : null}
+        </Panel>
+
+        {attendees.length > 0 && (
+          <Panel style={{ gap: 8, flex: 1, minHeight: 0 }}>
+            <View style={styles.attendeeHeader}>
+              <Text style={styles.attendLabel}>HIKERS GOING</Text>
+              <Text style={styles.attendeeCount}>{goingCount}</Text>
+            </View>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.attendeeListContent}
+              style={{ flex: 1 }}
+            >
+              {attendees.map((a) => (
+                <AttendeeCard
+                  key={a.rsvpId}
+                  attendee={a}
+                  onPress={setProfileUserId}
+                />
+              ))}
+            </ScrollView>
+          </Panel>
+        )}
+      </RightPane>
+
+      {/* ── Profile card modal ── */}
+      <ProfileCard
+        userId={profileUserId}
+        visible={profileUserId !== null}
+        onClose={() => setProfileUserId(null)}
+        onMessagePress={(id) => {
+          setProfileUserId(null);
+          // router.push(`/chat/${id}`);
+        }}
+      />
+
+      {/* Hike permit animation — the "assurance" instead of a dialog. */}
+      {permit.element}
+    </Shell>
   );
 }
 
 const styles = StyleSheet.create({
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-
-  // Rail: organizer
-  orgHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10 },
+  // Sidebar
+  orgCard: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 },
   orgAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: PC.goldSoft,
-    borderWidth: 1,
-    borderColor: PC.borderGold,
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: D.goldSoft,
+    borderWidth: 1,
+    borderColor: D.goldLine,
   },
-  orgName: { color: '#FFF', fontSize: FS.base, fontWeight: '700' },
-  orgMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  orgVerified: { color: PC.green, fontSize: FS.small, fontWeight: '600' },
-  orgUnverified: { color: PC.textFaint, fontSize: FS.small },
+  orgName: { color: D.text, fontSize: 11.5, fontWeight: '700' },
+  orgMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  orgVerified: { color: D.green, fontSize: 9.5, fontWeight: '600' },
+  orgUnverified: { color: D.faint, fontSize: 9.5 },
+  rsvpState: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rsvpStateText: { color: D.text, fontSize: 10.5, flex: 1, lineHeight: 14 },
 
-  // Rail: capacity
-  capacityCard: { gap: SP.sm },
-  capacityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  capacityLabel: { color: '#A9B7C4', fontSize: FS.micro, textTransform: 'uppercase', letterSpacing: 0.6 },
-  capacityValue: { color: '#FFF', fontSize: FS.title, fontWeight: '800' },
-  capacityValueSub: { color: 'rgba(255,255,255,0.45)', fontSize: FS.base, fontWeight: '600' },
-  capacityTrack: { height: 6, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 3, overflow: 'hidden' },
-  capacityFill: { height: '100%', borderRadius: 3 },
-  waitlistText: { color: PC.gold, fontSize: FS.small, fontWeight: '600' },
+  // Centre
+  centerInner: { flex: 1, padding: 10, gap: 8 },
+  title: { color: D.text, fontSize: 16, fontWeight: '700', letterSpacing: -0.2, lineHeight: 20 },
+  facts: { flexDirection: 'row', flexWrap: 'wrap', paddingVertical: 4, paddingHorizontal: 6 },
+  fact: { width: '50%', paddingVertical: 5, paddingHorizontal: 4 },
+  factLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  factLabel: { color: D.faint, fontSize: 9, fontWeight: '600', letterSpacing: 0.3 },
+  factValue: { color: D.text, fontSize: 11, marginTop: 2, lineHeight: 14 },
 
-  // Panel: weather
-  weatherBanner: {
+  textRow: { flex: 1, flexDirection: 'row', gap: 8, minHeight: 0 },
+  textStack: { flex: 1, gap: 8, minHeight: 0 },
+  textPanel: { minHeight: 0, padding: 10 },
+  textPanelHead: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
+  textPanelTitle: { color: D.muted, fontSize: 10.5, fontWeight: '700' },
+  bodyText: { color: 'rgba(255,255,255,0.78)', fontSize: 11, lineHeight: 16 },
+  emptyText: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // Right pane
+  weatherRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  weatherHead: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  weatherLabel: { fontSize: 10.5, fontWeight: '800' },
+  weatherMeta: { color: D.text, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  weatherContext: { color: D.faint, fontSize: 9, marginTop: 1 },
+  weatherAdvice: { color: 'rgba(255,255,255,0.7)', fontSize: 10, lineHeight: 14, marginTop: 3 },
+  weatherQuietTitle: { color: 'rgba(255,255,255,0.7)', fontSize: 10.5, fontWeight: '700' },
+  weatherQuiet: { color: D.muted, fontSize: 10, lineHeight: 14 },
+
+  attendRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  attendLabel: { color: D.faint, fontSize: 9, fontWeight: '600', letterSpacing: 0.4 },
+  attendValue: { color: D.text, fontSize: 16, fontWeight: '800' },
+  attendSub: { color: D.muted, fontSize: 11, fontWeight: '600' },
+  waitlist: { color: D.gold, fontSize: 10, fontWeight: '600' },
+
+  // Attendees — vertical list of cards
+  attendeeHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  attendeeCount: { color: D.text, fontSize: 12, fontWeight: '700' },
+  attendeeListContent: {
+    gap: 6,
+    paddingBottom: 4,
+  },
+  attendeeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
-    paddingVertical: 10,
-    paddingHorizontal: SP.md,
-    borderRadius: PC.radius,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    borderBottomColor: 'rgba(255,255,255,0.03)',
+    borderLeftColor: 'rgba(255,255,255,0.06)',
+    borderRightColor: 'rgba(255,255,255,0.06)',
+  },
+  attendeeCardAvatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  attendeeCardAvatarImage: { width: '100%', height: '100%' },
+  attendeeCardInitials: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  attendeeCardBody: { flex: 1, minWidth: 0 },
+  attendeeCardName: { color: D.text, fontSize: 11.5, fontWeight: '700' },
+  attendeeCardUsername: { color: D.muted, fontSize: 9.5, marginTop: 1 },
+  attendeeCardPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
     borderWidth: 1,
   },
-  weatherBannerNeutral: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
+  attendeeCardPillGoing: {
+    backgroundColor: 'rgba(63,214,157,0.10)',
+    borderColor: 'rgba(63,214,157,0.30)',
   },
-  weatherLoadingText: { color: 'rgba(255,255,255,0.5)', fontSize: FS.body },
-  weatherNeutralLabel: { color: 'rgba(255,255,255,0.7)', fontSize: FS.body, fontWeight: '700' },
-  weatherNeutralText: { color: 'rgba(255,255,255,0.45)', fontSize: FS.small, lineHeight: 16, marginTop: 2 },
-  weatherLabel: { fontSize: FS.small, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' },
-  weatherContext: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: FS.micro,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
+  attendeeCardPillWaitlist: {
+    backgroundColor: 'rgba(201,169,110,0.10)',
+    borderColor: 'rgba(201,169,110,0.30)',
   },
-  weatherMeta: { color: 'rgba(255,255,255,0.7)', fontSize: FS.body, marginTop: 2 },
-  weatherAdvice: { color: PC.textBody, fontSize: FS.body, lineHeight: 17, marginTop: 2 },
-
-  blockText: { color: PC.textBody, fontSize: FS.base, lineHeight: 19 },
+  attendeeCardPillText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4 },
 });

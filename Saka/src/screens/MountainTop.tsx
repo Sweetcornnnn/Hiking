@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +9,8 @@ import { supabase } from '../lib/supabase';
 import ResponsiveMapImage, { MapPoint } from '../components/ResponsiveMapImage';
 import { getMountainMap } from '../data/mountainMaps';
 import LoadingScreen from './Loading';
+import ZoomableView from '../components/ZoomableView';
+import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
 
 type TableViewpoint = {
   id: string;
@@ -22,6 +25,8 @@ type TableViewpoint = {
 // Tap each spot in order → copy the SQL from the console → run in Supabase
 // → set back to `false`. Production builds always run with placement off.
 const PLACEMENT_MODE = false;
+const VIEWPOINTS_CACHE_PREFIX = 'SAKA_VIEWPOINTS_CACHE:';
+const VIEWPOINTS_CACHE_UPDATED_PREFIX = 'SAKA_VIEWPOINTS_CACHE_UPDATED:';
 
 export default function MountainTopScreen() {
   const { mountainId } = useLocalSearchParams<{ mountainId: string }>();
@@ -44,25 +49,30 @@ export default function MountainTopScreen() {
 
   // ─── Load mountain data ────────────────────────────────────────────────
   useEffect(() => {
-    if (cachedMountain) return;
-
     if (!mountainId) {
       setError('No mountain ID provided');
       setLoading(false);
       return;
     }
 
+    let active = true;
     (async () => {
       try {
         const data = await mountainService.fetchMountainById(mountainId);
-        if (data) setMountain(data);
-        else setError('Mountain not found');
+        if (active && data) {
+          setMountain(data);
+        }
+        else if (active && !data) setError('Mountain not found');
       } catch (err: any) {
-        setError(err?.message || 'Failed to load mountain');
+        if (active) setError(err?.message || 'Failed to load mountain');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
+
+    return () => {
+      active = false;
+    };
   }, [cachedMountain, mountainId]);
 
   const mapInfo = getMountainMap(mountainId, mountain?.name);
@@ -79,23 +89,65 @@ export default function MountainTopScreen() {
     setViewpointsError(null);
 
     (async () => {
-      const { data, error: qError } = await supabase
-        .from('viewpoints')
-        .select('id, name, sort_order, map_x, map_y')
-        .eq('mountain_id', mountainId)
-        .not('sort_order', 'is', null)
-        .order('sort_order');
+      const cacheKey = `${VIEWPOINTS_CACHE_PREFIX}${mountainId}`;
+      const updatedAtKey = `${VIEWPOINTS_CACHE_UPDATED_PREFIX}${mountainId}`;
+      let hasCachedViewpoints = false;
 
-      if (!active) return;
-
-      if (qError) {
-        console.error('[MountainTop] viewpoints fetch failed:', qError);
-        setViewpointsError(qError.message);
-        setViewpointList([]);
-      } else {
-        setViewpointList((data ?? []) as TableViewpoint[]);
+      try {
+        const cachedJson = await AsyncStorage.getItem(cacheKey);
+        if (cachedJson) {
+          const cached = JSON.parse(cachedJson) as TableViewpoint[];
+          if (Array.isArray(cached)) {
+            hasCachedViewpoints = true;
+            if (active) {
+              setViewpointList(cached);
+              setViewpointsLoading(false);
+            }
+          }
+        }
+      } catch (cacheError) {
+        console.warn('[MountainTop] Failed to read cached viewpoints:', cacheError);
       }
-      setViewpointsLoading(false);
+
+      try {
+        const { data, error: qError } = await supabase
+          .from('viewpoints')
+          .select('id, name, sort_order, map_x, map_y')
+          .eq('mountain_id', mountainId)
+          .not('sort_order', 'is', null)
+          .order('sort_order');
+
+        if (!active) return;
+
+        if (qError) {
+          console.error('[MountainTop] viewpoints fetch failed:', qError);
+          if (!hasCachedViewpoints) {
+            setViewpointsError(qError.message);
+            setViewpointList([]);
+          }
+        } else {
+          const viewpoints = (data ?? []) as TableViewpoint[];
+          setViewpointList(viewpoints);
+          const updatedAt = new Date().toISOString();
+          void Promise.all([
+            AsyncStorage.setItem(cacheKey, JSON.stringify(viewpoints)),
+            AsyncStorage.setItem(updatedAtKey, updatedAt),
+          ]).catch(cacheError => {
+            console.warn('[MountainTop] Failed to persist viewpoints:', cacheError);
+          });
+        }
+      } catch (queryError) {
+        if (!active) return;
+        console.warn('[MountainTop] Unable to refresh viewpoints:', queryError);
+        if (!hasCachedViewpoints) {
+          setViewpointsError(
+            queryError instanceof Error ? queryError.message : 'Unable to load trail data.'
+          );
+          setViewpointList([]);
+        }
+      } finally {
+        if (active) setViewpointsLoading(false);
+      }
     })();
 
     return () => {
@@ -183,29 +235,33 @@ export default function MountainTopScreen() {
     <View style={styles.container}>
       {mountain && mapInfo && (
         <>
-          <ResponsiveMapImage
-            source={mapInfo.source}
-            fit="cover"
-            points={points}
-            trail={trail}
-            onLoad={() => setImageLoaded(true)}
-            onError={() => {
-              console.error(
-                `[MountainTop] Failed to load map image for ${mountain.name}`
-              );
-              setImageError(true);
-            }}
-            // Only pass a press handler when placement is on — otherwise it
-            // can steal taps from the viewpoint dots.
-            onImagePress={PLACEMENT_MODE ? handleImagePress : undefined}
-            onPointPress={p => {
-              if (PLACEMENT_MODE || !mountainId) return;
-              router.push({
-                pathname: '/Viewpoint',
-                params: { viewpointId: p.id, mountainId },
-              });
-            }}
-          />
+          {/* Pinch / drag / double-tap to zoom. Off in placement mode so tap
+              coordinates stay exact while calibrating. */}
+          <ZoomableView enabled={!PLACEMENT_MODE}>
+            <ResponsiveMapImage
+              source={mapInfo.source}
+              fit="cover"
+              points={points}
+              trail={trail}
+              onLoad={() => setImageLoaded(true)}
+              onError={() => {
+                console.error(
+                  `[MountainTop] Failed to load map image for ${mountain.name}`
+                );
+                setImageError(true);
+              }}
+              // Only pass a press handler when placement is on — otherwise it
+              // can steal taps from the viewpoint dots.
+              onImagePress={PLACEMENT_MODE ? handleImagePress : undefined}
+              onPointPress={p => {
+                if (PLACEMENT_MODE || !mountainId) return;
+                router.push({
+                  pathname: '/Viewpoint',
+                  params: { viewpointId: p.id, mountainId },
+                });
+              }}
+            />
+          </ZoomableView>
 
           {imageError && loadingScreenComplete && (
             <View style={styles.mapError} pointerEvents="none">
@@ -213,19 +269,36 @@ export default function MountainTopScreen() {
             </View>
           )}
 
-          {/* Floating Header */}
-          <SafeAreaView style={styles.headerSafeArea} pointerEvents="box-none">
-            <View style={styles.header}>
-              <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          {/* Floating header: two small pills instead of a full-width bar, so the map stays the focus */}
+          <SafeAreaView
+            edges={['top', 'left', 'right']}
+            style={styles.headerSafeArea}
+            pointerEvents="box-none"
+          >
+            <View style={styles.header} pointerEvents="box-none">
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => router.back()}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+              >
+                <Ionicons name="chevron-back" size={18} color="#FFFFFF" />
               </TouchableOpacity>
-              <Ionicons name="location-outline" size={18} color="#C9A96E" />
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {mountain.name}
-              </Text>
-              <View style={styles.headerBadge}>
-                <Text style={styles.headerBadgeText}>{mountain.difficulty}</Text>
+
+              <View style={styles.titlePill}>
+                <Text style={styles.titleText} numberOfLines={1}>
+                  {mountain.name}
+                </Text>
+                {mountain.difficulty ? (
+                  <>
+                    <View style={styles.titleDivider} />
+                    <Text style={styles.difficultyText} numberOfLines={1}>
+                      {mountain.difficulty}
+                    </Text>
+                  </>
+                ) : null}
               </View>
+              <OfflineStatusIndicator />
             </View>
           </SafeAreaView>
 
@@ -293,52 +366,45 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(18, 26, 38, 0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    paddingTop: 6,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  headerTitle: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 6,
-    letterSpacing: 0.3,
-  },
-  headerBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 12,
-    backgroundColor: 'rgba(201, 169, 110, 0.15)',
+    backgroundColor: 'rgba(14, 21, 32, 0.78)',
     borderWidth: 1,
-    borderColor: 'rgba(201, 169, 110, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  headerBadgeText: {
-    color: '#C9A96E',
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
+  titlePill: {
+    flexShrink: 1,
+    height: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 17,
+    backgroundColor: 'rgba(14, 21, 32, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-
+  titleText: {
+    flexShrink: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  titleDivider: {
+    width: 1,
+    height: 12,
+    marginHorizontal: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  difficultyText: { color: '#C9A96E', fontSize: 11, fontWeight: '600' },
   placeBar: {
     position: 'absolute',
     bottom: 24,

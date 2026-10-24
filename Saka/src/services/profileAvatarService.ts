@@ -1,5 +1,6 @@
-import { File } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import { supabase } from '../lib/supabase';
+import { warnIfDeviceStorageLow } from './offlineStorageService';
 
 const AVATAR_BUCKET = 'avatars';
 
@@ -32,6 +33,18 @@ export async function uploadProfileAvatar(userId: string, uri: string): Promise<
   }
 
   return supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+export async function persistProfileAvatarLocally(userId: string, uri: string): Promise<string> {
+  if (!userId) throw new Error('You must be signed in to save a profile photo.');
+  const directory = new Directory(Paths.document, 'offline-profile', userId);
+  directory.create({ intermediates: true, idempotent: true });
+  const source = new File(uri);
+  if (!source.exists) throw new Error('The selected profile photo is unavailable.');
+  warnIfDeviceStorageLow();
+  const destination = new File(directory, `avatar-${Date.now()}.${getImageExtension(uri)}`);
+  source.copy(destination);
+  return destination.uri;
 }
 
 function getImageExtension(uri: string): string {

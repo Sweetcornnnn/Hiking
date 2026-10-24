@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Modal,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,462 +11,383 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-export type EmergencyContactRole = 'ngo' | 'admin' | 'tourGuide' | 'family';
-
-export interface EmergencyContact {
-  name: string;
-  phone: string;
-}
-
-export interface EmergencyPlan {
-  travelDate: string;
-  departureTime: string;
-  expectedArrivalTime: string;
-  contacts: Record<EmergencyContactRole, EmergencyContact>;
-}
+import {
+  emergencyContactsService,
+  type EmergencyContact,
+} from '../../services/emergencyContactsService';
 
 interface EmergencyContactFeatureProps {
   visible: boolean;
-  onClose: () => void;
-  onSave: (plan: EmergencyPlan) => void | Promise<void>;
-  initialValue?: Partial<EmergencyPlan>;
-  embedded?: boolean;
 }
 
-const contactRoles: { key: EmergencyContactRole; label: string }[] = [
-  { key: 'ngo', label: 'NGO' },
-  { key: 'admin', label: 'Admin' },
-  { key: 'tourGuide', label: 'Tour guide' },
-  { key: 'family', label: 'Family (last)' },
-];
-
-export const createEmptyPlan = (): EmergencyPlan => ({
-  travelDate: '',
-  departureTime: '',
-  expectedArrivalTime: '',
-  contacts: {
-    ngo: { name: '', phone: '' },
-    admin: { name: '', phone: '' },
-    tourGuide: { name: '', phone: '' },
-    family: { name: '', phone: '' },
-  },
-});
-
-const mergePlan = (initialValue?: Partial<EmergencyPlan>): EmergencyPlan => {
-  const emptyPlan = createEmptyPlan();
-
+function createContact(): EmergencyContact {
   return {
-    ...emptyPlan,
-    ...initialValue,
-    contacts: {
-      ...emptyPlan.contacts,
-      ...initialValue?.contacts,
-    },
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    name: '',
+    relationship: '',
+    phone: '',
   };
-};
+}
 
 export default function EmergencyContactFeature({
   visible,
-  onClose,
-  onSave,
-  initialValue,
-  embedded = false,
 }: EmergencyContactFeatureProps) {
-  const [plan, setPlan] = useState<EmergencyPlan>(() => mergePlan(initialValue));
+  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const loadContacts = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const savedContacts = await emergencyContactsService.load();
+      setContacts(savedContacts);
+      setHasLoaded(true);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not load emergency contacts.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (visible && !embedded) {
-      setPlan(mergePlan(initialValue));
+    if (visible && !hasLoaded) {
+      void loadContacts();
     }
-  }, [visible, initialValue, embedded]);
-
-  const updatePlanField = (
-    field: 'travelDate' | 'departureTime' | 'expectedArrivalTime',
-    value: string
-  ) => {
-    setPlan((current) => ({ ...current, [field]: value }));
-  };
+  }, [visible, hasLoaded, loadContacts]);
 
   const updateContact = (
-    role: EmergencyContactRole,
-    field: keyof EmergencyContact,
-    value: string
+    id: string,
+    field: 'name' | 'relationship' | 'phone',
+    value: string,
   ) => {
-    setPlan((current) => ({
-      ...current,
-      contacts: {
-        ...current.contacts,
-        [role]: { ...current.contacts[role], [field]: value },
-      },
-    }));
+    setContacts((current) =>
+      current.map((contact) =>
+        contact.id === id ? { ...contact, [field]: value } : contact,
+      ),
+    );
   };
 
-  const handleSave = async () => {
-    if (!plan.travelDate.trim() || !plan.departureTime.trim() || !plan.expectedArrivalTime.trim()) {
-      Alert.alert('Trip details required', 'Enter the travel date, departure time, and expected arrival time.');
+  const moveContact = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= contacts.length) return;
+    setContacts((current) => {
+      const reordered = [...current];
+      [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+      return reordered;
+    });
+  };
+
+  const saveContacts = async () => {
+    const normalizedContacts = contacts.map((contact) => ({
+      ...contact,
+      name: contact.name.trim(),
+      relationship: contact.relationship.trim(),
+      phone: contact.phone.trim(),
+    }));
+    const incompleteContact = normalizedContacts.find(
+      (contact) => !contact.name || !contact.phone,
+    );
+    if (incompleteContact) {
+      Alert.alert('Contact details required', 'Enter a name and phone number for each contact.');
       return;
     }
 
     setIsSaving(true);
+    setSaveError(null);
     try {
-      await onSave(plan);
-      if (!embedded) onClose();
+      await emergencyContactsService.save(normalizedContacts);
+      setContacts(normalizedContacts);
+      Alert.alert('Contacts saved', 'Your emergency contacts are saved to your account.');
     } catch (error) {
-      Alert.alert(
-        'Could not save emergency plan',
-        error instanceof Error ? error.message : 'Please try again.'
-      );
+      setSaveError(error instanceof Error ? error.message : 'Could not save emergency contacts.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const formFields = (
-    <ScrollView
-      style={embedded ? styles.embeddedScroll : styles.scroll}
-      contentContainerStyle={embedded ? styles.embeddedScrollContent : styles.scrollContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={styles.sectionTitle}>Trip schedule</Text>
-      <View style={styles.tripFields}>
-        <View style={styles.tripField}>
-          <Text style={styles.label}>Travel date</Text>
-          <TextInput
-            value={plan.travelDate}
-            onChangeText={(value) => updatePlanField('travelDate', value)}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={styles.placeholder.color}
-            style={styles.input}
-            accessibilityLabel="Travel date, year-month-day"
-          />
-        </View>
-        <View style={styles.tripField}>
-          <Text style={styles.label}>Departure</Text>
-          <TextInput
-            value={plan.departureTime}
-            onChangeText={(value) => updatePlanField('departureTime', value)}
-            placeholder="HH:MM"
-            placeholderTextColor={styles.placeholder.color}
-            style={styles.input}
-            keyboardType="numbers-and-punctuation"
-            accessibilityLabel="Departure time, 24-hour format"
-          />
-        </View>
-        <View style={styles.tripField}>
-          <Text style={styles.label}>Expected arrival</Text>
-          <TextInput
-            value={plan.expectedArrivalTime}
-            onChangeText={(value) => updatePlanField('expectedArrivalTime', value)}
-            placeholder="HH:MM"
-            placeholderTextColor={styles.placeholder.color}
-            style={styles.input}
-            keyboardType="numbers-and-punctuation"
-            accessibilityLabel="Expected arrival time, 24-hour format"
-          />
-        </View>
-      </View>
+  const callContact = async (phone: string) => {
+    try {
+      await Linking.openURL(`tel:${phone.trim()}`);
+    } catch {
+      Alert.alert('Unable to call', 'This device could not open the phone dialer.');
+    }
+  };
 
-      <View style={styles.contactHeading}>
-        <Text style={styles.sectionTitle}>Emergency contacts</Text>
-        <Text style={styles.orderHint}>Call in this order</Text>
-      </View>
-
-      {contactRoles.map(({ key, label }, index) => (
-        <View key={key} style={styles.contactRow}>
-          <View style={styles.orderNumber}>
-            <Text style={styles.orderNumberText}>{index + 1}</Text>
-          </View>
-          <View style={styles.contactFields}>
-            <Text style={styles.contactLabel}>{label}</Text>
-            <View style={styles.contactInputs}>
-              <TextInput
-                value={plan.contacts[key].name}
-                onChangeText={(value) => updateContact(key, 'name', value)}
-                placeholder="Name or organization"
-                placeholderTextColor={styles.placeholder.color}
-                style={[styles.input, styles.contactNameInput]}
-                accessibilityLabel={`${label} contact name`}
-              />
-              <TextInput
-                value={plan.contacts[key].phone}
-                onChangeText={(value) => updateContact(key, 'phone', value)}
-                placeholder="Phone number"
-                placeholderTextColor={styles.placeholder.color}
-                style={[styles.input, styles.contactPhoneInput]}
-                keyboardType="phone-pad"
-                accessibilityLabel={`${label} phone number`}
-              />
-            </View>
-          </View>
-        </View>
-      ))}
-    </ScrollView>
-  );
-
-  const saveButton = (
-    <TouchableOpacity
-      onPress={handleSave}
-      disabled={isSaving}
-      style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
-    >
-      {isSaving ? <ActivityIndicator size="small" color="#101923" /> : null}
-      <Text style={styles.saveText}>{isSaving ? 'Saving' : 'Save plan'}</Text>
-    </TouchableOpacity>
-  );
-
-  if (embedded) {
-    if (!visible) return null;
-
-    return (
-      <View style={styles.embeddedContainer}>
-        {formFields}
-        <View style={styles.embeddedFooter}>{saveButton}</View>
-      </View>
-    );
-  }
+  if (!visible) return null;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
-          <View style={styles.header}>
-            <View style={styles.headerIcon}>
-              <Ionicons name="warning-outline" size={18} color="#E07070" />
-            </View>
-            <View style={styles.headerText}>
-              <Text style={styles.title}>Hike safety plan</Text>
-              <Text style={styles.subtitle}>Trip details and emergency call order</Text>
-            </View>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Close emergency plan"
-              onPress={onClose}
-              style={styles.closeButton}
-            >
-              <Ionicons name="close" size={19} color="rgba(255,255,255,0.65)" />
-            </TouchableOpacity>
-          </View>
-
-          {formFields}
-
-          <View style={styles.footer}>
-            <TouchableOpacity
-              onPress={onClose}
-              disabled={isSaving}
-              style={[styles.button, styles.cancelButton]}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            {saveButton}
-          </View>
+    <View style={styles.container}>
+      <View style={styles.heading}>
+        <View style={styles.headingCopy}>
+          <Text style={styles.title}>Emergency contacts</Text>
+          <Text style={styles.subtitle}>
+            Admins can view these details to assist in emergencies. Contacts are not alerted automatically.
+          </Text>
         </View>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setContacts((current) => [...current, createContact()])}
+          disabled={isLoading || isSaving}
+          accessibilityRole="button"
+          accessibilityLabel="Add emergency contact"
+        >
+          <Ionicons name="add" size={16} color="#101923" />
+          <Text style={styles.addButtonText}>Add</Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      {loadError ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{loadError}</Text>
+          <TouchableOpacity onPress={loadContacts} disabled={isLoading}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      {saveError ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{saveError}</Text>
+        </View>
+      ) : null}
+
+      {isLoading ? (
+        <View style={styles.loading}>
+          <ActivityIndicator color="#C9A96E" />
+          <Text style={styles.helperText}>Loading your contacts…</Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {contacts.length === 0 ? (
+            <Text style={styles.emptyText}>
+              No emergency contacts yet. Add someone you trust to reach in an emergency.
+            </Text>
+          ) : (
+            contacts.map((contact, index) => (
+              <View key={contact.id} style={styles.contactCard}>
+                <View style={styles.contactTopRow}>
+                  <View style={styles.orderBadge}>
+                    <Text style={styles.orderText}>{index + 1}</Text>
+                  </View>
+                  <Text style={styles.orderHint}>Contact order</Text>
+                  <View style={styles.orderControls}>
+                    <TouchableOpacity
+                      onPress={() => moveContact(index, -1)}
+                      disabled={index === 0 || isSaving}
+                      style={styles.iconButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Move contact ${index + 1} up`}
+                    >
+                      <Ionicons
+                        name="chevron-up"
+                        size={15}
+                        color={index === 0 ? '#59616B' : '#D9E0E7'}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => moveContact(index, 1)}
+                      disabled={index === contacts.length - 1 || isSaving}
+                      style={styles.iconButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Move contact ${index + 1} down`}
+                    >
+                      <Ionicons
+                        name="chevron-down"
+                        size={15}
+                        color={index === contacts.length - 1 ? '#59616B' : '#D9E0E7'}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() =>
+                        setContacts((current) => current.filter((item) => item.id !== contact.id))
+                      }
+                      disabled={isSaving}
+                      style={styles.iconButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove contact ${index + 1}`}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#E07070" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TextInput
+                  value={contact.name}
+                  onChangeText={(value) => updateContact(contact.id, 'name', value)}
+                  placeholder="Name"
+                  placeholderTextColor="#7E8995"
+                  style={styles.input}
+                  editable={!isSaving}
+                  accessibilityLabel={`Contact ${index + 1} name`}
+                />
+                <TextInput
+                  value={contact.relationship}
+                  onChangeText={(value) => updateContact(contact.id, 'relationship', value)}
+                  placeholder="Relationship or role (optional)"
+                  placeholderTextColor="#7E8995"
+                  style={styles.input}
+                  editable={!isSaving}
+                  accessibilityLabel={`Contact ${index + 1} relationship or role`}
+                />
+                <View style={styles.phoneRow}>
+                  <TextInput
+                    value={contact.phone}
+                    onChangeText={(value) => updateContact(contact.id, 'phone', value)}
+                    placeholder="Phone number"
+                    placeholderTextColor="#7E8995"
+                    style={[styles.input, styles.phoneInput]}
+                    keyboardType="phone-pad"
+                    editable={!isSaving}
+                    accessibilityLabel={`Contact ${index + 1} phone number`}
+                  />
+                  <TouchableOpacity
+                    onPress={() => void callContact(contact.phone)}
+                    disabled={!contact.phone.trim()}
+                    style={[styles.callButton, !contact.phone.trim() && styles.disabledButton]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Call ${contact.name || `contact ${index + 1}`}`}
+                  >
+                    <Ionicons name="call-outline" size={13} color="#101923" />
+                    <Text style={styles.callButtonText}>Call</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      )}
+
+      <View style={styles.footer}>
+        <Text style={styles.footerHint}>Contact order is used as your personal call priority.</Text>
+        <TouchableOpacity
+          onPress={saveContacts}
+          disabled={isLoading || isSaving || !hasLoaded}
+          style={[styles.saveButton, (isLoading || isSaving || !hasLoaded) && styles.disabledButton]}
+        >
+          {isSaving ? <ActivityIndicator size="small" color="#101923" /> : null}
+          <Text style={styles.saveButtonText}>{isSaving ? 'Saving…' : 'Save contacts'}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  embeddedContainer: {
-    flex: 1,
-    minHeight: 0,
-  },
-  embeddedScroll: {
-    flex: 1,
-  },
-  embeddedScrollContent: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 7,
-  },
-  embeddedFooter: {
-    alignItems: 'flex-end',
-    paddingHorizontal: 10,
-    paddingTop: 5,
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 18,
-    backgroundColor: 'rgba(5,10,16,0.78)',
-  },
-  modal: {
-    width: '100%',
-    maxWidth: 620,
-    maxHeight: '92%',
-    backgroundColor: '#0E1520',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    overflow: 'hidden',
-  },
-  header: {
+  container: { flex: 1, minHeight: 0 },
+  heading: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
-  headerIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(224,112,112,0.12)',
-    marginRight: 10,
-  },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  subtitle: {
-    color: 'rgba(255,255,255,0.48)',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  closeButton: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scroll: {
-    flexShrink: 1,
-  },
-  scrollContent: {
-    padding: 18,
-    gap: 12,
-  },
-  sectionTitle: {
-    color: '#C9A96E',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  tripFields: {
-    flexDirection: 'row',
-    gap: 9,
-  },
-  tripField: {
-    flex: 1,
-    minWidth: 0,
-  },
-  label: {
-    color: 'rgba(255,255,255,0.58)',
-    fontSize: 10,
-    marginBottom: 5,
-  },
-  input: {
-    minWidth: 0,
-    height: 38,
-    paddingHorizontal: 10,
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    color: '#FFFFFF',
-    fontSize: 12,
-  },
-  placeholder: {
-    color: 'rgba(255,255,255,0.3)',
-  },
-  contactHeading: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 5,
-  },
-  orderHint: {
-    color: 'rgba(255,255,255,0.38)',
-    fontSize: 10,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  orderNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(201,169,110,0.12)',
-  },
-  orderNumberText: {
-    color: '#C9A96E',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  contactFields: {
-    flex: 1,
-    minWidth: 0,
-  },
-  contactLabel: {
-    color: 'rgba(255,255,255,0.64)',
-    fontSize: 10,
-    marginBottom: 4,
-  },
-  contactInputs: {
-    flexDirection: 'row',
     gap: 8,
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 5,
   },
-  contactNameInput: {
-    flex: 1.2,
-  },
-  contactPhoneInput: {
-    flex: 1,
-  },
-  footer: {
+  headingCopy: { flex: 1 },
+  title: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  subtitle: { color: 'rgba(255,255,255,0.55)', fontSize: 10, lineHeight: 14, marginTop: 3 },
+  addButton: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 9,
-    padding: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#C9A96E',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
   },
-  button: {
-    minWidth: 100,
-    minHeight: 38,
-    paddingHorizontal: 14,
+  addButtonText: { color: '#101923', fontSize: 11, fontWeight: '700' },
+  errorBox: {
+    marginHorizontal: 10,
+    marginBottom: 5,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(224,112,112,0.12)',
+    gap: 5,
+  },
+  errorText: { color: '#F0A0A0', fontSize: 10 },
+  retryText: { color: '#E9C782', fontSize: 10, fontWeight: '700' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  helperText: { color: 'rgba(255,255,255,0.55)', fontSize: 11 },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: 10, paddingVertical: 5, gap: 8 },
+  emptyText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    lineHeight: 16,
+    paddingVertical: 16,
+    textAlign: 'center',
+  },
+  contactCard: {
+    gap: 6,
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
+  },
+  contactTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  orderBadge: {
+    width: 22,
+    height: 22,
     borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 7,
+    backgroundColor: 'rgba(201,169,110,0.15)',
   },
-  cancelButton: {
+  orderText: { color: '#E9C782', fontSize: 11, fontWeight: '700' },
+  orderHint: { flex: 1, color: 'rgba(255,255,255,0.55)', fontSize: 10 },
+  orderControls: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  iconButton: { padding: 4 },
+  input: {
+    minHeight: 34,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.12)',
+    color: '#FFFFFF',
+    fontSize: 11,
   },
-  cancelText: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  saveButton: {
+  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  phoneInput: { flex: 1 },
+  callButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    borderRadius: 7,
     backgroundColor: '#C9A96E',
   },
-  disabledButton: {
-    opacity: 0.65,
+  callButtonText: { color: '#101923', fontSize: 10, fontWeight: '700' },
+  footer: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    gap: 6,
   },
-  saveText: {
-    color: '#101923',
-    fontSize: 12,
-    fontWeight: '700',
+  footerHint: { color: 'rgba(255,255,255,0.45)', fontSize: 9 },
+  saveButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#C9A96E',
   },
+  saveButtonText: { color: '#101923', fontSize: 11, fontWeight: '700' },
+  disabledButton: { opacity: 0.45 },
 });

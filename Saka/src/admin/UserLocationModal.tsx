@@ -5,7 +5,7 @@ import locationService from '../services/locationService';
 
 interface UserLocationModalProps {
   visible: boolean;
-  user: { id: number; name: string | null; email: string } | null;
+  user: { id: string; name: string | null; email: string } | null;
   onClose: () => void;
 }
 

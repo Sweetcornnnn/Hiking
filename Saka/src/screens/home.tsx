@@ -1,3 +1,4 @@
+// screens/Home.tsx
 import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import {
   View,
@@ -20,8 +21,10 @@ import { useVideoPlayer, VideoView, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
+import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
+import GlobalChatNotifier from '../components/chat/GlobalChatNotifier'; // <-- NEW
 import { mountainService, Mountain } from '../services/mountainService';
-import { uploadProfileAvatar } from '../services/profileAvatarService';
+import { persistProfileAvatarLocally } from '../services/profileAvatarService';
 import {
   getHomeVideoPosters,
   subscribeHomeVideoPosters,
@@ -37,6 +40,7 @@ import {
   SPACING,
   TEXT_DANGER,
 } from '../theme/designTokens';
+import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
@@ -47,23 +51,10 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-/**
- * Only the ACTIVE slide mounts a video player.
- *
- * Android hardware decoders are limited (typically 2–4 across the whole app).
- * Mounting more than one simultaneous `VideoView` is what caused
- *   "IllegalArgumentException: byteCount < 0"
- * and the "video freezes at a low-quality frame" symptom. With window = 1,
- * inactive slides render the poster only and their decoder is fully released.
- */
 const VIDEO_WINDOW = 1;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Poster-only fallback
-// ─────────────────────────────────────────────────────────────────────────────
 function VideoPoster({ poster }: { poster?: VideoThumbnail }) {
   const [failed, setFailed] = useState(false);
-
   if (poster && !failed) {
     return (
       <ExpoImage
@@ -74,7 +65,6 @@ function VideoPoster({ poster }: { poster?: VideoThumbnail }) {
       />
     );
   }
-
   return (
     <View style={styles.fullScreenVideoPlaceholder}>
       <Ionicons name="videocam-outline" size={80} color="#8B7355" />
@@ -82,9 +72,6 @@ function VideoPoster({ poster }: { poster?: VideoThumbnail }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Active video player — plays and loops while mounted, released on unmount
-// ─────────────────────────────────────────────────────────────────────────────
 function MountainVideo({
   source,
   poster,
@@ -101,94 +88,60 @@ function MountainVideo({
   const [firstFrameRendered, setFirstFrameRendered] = useState(false);
   const [videoErrored, setVideoErrored] = useState(false);
   const hasRetriedRef = useRef(false);
-  const wasActiveRef = useRef(false);
 
-  // Only ever play when active. With VIDEO_WINDOW = 1 this component only
-  // mounts while active, so the "pause" path is mostly defensive — but the
-  // important thing is: when this component unmounts, the player is released
-  // cleanly (no "paused at a low-quality intermediate frame" left visible).
   useEffect(() => {
     if (videoErrored) return;
-
     if (isActive) {
-      try {
-        player.play();
-      } catch {}
+      try { player.play(); } catch {}
     } else {
-      try {
-        player.pause();
-      } catch {}
+      try { player.pause(); } catch {}
     }
-    wasActiveRef.current = isActive;
   }, [isActive, player, videoErrored]);
 
-  // Loop + mute re-assertion + one retry on error.
   useEffect(() => {
     const sub = player.addListener('statusChange', ({ status, error }) => {
       if (status === 'error') {
-        console.error(
-          '[Home] Mountain video failed:',
-          error?.message ?? 'Unknown player error',
-        );
-
         if (!hasRetriedRef.current) {
           hasRetriedRef.current = true;
           setFirstFrameRendered(false);
           void player.replaceAsync(source).catch(() => setVideoErrored(true));
           return;
         }
-
         setVideoErrored(true);
         setFirstFrameRendered(false);
         return;
       }
-
       if (status === 'readyToPlay') {
         setVideoErrored(false);
         hasRetriedRef.current = false;
       }
-
-      // Re-assert on every tick — Android drops these after buffer stalls.
       try {
         player.loop = true;
         player.muted = true;
       } catch {}
-
       if (status === 'readyToPlay' && isActive) {
-        try {
-          player.play();
-        } catch {}
+        try { player.play(); } catch {}
       }
     });
     return () => sub.remove();
   }, [isActive, player, source]);
 
-  // Foreground resume.
   useEffect(() => {
     const onChange = (state: AppStateStatus) => {
       if (state === 'active' && isActive && !videoErrored) {
-        try {
-          player.loop = true;
-          player.muted = true;
-        } catch {}
-        try {
-          player.play();
-        } catch {}
+        try { player.loop = true; player.muted = true; } catch {}
+        try { player.play(); } catch {}
       }
     };
     const sub = AppState.addEventListener('change', onChange);
     return () => sub.remove();
   }, [isActive, player, videoErrored]);
 
-  if (videoErrored) {
-    return <VideoPoster poster={poster} />;
-  }
+  if (videoErrored) return <VideoPoster poster={poster} />;
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      {/* Permanent fallback under the video (visible until first frame). */}
       <VideoPoster poster={poster} />
-
       <View style={styles.videoOverlay} pointerEvents="none">
         <VideoView
           style={StyleSheet.absoluteFill}
@@ -199,17 +152,11 @@ function MountainVideo({
           onFirstFrameRender={() => setFirstFrameRendered(true)}
         />
       </View>
-
-      {/* Opaque cover until first frame paints (Android textureView can be
-          opaque black before first frame, hiding the fallback above). */}
       {!firstFrameRendered ? <VideoPoster poster={poster} /> : null}
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Slide
-// ─────────────────────────────────────────────────────────────────────────────
 const MountainSlide = memo(function MountainSlide({
   mountain,
   shouldMountVideo,
@@ -252,25 +199,20 @@ const MountainSlide = memo(function MountainSlide({
           <VideoPoster poster={poster} />
         )}
       </View>
-
       <View style={styles.fullScreenGradient} />
-
       <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
         {mountain.funny_warning && (
           <Text style={styles.funnyWarningText}>{mountain.funny_warning}</Text>
         )}
-
         <View style={styles.infoMetaRow}>
           <View style={[styles.difficultyBadge, { borderColor: diffColor }]}>
             <View style={[styles.difficultyDot, { backgroundColor: diffColor }]} />
             <Text style={[styles.difficultyText, { color: diffColor }]}>{mountain.difficulty}</Text>
           </View>
-
           <View style={styles.elevationPill}>
             <Ionicons name="trending-up-outline" size={11} color="rgba(255,255,255,0.7)" />
             <Text style={styles.elevationText}>{mountain.elevationDisplay}</Text>
           </View>
-
           <TouchableOpacity
             style={styles.eventsPill}
             onPress={() => onEventsPress(mountain.id)}
@@ -308,7 +250,6 @@ const MountainSlide = memo(function MountainSlide({
             ) : null}
           </TouchableOpacity>
         </View>
-
         <Text style={styles.mountainDescription} numberOfLines={2}>
           {mountain.description}
         </Text>
@@ -317,9 +258,6 @@ const MountainSlide = memo(function MountainSlide({
   );
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Screen
-// ─────────────────────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const router = useRouter();
   const { returnToProfile } = useLocalSearchParams<{ returnToProfile?: string }>();
@@ -329,23 +267,24 @@ export default function HomeScreen() {
   const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
-  const [mountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
+  const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
+
+  // ── NOTIFICATION BANNER STATE ──
+  const [bannerData, setBannerData] = useState<{ type: string; id: string; senderName: string; content: string } | null>(null);
+  const bannerAnim = useRef(new Animated.Value(-100)).current;
+  const bannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleProfileImageSelect = async (uri: string) => {
     if (!user) {
       Alert.alert('Sign in required', 'Sign in to save a profile photo.');
       return;
     }
-
     try {
-      const avatarUrl = await uploadProfileAvatar(user.id, uri);
-      const result = await updateProfile({ avatar_url: avatarUrl });
-      if (!result.success) {
-        throw new Error(result.error || 'Unable to save your profile photo.');
-      }
+      const localUri = await persistProfileAvatarLocally(user.id, uri);
+      const result = await updateProfile({ avatar_url: localUri });
+      if (!result.success) throw new Error(result.error || 'Unable to save your profile photo.');
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unable to save your profile photo.';
+      const message = error instanceof Error ? error.message : 'Unable to save your profile photo.';
       console.error('[Profile] Avatar update failed:', error);
       Alert.alert('Profile photo not saved', message);
     }
@@ -362,25 +301,36 @@ export default function HomeScreen() {
   }, []);
 
   const [error, setError] = useState<string | null>(null);
+  // Above the early returns. Skipped when arriving straight into the profile card.
+  const tutorial = useTutorial('home', { ready: mountains.length > 0 && returnToProfile !== 'true' });
   const scrollViewRef = useRef<any>(null);
 
   const isPortrait = dimensions.height > dimensions.width;
 
   useEffect(() => {
+    const unsubscribe = mountainService.subscribeToCache((updatedMountains) => {
+      setMountains(updatedMountains);
+    });
     if (mountains.length === 0) {
-      setError('Mountain feed was not loaded yet.');
-      return;
+      void mountainService.fetchMountains().catch((fetchError) => {
+        console.warn('[Home] Mountain feed could not be loaded:', fetchError);
+        setError('Mountain feed is unavailable. Connect to the internet to load it.');
+      });
     }
-    setError(null);
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    setError(mountains.length === 0
+      ? 'Mountain feed is unavailable. Connect to the internet to load it.'
+      : null);
   }, [mountains]);
 
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ screen }) => {
       setDimensions(screen);
     });
-    return () => {
-      subscription?.remove();
-    };
+    return () => subscription?.remove();
   }, []);
 
   useEffect(() => {
@@ -424,35 +374,15 @@ export default function HomeScreen() {
     logoutToastOpacity.setValue(0);
     logoutToastY.setValue(-6);
     Animated.parallel([
-      Animated.timing(logoutToastOpacity, {
-        toValue: 1,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(logoutToastY, {
-        toValue: 0,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
+      Animated.timing(logoutToastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
   }, [logoutToastOpacity, logoutToastY]);
 
   const dismissLogoutConfirm = useCallback(() => {
     Animated.parallel([
-      Animated.timing(logoutToastOpacity, {
-        toValue: 0,
-        duration: 180,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(logoutToastY, {
-        toValue: -4,
-        duration: 180,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
+      Animated.timing(logoutToastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(logoutToastY, { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
     ]).start(() => setShowLogoutConfirm(false));
   }, [logoutToastOpacity, logoutToastY]);
 
@@ -462,16 +392,43 @@ export default function HomeScreen() {
     router.replace('/Login');
   }, [signOut, router]);
 
+  // ── NOTIFICATION BANNER LOGIC ──
+  const showBanner = useCallback((payload: any) => {
+    if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+    setBannerData(payload);
+    
+    Animated.spring(bannerAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 14,
+      bounciness: 6,
+    }).start();
+
+    // Auto hide after 4 seconds
+    bannerTimeoutRef.current = setTimeout(() => {
+      Animated.timing(bannerAnim, {
+        toValue: -100,
+        duration: 250,
+        useNativeDriver: true,
+      }).start(() => setBannerData(null));
+    }, 4000);
+  }, [bannerAnim]);
+
+  const handleBannerPress = () => {
+    if (!bannerData) return;
+    Animated.timing(bannerAnim, { toValue: -100, duration: 200, useNativeDriver: true }).start(() => {
+      setBannerData(null);
+      router.push({
+        pathname: bannerData.type === 'private' ? '/chat/Conversation' : '/chat/GroupChat',
+        params: bannerData.type === 'private' ? { userId: bannerData.id } : { groupId: bannerData.id },
+      } as any);
+    });
+  };
+
   useEffect(() => {
     const onBack = () => {
-      if (profileCardVisible) {
-        closeProfileCard();
-        return true;
-      }
-      if (showLogoutConfirm) {
-        dismissLogoutConfirm();
-        return true;
-      }
+      if (profileCardVisible) { closeProfileCard(); return true; }
+      if (showLogoutConfirm) { dismissLogoutConfirm(); return true; }
       openLogoutConfirm();
       return true;
     };
@@ -497,28 +454,50 @@ export default function HomeScreen() {
   }
 
   const handleCTAPress = (mountainId: string) => {
-    router.push({
-      pathname: '/MountainTop',
-      params: { mountainId },
-    });
+    router.push({ pathname: '/MountainTop', params: { mountainId } });
   };
 
   return (
     <View style={styles.immersiveContainer}>
+      {/* NOTIFICATION BANNER */}
+      {bannerData && (
+        <Animated.View
+          style={[
+            styles.bannerContainer,
+            { transform: [{ translateY: bannerAnim }] },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.bannerContent}
+            onPress={handleBannerPress}
+            activeOpacity={0.9}
+          >
+            <View style={styles.bannerAvatar}>
+              <Ionicons name="chatbubble" size={16} color="#FFF" />
+            </View>
+            <View style={styles.bannerTextWrap}>
+              <Text style={styles.bannerSender}>{bannerData.senderName}</Text>
+              <Text style={styles.bannerMessage} numberOfLines={1}>
+                {bannerData.content}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.4)" />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
+      {/* Global Listener */}
+      <GlobalChatNotifier onNotify={showBanner} />
+
       <Animated.ScrollView
         ref={scrollViewRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={(event) => {
-          const newIndex = Math.round(
-            event.nativeEvent.contentOffset.x / dimensions.width
-          );
+          const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
           setActiveIndex(newIndex);
-
-          if (mountains[newIndex]) {
-            setSelectedMountainId(mountains[newIndex].id);
-          }
+          if (mountains[newIndex]) setSelectedMountainId(mountains[newIndex].id);
         }}
         decelerationRate="fast"
       >
@@ -526,7 +505,6 @@ export default function HomeScreen() {
           const distance = Math.abs(index - activeIndex);
           const shouldMountVideo = distance < VIDEO_WINDOW;
           const isActive = index === activeIndex;
-
           return (
             <MountainSlide
               key={mountain.id}
@@ -545,11 +523,7 @@ export default function HomeScreen() {
       </Animated.ScrollView>
 
       <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
-        <TouchableOpacity
-          onPress={openProfileCard}
-          style={styles.profileButton}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity onPress={openProfileCard} style={styles.profileButton} activeOpacity={0.8}>
           <View style={styles.profileAvatarOuter}>
             <View style={styles.profileAvatarRing}>
               <View style={styles.profileAvatar}>
@@ -557,12 +531,7 @@ export default function HomeScreen() {
                   <Image source={{ uri: profileImage }} style={styles.profileAvatarImage} />
                 ) : (
                   <Text style={styles.profileInitials}>
-                    {user?.name
-                      ?.split(' ')
-                      .map((p) => p[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase() || 'H'}
+                    {user?.name?.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase() || 'H'}
                   </Text>
                 )}
               </View>
@@ -582,6 +551,8 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerRightButtons}>
+          <OfflineStatusIndicator />
+          <TutorialHelpButton onPress={tutorial.open} style={styles.helpButton} />
           {profile?.role === 'organization' && (
             <TouchableOpacity
               onPress={() => router.push('/organizations/Dashboard')}
@@ -602,13 +573,12 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {tutorial.element}
+
       <ProfileCard
         visible={profileCardVisible}
         onClose={closeProfileCard}
-        onRequestLogout={() => {
-          closeProfileCard();
-          openLogoutConfirm();
-        }}
+        onRequestLogout={() => { closeProfileCard(); openLogoutConfirm(); }}
         profileImage={profileImage}
         onProfileImageSelect={handleProfileImageSelect}
       />
@@ -638,9 +608,7 @@ export default function HomeScreen() {
               key={index}
               style={[
                 styles.paginationDot,
-                index === activeIndex
-                  ? styles.paginationDotActive
-                  : styles.paginationDotInactive,
+                index === activeIndex ? styles.paginationDotActive : styles.paginationDotInactive,
               ]}
             />
           ))}
@@ -674,10 +642,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  immersiveContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
+  immersiveContainer: { flex: 1, backgroundColor: '#000' },
   fullScreenContainer: {
     position: 'relative',
     overflow: 'hidden',
@@ -686,35 +651,20 @@ const styles = StyleSheet.create({
   },
   videoWrapper: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  videoOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
+  videoOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   fullScreenVideoPlaceholder: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fullScreenGradient: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'transparent',
-  },
+  fullScreenGradient: { ...StyleSheet.absoluteFill, backgroundColor: 'transparent' },
   funnyWarningText: {
     color: 'rgba(255,255,220,0.7)',
     fontSize: 10,
@@ -725,40 +675,26 @@ const styles = StyleSheet.create({
   },
   floatingInfoContainer: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 0, left: 0, right: 0,
     zIndex: 30,
     paddingHorizontal: 24,
     paddingBottom: 22,
     paddingTop: 40,
-    backgroundColor: 'rgba(0,0,0,0)',
   },
-  floatingInfoContainerPortrait: {
-    paddingBottom: 36,
-  },
+  floatingInfoContainerPortrait: { paddingBottom: 36 },
   ctaAbsolute: {
     position: 'absolute',
-    bottom: 22,
-    right: 24,
+    bottom: 22, right: 24,
     zIndex: 250,
     elevation: 0,
     alignItems: 'center',
     gap: 0,
   },
-  ctaAbsolutePortrait: {
-    bottom: 36,
-  },
-  ctaLogoWrap: {
-    position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  ctaAbsolutePortrait: { bottom: 36 },
+  ctaLogoWrap: { position: 'relative', justifyContent: 'center', alignItems: 'center' },
   ctaGlowRing: {
     position: 'absolute',
-    width: 118,
-    height: 118,
-    borderRadius: 59,
+    width: 118, height: 118, borderRadius: 59,
     backgroundColor: 'rgba(201,169,110,0.16)',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 0 },
@@ -766,10 +702,7 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
   },
-  logoImage: {
-    width: 168,
-    height: 168,
-  },
+  logoImage: { width: 168, height: 168 },
   logoLabel: {
     color: '#C9A96E',
     fontSize: 10,
@@ -796,22 +729,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  difficultyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  difficultyText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
+  difficultyDot: { width: 6, height: 6, borderRadius: 3 },
+  difficultyText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   guideButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.35)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
@@ -846,11 +768,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
   },
-  elevationText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  elevationText: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '600' },
   eventsPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -862,18 +780,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.55)',
   },
-  eventsPillText: {
-    color: '#C9A96E',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  mountainDescription: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    lineHeight: 17,
-    maxWidth: '65%',
-  },
+  eventsPillText: { color: '#C9A96E', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  mountainDescription: { color: 'rgba(255,255,255,0.65)', fontSize: 12, lineHeight: 17, maxWidth: '65%' },
   floatingMountainName: {
     flexShrink: 1,
     fontSize: 42,
@@ -886,22 +794,11 @@ const styles = StyleSheet.create({
     textShadowRadius: 6,
     marginBottom: 6,
   },
-  mountainNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.gap,
-    maxWidth: '68%',
-    marginBottom: 6,
-  },
-  floatingMountainNamePortrait: {
-    fontSize: 52,
-    lineHeight: 56,
-  },
+  mountainNameRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.gap, maxWidth: '68%', marginBottom: 6 },
+  floatingMountainNamePortrait: { fontSize: 52, lineHeight: 56 },
   transparentHeader: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 0, left: 0, right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
@@ -910,12 +807,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     zIndex: 100,
   },
-  transparentHeaderPortrait: {
-    paddingTop: 60,
-  },
-  transparentHeaderLandscape: {
-    paddingTop: 18,
-  },
+  transparentHeaderLandscape: { paddingTop: 18 },
   profileButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -936,77 +828,40 @@ const styles = StyleSheet.create({
   profileAvatarOuter: {
     position: 'relative',
     marginRight: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   profileAvatarRing: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
+    width: 38, height: 38, borderRadius: 19,
     borderWidth: 1.5,
     backgroundColor: BG_SUBTLE,
     alignItems: 'center',
+    justifyContent: 'center',
     borderColor: BORDER_SUBTLE,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
   },
   profilePresenceDot: {
     position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 9,
-    height: 9,
-    borderRadius: 5,
+    bottom: 0, right: 0,
+    width: 9, height: 9, borderRadius: 4.5,
     backgroundColor: '#6FAF8A',
     borderWidth: 1.5,
     borderColor: '#0A101A',
   },
   profileAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 30, height: 30, borderRadius: 15,
     backgroundColor: 'rgba(201,169,110,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
   },
-  profileAvatarImage: {
-    width: '100%',
-    height: '100%',
-  },
-  profileInitials: {
-    color: '#C9A96E',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  profileDivider: {
-    width: 1,
-    height: 22,
-    backgroundColor: 'rgba(201,169,110,0.2)',
-    marginHorizontal: 10,
-  },
-  profileTextContainer: {
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  profileGreeting: {
-    color: 'rgba(255,255,255,0.38)',
-    fontSize: 9,
-    lineHeight: 11,
-    fontWeight: '500',
-    letterSpacing: 0.3,
-  },
-  profileName: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 16,
-    letterSpacing: 0.1,
-  },
+  profileAvatarImage: { width: '100%', height: '100%' },
+  profileInitials: { color: '#C9A96E', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  profileDivider: { width: 1, height: 22, backgroundColor: 'rgba(201,169,110,0.2)', marginHorizontal: 10 },
+  profileTextContainer: { justifyContent: 'center', marginRight: 8 },
+  profileGreeting: { color: 'rgba(255,255,255,0.38)', fontSize: 9, lineHeight: 11, fontWeight: '500', letterSpacing: 0.3 },
+  profileName: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 16, letterSpacing: 0.1 },
   profileChevronWrap: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(201,169,110,0.12)',
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.2)',
@@ -1015,38 +870,18 @@ const styles = StyleSheet.create({
   },
   paginationFixed: {
     position: 'absolute',
-    bottom: 8,
-    left: 0,
-    right: 0,
+    bottom: 8, left: 0, right: 0,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,
   },
-  paginationStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  paginationDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  paginationDotActive: {
-    backgroundColor: '#C9A96E',
-    width: 26,
-    height: 6,
-    borderRadius: 3,
-  },
-  paginationDotInactive: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
+  paginationStack: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  paginationDot: { width: 6, height: 6, borderRadius: 3 },
+  paginationDotActive: { backgroundColor: '#C9A96E', width: 26, height: 6, borderRadius: 3 },
+  paginationDotInactive: { backgroundColor: 'rgba(255,255,255,0.3)' },
   logoutToast: {
     position: 'absolute',
-    bottom: 32,
-    left: '10%',
-    right: '10%',
+    bottom: 32, left: '10%', right: '10%',
     flexDirection: 'row',
     backgroundColor: '#141E2D',
     borderRadius: 12,
@@ -1056,61 +891,30 @@ const styles = StyleSheet.create({
     zIndex: 999,
     elevation: 20,
   },
-  logoutToastBar: {
-    width: 3,
-    backgroundColor: '#BF6A6A',
-    alignSelf: 'stretch',
-  },
-  logoutToastInner: {
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  logoutToastTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  logoutToastMsg: {
-    color: 'rgba(255,255,255,0.42)',
-    fontSize: 11,
-    lineHeight: 15,
-    marginBottom: 10,
-  },
-  logoutToastActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  logoutToastBar: { width: 3, backgroundColor: '#BF6A6A', alignSelf: 'stretch' },
+  logoutToastInner: { flex: 1, paddingHorizontal: 14, paddingVertical: 12 },
+  logoutToastTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', marginBottom: 2 },
+  logoutToastMsg: { color: 'rgba(255,255,255,0.42)', fontSize: 11, lineHeight: 15, marginBottom: 10 },
+  logoutToastActions: { flexDirection: 'row', gap: 8 },
   logoutToastCancel: {
-    flex: 1,
-    alignItems: 'center',
+    flex: 1, alignItems: 'center',
     paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
     backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  logoutToastCancelText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  logoutToastConfirm: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: '#BF6A6A',
-  },
-  logoutToastConfirmText: {
-    color: '#0E1520',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  logoutToastCancelText: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '600' },
+  logoutToastConfirm: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8, backgroundColor: '#BF6A6A' },
+  logoutToastConfirmText: { color: '#0E1520', fontSize: 12, fontWeight: '700' },
   headerRightButtons: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  // Backdrop so the 18px help circle stays readable over video
+  helpButton: {
+    marginRight: 4,
+    backgroundColor: 'rgba(10,16,26,0.6)',
   },
   chatButton: {
     padding: 8,
@@ -1119,5 +923,51 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.18)',
+  },
+
+  // ── BANNER STYLES ──
+  bannerContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+    elevation: 30,
+    backgroundColor: 'rgba(10, 16, 26, 0.95)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(201, 169, 110, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+  },
+  bannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  bannerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(201, 169, 110, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerTextWrap: {
+    flex: 1,
+  },
+  bannerSender: {
+    color: '#C9A96E',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  bannerMessage: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
   },
 });

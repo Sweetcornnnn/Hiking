@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import JournalImageGrid from '../../components/journal/JournalImageGrid';
 import MyJournalFeed from '../../components/journal/MyJournalFeed';
+import PhotoEditor from '../../components/journal/PhotoEditor';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import { useJournalStore } from '../../store/journalStore';
 import { useProfileCardStore } from '../../store/profileCardStore';
@@ -23,8 +24,20 @@ export default function JournalScreen() {
   const preselectedViewpointId = typeof viewpointId === 'string' ? viewpointId : null;
   const preselectedMountainId = typeof mountainId === 'string' ? mountainId : null;
   const cameFromProfile = fromProfile === '1';
-  const { entries, fetchEntries, saveEntry, deleteEntry, isLoading, error, clearError } = useJournalStore();
+  const {
+    entries,
+    fetchEntries,
+    saveEntry,
+    updateEntry,
+    deleteEntry,
+    replaceEntryImage,
+    isLoading,
+    error,
+    clearError,
+    retryPendingSync,
+  } = useJournalStore();
   const [mode, setMode] = useState<Mode>('feed');
+  const [editingPhoto, setEditingPhoto] = useState<{ entry: JournalEntry; index: number; uri: string } | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [images, setImages] = useState<JournalImage[]>([]);
@@ -103,6 +116,34 @@ export default function JournalScreen() {
     );
   };
 
+  const handleEditPhoto = (entry: JournalEntry, index: number, uri: string) => {
+    setEditingPhoto({ entry, index, uri });
+  };
+
+  const handleUpdateNote = async (
+    entry: JournalEntry,
+    changes: { title: string; content: string },
+  ) => {
+    const result = await updateEntry(entry.id, {
+      ...changes,
+      images: (entry.images ?? []).filter(Boolean).map((uri) => ({ uri })),
+      rating: entry.rating ?? undefined,
+      mountainId: entry.mountain_id,
+      hikeId: entry.hike_id,
+      viewpointId: entry.viewpoint_id,
+      isPublic: entry.is_public,
+    });
+
+    if (result.error) throw new Error(result.error);
+  };
+
+  const handleSaveEditedPhoto = async (editedUri: string): Promise<{ error: string | null }> => {
+    if (!editingPhoto) return { error: null };
+    const result = await replaceEntryImage(editingPhoto.entry, editingPhoto.index, editedUri);
+    if (!result.error) setEditingPhoto(null);
+    return result;
+  };
+
   const pickImages = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -164,9 +205,13 @@ export default function JournalScreen() {
       setSelectedMountainId(preselectedMountainId);
       setMode('feed');
 
-      Alert.alert('Journal saved', 'Your photos are now part of your profile showcase.', [
-        { text: 'View journal', onPress: () => {} },
-      ]);
+      Alert.alert(
+        result.pendingSync ? 'Saved on this device' : 'Journal saved',
+        result.pendingSync
+          ? 'Your entry and photos are saved locally and will sync automatically when the internet is available.'
+          : 'Your photos are now part of your profile showcase.',
+        [{ text: 'OK' }],
+      );
     } finally {
       saveInProgress.current = false;
     }
@@ -174,45 +219,44 @@ export default function JournalScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+      {mode === 'form' && <View style={styles.header}>
         <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
           <Ionicons name="chevron-back" size={20} color={TEXT_PRIMARY} />
         </TouchableOpacity>
         <View style={styles.headerTextWrap}>
           <Text style={styles.eyebrow}>YOUR TRAIL NOTES</Text>
-          <Text style={styles.title}>
-            {mode === 'feed' ? 'My Journal' : 'New journal entry'}
-          </Text>
+          <Text style={styles.title}>New journal entry</Text>
         </View>
         <View style={styles.headerSpacer} />
-        {mode === 'feed' && (
-          <TouchableOpacity
-            onPress={() => setMode('form')}
-            style={styles.newEntryButton}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="New journal entry"
-          >
-            <Ionicons name="add" size={15} color={BG_PANEL} />
-            <Text style={styles.newEntryButtonText}>New</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      </View>}
 
       {mode === 'feed' ? (
-        <ScrollView
-          contentContainerStyle={styles.feedContent}
-          showsVerticalScrollIndicator={false}
-        >
+        <View style={styles.feedContent}>
           {error && <Text style={styles.error}>{error}</Text>}
+          {entries.some((entry) => entry.sync_status) && (
+            <TouchableOpacity
+              onPress={async () => {
+                const result = await retryPendingSync();
+                if (result.error) Alert.alert('Sync failed', result.error);
+              }}
+              style={styles.syncButton}
+              accessibilityRole="button"
+            >
+              <Ionicons name="sync-outline" size={14} color={ACCENT_GOLD} />
+              <Text style={styles.syncButtonText}>Retry pending journal sync</Text>
+            </TouchableOpacity>
+          )}
           <MyJournalFeed
             entries={entries}
             mountains={mountains}
             isLoading={isLoading && !entries.length}
             onDelete={confirmDelete}
+            onEdit={handleEditPhoto}
+            onUpdateNote={handleUpdateNote}
             onNewEntry={() => setMode('form')}
+            onBack={handleBack}
           />
-        </ScrollView>
+        </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Title</Text>
@@ -299,6 +343,12 @@ export default function JournalScreen() {
         </TouchableOpacity>
       </ScrollView>
       )}
+      <PhotoEditor
+        visible={Boolean(editingPhoto)}
+        uri={editingPhoto?.uri ?? null}
+        onClose={() => setEditingPhoto(null)}
+        onSave={handleSaveEditedPhoto}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -313,7 +363,7 @@ const styles = StyleSheet.create({
   title: { color: TEXT_PRIMARY, fontSize: 21, fontWeight: '700', marginTop: 3 },
   newEntryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, backgroundColor: ACCENT_GOLD },
   newEntryButtonText: { color: BG_PANEL, fontSize: 12, fontWeight: '800' },
-  feedContent: { padding: 20, paddingBottom: 60, maxWidth: 680, width: '100%', alignSelf: 'center' },
+  feedContent: { flex: 1, padding: 20, maxWidth: 680, width: '100%', alignSelf: 'center' },
   content: { padding: 24, paddingBottom: 40, maxWidth: 680, width: '100%', alignSelf: 'center' },
   label: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, marginTop: 16 },
   input: { color: TEXT_PRIMARY, backgroundColor: BG_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14 },
@@ -332,6 +382,8 @@ const styles = StyleSheet.create({
   visibilityTitle: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
   ratingRow: { flexDirection: 'row', gap: 8 },
   error: { color: '#E07070', fontSize: 11, marginTop: 16 },
+  syncButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: BORDER_GOLD, borderRadius: RADIUS_BTN, paddingVertical: 10, marginBottom: 14 },
+  syncButtonText: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
   saveButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: ACCENT_GOLD, borderRadius: RADIUS_CARD, paddingVertical: 14, marginTop: 28 },
   saveText: { color: BG_PANEL, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.55 },

@@ -29,6 +29,7 @@ interface Props {
   onToggleLike: (id: string, liked: boolean) => void | Promise<void>;
   onPressAuthor?: (userId: string) => void;
   isLikePending?: boolean;
+  isLikeQueued?: boolean;
   locationLabel?: string;
   focused?: boolean;
 }
@@ -41,6 +42,7 @@ export default function SakagramPostCard({
   onToggleLike,
   onPressAuthor,
   isLikePending = false,
+  isLikeQueued = false,
   locationLabel,
   focused = false,
 }: Props) {
@@ -205,6 +207,7 @@ export default function SakagramPostCard({
       )}
 
       <Text style={s.likes}>{likesLabel}</Text>
+      {isLikeQueued ? <Text style={s.pendingSync}>Like saved; waiting to sync</Text> : null}
 
       <Text style={s.caption} numberOfLines={expanded ? undefined : 2}>
         <Text style={s.captionName}>{post.authorName}</Text>
@@ -474,6 +477,7 @@ function makeStyles(focused: boolean) {
     heartBurst: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
     likeButton: { minWidth: 36, minHeight: 34, alignItems: 'flex-end', justifyContent: 'center' },
     likes: { color: TEXT_PRIMARY, fontSize: f(10), fontWeight: '800', marginTop: f(8) },
+    pendingSync: { color: ACCENT_GOLD, fontSize: f(9), marginTop: 3 },
     caption: { color: TEXT_SECONDARY, fontSize: f(10), lineHeight: f(15), marginTop: f(4) },
     captionName: { color: TEXT_PRIMARY, fontWeight: '800' },
     captionTitle: { color: TEXT_PRIMARY, fontWeight: '600' },

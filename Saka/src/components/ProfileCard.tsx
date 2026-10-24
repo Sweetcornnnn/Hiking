@@ -20,10 +20,7 @@ import { useProfileCardStore } from '../store/profileCardStore';
 import { mountainService, Mountain } from '../services/mountainService';
 import weatherService, { WeatherCondition } from '../services/weatherService';
 import { useLocationTracking } from '../hooks/useLocationTracking';
-import EmergencyContactFeature, {
-  createEmptyPlan,
-  EmergencyPlan,
-} from './emergency/EmergencyContactFeature';
+import EmergencyContactsPreview from './emergency/EmergencyContactsPreview';
 import { useJournalStore } from '../store/journalStore';
 import JournalShowcase from './journal/JournalShowcase';
 
@@ -49,7 +46,7 @@ const TITLES: Record<string, string> = {
   wildtrack: 'WildTrack',
   weather: 'Weather',
   location: 'Location',
-  emergency: 'Emergency Contact',
+  emergency: 'Emergency Contacts',
 };
 
 type ViewId =
@@ -72,7 +69,7 @@ export default function ProfileCard({
 }: ProfileCardProps) {
   const router = useRouter();
   const { height: windowHeight, fontScale } = useWindowDimensions();
-  const { user, profile } = useAuthStore();
+  const { user, profile, retryProfileSync } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
 
   const [selectedMountain, setSelectedMountain] = useState<Mountain | null>(null);
@@ -82,7 +79,6 @@ export default function ProfileCard({
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [emergencyPlan, setEmergencyPlan] = useState<EmergencyPlan>(createEmptyPlan);
   const [forceVisible, setForceVisible] = useState(false);
   const {
     entries: journalEntries,
@@ -175,14 +171,6 @@ export default function ProfileCard({
   const handleSettings = () => {
     closeCard();
     router.push('/Settings');
-  };
-
-  const handleEmergencyPlanSave = (plan: EmergencyPlan) => {
-    setEmergencyPlan(plan);
-    Alert.alert(
-      'Emergency plan saved',
-      'This is saved in app memory for now. Account storage and overdue alerts are not connected yet.'
-    );
   };
 
   const openScreen = (screen: 'calendar' | 'wildtrack' | 'journal' | 'weather' | 'location') => {
@@ -309,6 +297,23 @@ export default function ProfileCard({
 
             <Text style={styles.name} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{user?.name || 'Hiker'}</Text>
             <Text style={styles.email} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{user?.email || 'email@example.com'}</Text>
+            {profile?.sync_conflict && (
+              <Text style={{ color: '#F2D99A', fontSize: 9, textAlign: 'center', marginTop: 3 }}>
+                Profile changed elsewhere; your offline changes were kept.
+              </Text>
+            )}
+            {profile?.sync_status && (
+              <TouchableOpacity
+                onPress={() => void retryProfileSync()}
+                accessibilityRole="button"
+                accessibilityLabel="Retry profile synchronization"
+                style={{ alignItems: 'center', marginTop: 4 }}
+              >
+                <Text style={{ color: profile.sync_status === 'failed' ? '#F2A5A5' : '#D8C28B', fontSize: 10 }}>
+                  {profile.sync_status === 'failed' ? 'Profile changes failed to sync · Retry' : 'Profile changes waiting to sync'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <View style={styles.locationRow}>
               <Ionicons name="location-outline" size={11} color="#8A9BB0" />
@@ -381,10 +386,10 @@ export default function ProfileCard({
                     <TouchableOpacity
                       key={action.id}
                       style={styles.quickBtn}
-                      onPress={() => setView(action.id)}
+                      onPress={() => openScreen(action.id)}
                       activeOpacity={0.8}
                       accessibilityRole="button"
-                      accessibilityLabel={`Show ${action.label}`}
+                      accessibilityLabel={`Open ${action.label}`}
                     >
                       <View style={styles.quickIconWrap}>
                         <Ionicons name={action.icon as any} size={22} color="#C9A96E" />
@@ -411,7 +416,7 @@ export default function ProfileCard({
                 <View style={styles.journalCard}>
                   <TouchableOpacity
                     style={styles.journalBtn}
-                    onPress={() => setView('journal')}
+                    onPress={() => openScreen('journal')}
                     activeOpacity={0.8}
                     accessibilityRole="button"
                     accessibilityLabel="Open Journal"
@@ -466,7 +471,7 @@ export default function ProfileCard({
 
                   <TouchableOpacity
                     style={styles.miniBtn}
-                    onPress={() => setView('location')}
+                    onPress={() => openScreen('location')}
                     activeOpacity={0.8}
                     accessibilityRole="button"
                     accessibilityLabel="Open Location"
@@ -483,12 +488,12 @@ export default function ProfileCard({
                     onPress={() => setView('emergency')}
                     activeOpacity={0.8}
                     accessibilityRole="button"
-                    accessibilityLabel="Open Emergency Contact"
+                    accessibilityLabel="Open Emergency Contacts"
                   >
                     <Ionicons name="alert-circle-outline" size={16} color="#E07070" />
                     <View style={styles.quickTextWrap}>
                       <Text style={styles.miniLabel} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>Emergency</Text>
-                      <Text style={styles.miniStatus} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>Safety plan</Text>
+                      <Text style={styles.miniStatus} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>Contacts</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -611,12 +616,13 @@ export default function ProfileCard({
             )}
 
             <View style={view === 'emergency' ? styles.emergencyTabContainer : styles.hiddenTab}>
-              <EmergencyContactFeature
-                embedded
+              <EmergencyContactsPreview
+                key={user?.id ?? 'signed-out'}
                 visible={view === 'emergency'}
-                onClose={() => setView('home')}
-                initialValue={emergencyPlan}
-                onSave={handleEmergencyPlanSave}
+                onManage={() => {
+                  closeCard();
+                  router.push('/EmergencyContacts');
+                }}
               />
             </View>
 

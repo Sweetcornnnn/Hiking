@@ -11,6 +11,7 @@ import {
   RefreshControl,
   FlatList,
   Alert,
+  Image, // <-- Imported Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -43,6 +44,7 @@ type Conversation = {
   conversation_id?: string;
   sortTimestamp?: number;
   is_online?: boolean;
+  avatar_url?: string | null; // <-- Added
 };
 
 const rowColorKey = (c: Conversation): string => {
@@ -53,10 +55,16 @@ const rowColorKey = (c: Conversation): string => {
 
 export default function PrivateChatScreen({
   embedded = false,
+  maxWidth,
   onOpenCreateGroup,
+  onSelectConversation,
+  activeConversationId,
 }: {
   embedded?: boolean;
+  maxWidth?: number;
   onOpenCreateGroup?: () => void;
+  onSelectConversation?: (conv: { type: 'private' | 'group'; id: string }) => void;
+  activeConversationId?: string | null;
 }) {
   const router = useRouter();
   const [showCreateLocal, setShowCreateLocal] = useState(false);
@@ -68,11 +76,8 @@ export default function PrivateChatScreen({
     useState<Conversation | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
   const user = useAuthStore((state) => state.user);
 
-  // Open the create-group modal: prefer the parent's handler if provided,
-  // else open the local one so this screen still works standalone.
   const openCreateGroup = useCallback(() => {
     if (onOpenCreateGroup) {
       onOpenCreateGroup();
@@ -103,7 +108,6 @@ export default function PrivateChatScreen({
         if (!refresh) setLoading(true);
         const conversationsList: Conversation[] = [];
 
-        // ── Private ──
         const { data: privateData, error: privateError } = await supabase
           .from('conversations')
           .select('id, participant1_id, participant2_id, last_message_at')
@@ -163,11 +167,11 @@ export default function PrivateChatScreen({
                 ? new Date(effectiveTimestamp).getTime()
                 : 0,
               is_online: profileData?.is_online || false,
+              avatar_url: profileData?.avatar_url || null, // <-- Mapped
             });
           }
         }
 
-        // ── Groups (hidden excluded) ──
         const { data: groupData, error: groupError } = await supabase
           .from('group_members')
           .select(`
@@ -245,6 +249,7 @@ export default function PrivateChatScreen({
                 : group.updated_at
                 ? new Date(group.updated_at).getTime()
                 : 0,
+              avatar_url: group.avatar_url || null, // <-- Mapped group avatar too just in case
             });
           }
         }
@@ -301,7 +306,7 @@ export default function PrivateChatScreen({
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        { event: 'UPDATE', schema: 'public', table: 'profiles' }, // Triggers on avatar update
         () => loadConversations(true)
       )
       .subscribe();
@@ -344,14 +349,13 @@ export default function PrivateChatScreen({
 
       await loadConversations(true);
       setShowActionSheet(false);
-      const wasGroup = isGroup;
       setSelectedConversation(null);
-      setNotice({
-        title: 'Success',
-        message: wasGroup
+      Alert.alert(
+        'Success',
+        isGroup
           ? 'Chat removed from your list. It will reappear when someone posts.'
-          : 'Conversation deleted',
-      });
+          : 'Conversation deleted'
+      );
     } catch {
       Alert.alert('Error', 'Action failed. Please try again.');
     } finally {
@@ -388,7 +392,12 @@ export default function PrivateChatScreen({
       } catch {}
     }
 
-    if (conversation.type === 'private' && conversation.user_id) {
+    if (onSelectConversation) {
+      onSelectConversation({
+        type: conversation.type,
+        id: conversation.type === 'private' ? conversation.user_id! : conversation.group_id!,
+      });
+    } else if (conversation.type === 'private' && conversation.user_id) {
       router.push({
         pathname: '/chat/Conversation',
         params: { userId: conversation.user_id },
@@ -402,10 +411,14 @@ export default function PrivateChatScreen({
   };
 
   const handleUserSelect = (selectedUser: any) => {
-    router.push({
-      pathname: '/chat/Conversation',
-      params: { userId: selectedUser.id },
-    } as any);
+    if (onSelectConversation) {
+      onSelectConversation({ type: 'private', id: selectedUser.id });
+    } else {
+      router.push({
+        pathname: '/chat/Conversation',
+        params: { userId: selectedUser.id },
+      } as any);
+    }
   };
 
   const handleLongPress = (conversation: Conversation) => {
@@ -418,19 +431,32 @@ export default function PrivateChatScreen({
     const hasUnread = (item.unread || 0) > 0;
     const isOnline = item.type === 'private' && item.is_online === true;
     const color = getAvatarColor(rowColorKey(item));
+    
+    const isActive = activeConversationId === (item.type === 'private' ? item.user_id : item.group_id);
 
     return (
       <TouchableOpacity
-        style={[styles.conversationItem, hasUnread && styles.conversationItemUnread]}
+        style={[
+          styles.conversationItem,
+          hasUnread && styles.conversationItemUnread,
+          isActive && styles.conversationItemActive,
+          maxWidth ? { maxWidth, alignSelf: 'center', width: '100%' } : undefined,
+        ]}
         onPress={() => handleConversationPress(item)}
         onLongPress={() => handleLongPress(item)}
         delayLongPress={400}
         activeOpacity={0.7}
       >
         <View style={styles.avatarWrap}>
-          <View style={[styles.avatar, { backgroundColor: color }]}>
-            <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
-          </View>
+          {/* Render Image if avatar_url exists, else fallback to initials */}
+          {item.avatar_url ? (
+            <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: color }]}>
+              <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
+            </View>
+          )}
+          
           {isOnline && <View style={styles.onlineIndicator} />}
           {isGroup && (
             <View style={styles.groupBadgeSmall}>
@@ -444,7 +470,7 @@ export default function PrivateChatScreen({
             <Text
               style={[
                 styles.conversationTitle,
-                hasUnread && styles.conversationTitleUnread,
+                (hasUnread || isActive) && styles.conversationTitleUnread,
               ]}
               numberOfLines={1}
             >
@@ -454,7 +480,7 @@ export default function PrivateChatScreen({
               <Text
                 style={[
                   styles.conversationTime,
-                  hasUnread && styles.conversationTimeUnread,
+                  (hasUnread || isActive) && styles.conversationTimeUnread,
                 ]}
               >
                 {item.time}
@@ -465,7 +491,7 @@ export default function PrivateChatScreen({
             <Text
               style={[
                 styles.conversationPreview,
-                hasUnread && styles.conversationPreviewUnread,
+                (hasUnread || isActive) && styles.conversationPreviewUnread,
               ]}
               numberOfLines={1}
             >
@@ -502,7 +528,12 @@ export default function PrivateChatScreen({
         keyExtractor={(item) => item.id}
         renderItem={renderConversation}
         ListHeaderComponent={
-          <View style={styles.headerContainer}>
+          <View
+            style={[
+              styles.headerContainer,
+              maxWidth ? { maxWidth, alignSelf: 'center', width: '100%' } : undefined,
+            ]}
+          >
             {!embedded && (
               <View style={styles.headerRow}>
                 <View style={styles.headerLeft}>
@@ -558,7 +589,6 @@ export default function PrivateChatScreen({
         windowSize={15}
       />
 
-      {/* Local fallback modal — only used when no parent handler is provided */}
       {showCreateLocal && (
         <CreateGroupModal onClose={() => setShowCreateLocal(false)} />
       )}
@@ -626,26 +656,6 @@ export default function PrivateChatScreen({
           </View>
         </TouchableOpacity>
       </Modal>
-      <Modal
-        visible={notice !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setNotice(null)}
-      >
-        <View style={styles.noticeBackdrop}>
-          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
-            <Text style={styles.noticeTitle}>{notice?.title}</Text>
-            <Text style={styles.noticeText}>{notice?.message}</Text>
-            <TouchableOpacity
-              style={styles.noticeButton}
-              onPress={() => setNotice(null)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.noticeButtonText}>OK</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -707,6 +717,10 @@ const styles = StyleSheet.create({
   conversationItemUnread: {
     backgroundColor: 'rgba(201,169,110,0.08)',
     borderColor: 'rgba(201,169,110,0.22)',
+  },
+  conversationItemActive: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   avatarWrap: { position: 'relative', marginRight: 10 },
   avatar: {
@@ -824,45 +838,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(224,112,112,0.22)',
   },
   errorText: { color: '#E07070', fontSize: 11, textAlign: 'center' },
-  noticeBackdrop: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 28,
-    backgroundColor: 'rgba(0,0,0,0.62)',
-  },
-  noticeCard: {
-    width: '100%',
-    maxWidth: 340,
-    padding: 20,
-    borderRadius: CHAT_RADIUS_MODAL,
-    borderWidth: 1,
-    borderColor: CHAT_BORDER,
-    backgroundColor: CHAT_PANEL,
-  },
-  noticeTitle: {
-    color: TEXT_PRIMARY,
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  noticeText: {
-    color: TEXT_MUTED,
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginTop: 8,
-  },
-  noticeButton: {
-    alignItems: 'center',
-    marginTop: 18,
-    paddingVertical: 10,
-    borderRadius: CHAT_RADIUS_BTN,
-    backgroundColor: ACCENT_GOLD,
-  },
-  noticeButtonText: { color: CHAT_BG, fontSize: 12, fontWeight: '800' },
 
-  // Action sheet
   actionBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',

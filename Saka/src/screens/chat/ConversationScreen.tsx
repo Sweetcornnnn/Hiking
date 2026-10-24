@@ -17,6 +17,7 @@ import {
   Animated,
   PanResponder,
   Clipboard,
+  Image, // <-- Imported Image
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,6 +27,7 @@ import { useAuthStore } from '../../store/authStore';
 import { MessageBubble, ReactionType } from '../../components/chat/MessageBubble';
 import MessageActionSheet from '../../components/chat/MessageActionSheet';
 import ReactionsList from '../../components/chat/ReactionsList';
+import ProfileCard from '../../components/chat/ProfileCard'; 
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -41,6 +43,11 @@ import {
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 import { ReactionRow, summarizeReactions } from '../../utils/reactions';
+import {
+  getQueuedTextMessages,
+  queueTextMessage,
+  subscribeToQueuedMessages,
+} from '../../services/offlineMessageQueue';
 
 type Message = {
   id: number;
@@ -58,6 +65,7 @@ type Message = {
   reply_to_sender: string | null;
   reply_to_content: string | null;
   reaction: ReactionType | null;
+  sync_status?: 'pending' | 'failed';
 };
 
 type Profile = {
@@ -225,10 +233,18 @@ function SwipeableRow({
   );
 }
 
-export default function ConversationScreen() {
+export default function ConversationScreen({
+  embedded = false,
+  overrideUserId,
+  onClose,
+}: {
+  embedded?: boolean;
+  overrideUserId?: string;
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const userId = params.userId as string;
+  const userId = overrideUserId || (params.userId as string);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,6 +259,8 @@ export default function ConversationScreen() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [actionTarget, setActionTarget] = useState<Message | null>(null);
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
+
+  const [showProfile, setShowProfile] = useState(false);
 
   const [reactionsByMessage, setReactionsByMessage] = useState<
     Record<number, ReactionRow[]>
@@ -419,15 +437,38 @@ export default function ConversationScreen() {
         if (queryError) throw queryError;
 
         const newMessages: Message[] = data || [];
+        const queued = await getQueuedTextMessages('private', user.id, userId);
+        const mergedMessages = [
+          ...newMessages,
+          ...queued.map((entry) => ({
+            id: entry.id,
+            sender_id: user.id,
+            recipient_id: userId,
+            content: String(entry.payload.content ?? ''),
+            type: 'text' as const,
+            media_url: null,
+            is_read: false,
+            read_at: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            sync_status: entry.status,
+          })),
+        ].sort((a, b) => a.created_at.localeCompare(b.created_at));
         const firstUnreadIndex = newMessages.findIndex(
           (message) => message.sender_id === userId && !message.is_read
         );
+
         initialScrollIndexRef.current = firstUnreadIndex >= 0 ? firstUnreadIndex : null;
         setFirstUnreadId(firstUnreadIndex >= 0 ? newMessages[firstUnreadIndex].id : null);
 
         await markAllAsRead();
         initialPositionPendingRef.current = true;
-        setMessages(newMessages);
+        setMessages(mergedMessages);
 
         const ids = newMessages.map((m) => m.id);
         await loadReactionsForMessages(ids);
@@ -445,7 +486,30 @@ export default function ConversationScreen() {
         }, 300);
       } catch (err: any) {
         console.error('[loadMessages] caught:', err);
-        setError(err?.message ? `Failed to load: ${err.message}` : 'Failed to load messages');
+        const queued = await getQueuedTextMessages('private', user.id, userId);
+        if (queued.length > 0) {
+          setMessages(queued.map((entry) => ({
+            id: entry.id,
+            sender_id: user.id,
+            recipient_id: userId,
+            content: String(entry.payload.content ?? ''),
+            type: 'text',
+            media_url: null,
+            is_read: false,
+            read_at: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            sync_status: entry.status,
+          })));
+          setError(null);
+        } else {
+          setError(err?.message ? `Failed to load: ${err.message}` : 'Failed to load messages');
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -453,6 +517,10 @@ export default function ConversationScreen() {
     },
     [user, userId, markAllAsRead, loadReactionsForMessages]
   );
+
+  useEffect(() => subscribeToQueuedMessages(() => {
+    if (mountedRef.current) void loadMessages(true);
+  }), [loadMessages]);
 
   // ─── SEND ──────────────────────────────────────────────────
   const sendMessage = async () => {
@@ -512,8 +580,26 @@ export default function ConversationScreen() {
       setMessages((prev) => prev.map((msg) => (msg.id === tempId ? data : msg)));
     } catch (err: any) {
       console.error('[sendMessage] caught:', err);
-      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
-      Alert.alert('Error', err?.message || 'Failed to send message. Please try again.');
+      try {
+        await queueTextMessage('private', user.id, {
+          sender_id: user.id,
+          recipient_id: userId,
+          content: text,
+          type: 'text',
+          reply_to_id: reply?.id ?? null,
+          reply_to_sender: repliedToName,
+          reply_to_content: reply?.content ?? null,
+        }, tempId);
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === tempId ? { ...msg, sync_status: 'pending' } : msg
+        )));
+      } catch (queueError) {
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+        Alert.alert(
+          'Message not saved',
+          queueError instanceof Error ? queueError.message : 'Unable to save message on this device.',
+        );
+      }
     } finally {
       setSending(false);
     }
@@ -855,7 +941,6 @@ export default function ConversationScreen() {
     };
   }, [user, userId, loadUserProfile, loadMessages, handleNewMessage, handleDeletedMessage, handleUpdatedMessage]);
 
-  // Realtime reactions
   useEffect(() => {
     const channelName = `private-reactions-${user?.id}-${userId}-${Date.now()}`;
     const channel = supabase
@@ -894,7 +979,11 @@ export default function ConversationScreen() {
 
   const goBack = async () => {
     await markAllAsRead();
-    router.back();
+    if (embedded && onClose) {
+      onClose();
+    } else {
+      router.back();
+    }
   };
 
   const renderMessage = useCallback(
@@ -956,6 +1045,7 @@ export default function ConversationScreen() {
                 content={item.content}
                 time={time}
                 isMe={isMe}
+                deliveryStatus={item.sync_status}
                 isRead={item.is_read}
                 edited={edited}
                 hasReply={hasReply}
@@ -968,6 +1058,7 @@ export default function ConversationScreen() {
                 avatarUri={otherUser?.avatar_url}
                 avatarLabel={otherDisplayName}
                 avatarColorSeed={userId || ''}
+                onPressSender={!isMe ? () => setShowProfile(true) : undefined}
               />
             </Pressable>
           </SwipeableRow>
@@ -990,10 +1081,10 @@ export default function ConversationScreen() {
 
   if (loading && messages.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="small" color={ACCENT_GOLD} />
         <Text style={styles.loadingText}>Loading conversation…</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -1018,23 +1109,35 @@ export default function ConversationScreen() {
       ? summarizeReactions(reactionsByMessage[reactionsTarget] || [], user?.id)
       : [];
 
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { style: styles.container } : { style: styles.container, edges: ['top'] as any };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Wrapper {...wrapperProps}>
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="arrow-back" size={18} color={TEXT_PRIMARY} />
+          <Ionicons name={embedded ? "close" : "arrow-back"} size={18} color={TEXT_PRIMARY} />
         </TouchableOpacity>
 
-        <View style={styles.headerUser}>
+        <TouchableOpacity 
+          style={styles.headerUser}
+          onPress={() => setShowProfile(true)}
+          activeOpacity={0.7}
+        >
           <View
             style={[
               styles.headerAvatar,
               { backgroundColor: getAvatarColor(userId || '') },
             ]}
           >
-            <Text style={styles.headerAvatarText}>
-              {getInitials(otherUser?.full_name || otherUser?.username || '?')}
-            </Text>
+            {/* Check for avatar image first */}
+            {otherUser?.avatar_url ? (
+              <Image source={{ uri: otherUser.avatar_url }} style={styles.headerAvatarImage} />
+            ) : (
+              <Text style={styles.headerAvatarText}>
+                {getInitials(otherUser?.full_name || otherUser?.username || '?')}
+              </Text>
+            )}
           </View>
           <View style={styles.headerUserInfo}>
             <Text style={styles.headerName} numberOfLines={1}>
@@ -1052,7 +1155,7 @@ export default function ConversationScreen() {
               </Text>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.backBtn} hitSlop={8}>
           <Ionicons name="ellipsis-vertical" size={16} color={TEXT_PRIMARY} />
@@ -1067,8 +1170,8 @@ export default function ConversationScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' && !embedded ? 90 : 0}
       >
         <FlatList
           ref={listRef}
@@ -1248,7 +1351,13 @@ export default function ConversationScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      
+      <ProfileCard
+        userId={userId}
+        visible={showProfile}
+        onClose={() => setShowProfile(false)}
+      />
+    </Wrapper>
   );
 }
 
@@ -1289,6 +1398,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden', // <-- Added to clip image to circle
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   headerUserInfo: { marginLeft: 9, flex: 1, minWidth: 0 },

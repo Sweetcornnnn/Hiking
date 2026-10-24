@@ -264,20 +264,23 @@ export default function SafetyScreen() {
         is_sos: true, // Mark as SOS in database
       };
 
-      // Save locally
+      // Preserve the fix locally, but do not queue the emergency alert.
+      await locationService.saveLocationLocally(sosData);
       setLastLocation(sosData);
 
-      // Upload to Supabase with SOS flag
-      try {
-        const { error } = await require('../lib/supabase').supabase
-          .from('hiker_locations')
-          .insert(sosData);
+      // SOS is not queued: sending an emergency alert requires connectivity.
+      const { error: uploadError } = await require('../lib/supabase').supabase
+        .from('hiker_locations')
+        .insert(sosData);
 
-        if (error && error.code !== 'PGRST116') {
-          throw error;
-        }
-      } catch (uploadError) {
-        console.warn('SOS upload to Supabase failed, but local save succeeded:', uploadError);
+      if (uploadError) {
+        console.warn('SOS upload failed; location was saved locally:', uploadError);
+        Alert.alert(
+          'SOS not sent',
+          'Your location was saved on this device, but the emergency alert could not be sent. Connect to the internet and try again.'
+        );
+        updateTrackingStatus();
+        return;
       }
 
       // Show success and coordinates

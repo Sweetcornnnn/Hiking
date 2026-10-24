@@ -1,20 +1,32 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
+import { supabase } from '../lib/supabase';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ reset?: string }>();
   const { resetPassword } = useAuthStore();
+  const [mode, setMode] = useState<'request' | 'reset'>(
+    params.reset === '1' ? 'reset' : 'request',
+  );
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const [successVisible, setSuccessVisible] = useState(false);
-  const successOpacity = useRef(new Animated.Value(0)).current;
-  const successY = useRef(new Animated.Value(10)).current;
+  const [toastTitle, setToastTitle] = useState('Reset link sent');
+  const [toastMessage, setToastMessage] = useState('Check your email and follow the secure link to continue.');
+  const [successOpacity] = useState(() => new Animated.Value(0));
+  const [successY] = useState(() => new Animated.Value(10));
 
-  const showSuccessToast = () => {
+  const showSuccessToast = (title: string, message: string) => {
+    setToastTitle(title);
+    setToastMessage(message);
     setSuccessVisible(true);
     successOpacity.setValue(0);
     successY.setValue(10);
@@ -33,19 +45,50 @@ export default function ForgotPasswordScreen() {
     }, 2600);
   };
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const [fadeAnim] = useState(() => new Animated.Value(0));
+  const [slideAnim] = useState(() => new Animated.Value(20));
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 480, easing: Easing.out(Easing.ease), useNativeDriver: true }),
       Animated.timing(slideAnim, { toValue: 0, duration: 480, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [fadeAnim, slideAnim]);
 
-  const handleReset = async () => {
+  useEffect(() => {
+    if (mode !== 'reset') return;
+    let cancelled = false;
+
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (cancelled) return;
+      if (error || !session) {
+        setMode('request');
+        Alert.alert(
+          'Link expired',
+          'Your reset link is invalid or has expired. Please request a new one.',
+        );
+      }
+    }).catch(() => {
+      if (cancelled) return;
+      setMode('request');
+      Alert.alert(
+        'Link expired',
+        'Your reset link is invalid or has expired. Please request a new one.',
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
+  const handleRequestReset = async () => {
     if (!email.trim()) {
       Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      Alert.alert('Invalid email', 'Please enter a valid email address');
       return;
     }
 
@@ -57,7 +100,10 @@ export default function ForgotPasswordScreen() {
       }
 
       setIsLoading(false);
-      showSuccessToast();
+      showSuccessToast(
+        'Reset link sent',
+        'Check your email and follow the secure link to continue.',
+      );
     } catch (error: any) {
       setIsLoading(false);
       Alert.alert(
@@ -67,59 +113,169 @@ export default function ForgotPasswordScreen() {
     }
   };
 
+  const handleUpdatePassword = async () => {
+    if (password.length < 6) {
+      Alert.alert('Weak password', 'Use at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Passwords do not match', 'Re-enter the same password in both fields.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) {
+        Alert.alert('Update failed', error.message);
+        return;
+      }
+
+      await supabase.auth.signOut();
+      showSuccessToast(
+        'Password updated',
+        'You can now sign in with your new password.',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update password.';
+      Alert.alert('Update failed', message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.leftPanel}>
           <View style={styles.logoMark}>
-            <Text style={styles.logoEmoji}>🔐</Text>
+            <Text style={styles.logoEmoji}>{mode === 'reset' ? '🔑' : '🔐'}</Text>
           </View>
-          <Text style={styles.brandName}>Reset{"\n"}Password</Text>
-          <Text style={styles.brandTagline}>We’ll send a secure recovery link to your email.</Text>
+          <Text style={styles.brandName}>
+            {mode === 'reset' ? 'New\nPassword' : 'Reset\nPassword'}
+          </Text>
+          <Text style={styles.brandTagline}>
+            {mode === 'reset'
+              ? 'Choose a strong password to secure your account.'
+              : 'We’ll send a secure recovery link to your email.'}
+          </Text>
 
           <View style={styles.dividerH} />
 
           <View style={styles.noticeBox}>
-            <Ionicons name="mail-outline" size={13} color="#C9A96E" />
-            <Text style={styles.noticeText}>Use the link in your inbox to continue the password reset.</Text>
+            <Ionicons
+              name={mode === 'reset' ? 'lock-closed-outline' : 'mail-outline'}
+              size={13}
+              color="#C9A96E"
+            />
+            <Text style={styles.noticeText}>
+              {mode === 'reset'
+                ? 'Pick at least 6 characters. Avoid reusing old passwords.'
+                : 'Use the link in your inbox to continue the password reset.'}
+            </Text>
           </View>
         </View>
 
         <View style={styles.dividerV} />
 
         <View style={styles.rightPanel}>
-          <Text style={styles.formTitle}>Forgot password</Text>
-          <Text style={styles.formSubtitle}>Enter the email tied to your account</Text>
+          <Text style={styles.formTitle}>
+            {mode === 'reset' ? 'Set a new password' : 'Forgot password'}
+          </Text>
+          <Text style={styles.formSubtitle}>
+            {mode === 'reset'
+              ? 'Enter and confirm your new password'
+              : 'Enter the email tied to your account'}
+          </Text>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
-            <Text style={styles.fieldLabel}>EMAIL</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="mail-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your email"
-                placeholderTextColor="rgba(255,255,255,0.18)"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                editable={!isLoading}
-              />
-            </View>
+            {mode === 'request' ? (
+              <>
+                <Text style={styles.fieldLabel}>EMAIL</Text>
+                <View style={styles.inputRow}>
+                  <Ionicons name="mail-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email"
+                    placeholderTextColor="rgba(255,255,255,0.18)"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    editable={!isLoading}
+                  />
+                </View>
 
-            <TouchableOpacity
-              style={[styles.submitBtn, !email.trim() && styles.submitBtnDisabled]}
-              onPress={handleReset}
-              disabled={!email.trim() || isLoading}
-              activeOpacity={0.82}
-            >
-              {isLoading ? (
-                <Text style={styles.submitText}>Sending link…</Text>
-              ) : (
-                <><Text style={styles.submitText}>Send Reset Link</Text>
-                  <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} /></>
-              )}
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.submitBtn, (!email.trim() || isLoading) && styles.submitBtnDisabled]}
+                  onPress={handleRequestReset}
+                  disabled={!email.trim() || isLoading}
+                  activeOpacity={0.82}
+                >
+                  {isLoading ? (
+                    <Text style={styles.submitText}>Sending link…</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.submitText}>Send Reset Link</Text>
+                      <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} />
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.fieldLabel}>NEW PASSWORD</Text>
+                <View style={styles.inputRow}>
+                  <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="At least 6 characters"
+                    placeholderTextColor="rgba(255,255,255,0.18)"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword((visible) => !visible)} style={styles.eyeBtn}>
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={14}
+                      color="rgba(255,255,255,0.4)"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
+                <View style={styles.inputRow}>
+                  <Ionicons name="lock-closed-outline" size={13} color="rgba(255,255,255,0.22)" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Re-enter password"
+                    placeholderTextColor="rgba(255,255,255,0.18)"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    editable={!isLoading}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.submitBtn, (!password || !confirmPassword || isLoading) && styles.submitBtnDisabled]}
+                  onPress={handleUpdatePassword}
+                  disabled={!password || !confirmPassword || isLoading}
+                  activeOpacity={0.82}
+                >
+                  <Text style={styles.submitText}>
+                    {isLoading ? 'Updating…' : 'Update Password'}
+                  </Text>
+                  {!isLoading && (
+                    <Ionicons name="arrow-forward" size={13} color="#0E1520" style={{ marginLeft: 6 }} />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
 
             <TouchableOpacity onPress={() => router.replace('/Login')} style={styles.backRow}>
               <Ionicons name="arrow-back" size={12} color="rgba(255,255,255,0.25)" />
@@ -136,8 +292,8 @@ export default function ForgotPasswordScreen() {
             <Ionicons name="checkmark-circle" size={22} color="#6FAF8A" />
           </View>
           <View style={styles.successToastContent}>
-            <Text style={styles.successToastTitle}>Reset link sent</Text>
-            <Text style={styles.successToastMsg}>Check your email and follow the secure link to continue.</Text>
+            <Text style={styles.successToastTitle}>{toastTitle}</Text>
+            <Text style={styles.successToastMsg}>{toastMessage}</Text>
           </View>
         </Animated.View>
       )}

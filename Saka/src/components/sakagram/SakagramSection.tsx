@@ -10,6 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import {
   fetchSakagramPosts,
+  getPendingSakagramLikeIds,
+  subscribeToSakagramSync,
   toggleJournalLike,
   type SakagramPost,
 } from '../../services/sakagramService';
@@ -45,6 +47,7 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
   const [loadError, setLoadError] = useState<string | null>(null);
   const [likeError, setLikeError] = useState<string | null>(null);
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
+  const [queuedLikeIds, setQueuedLikeIds] = useState<Set<string>>(new Set());
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -54,7 +57,12 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
 
     void fetchSakagramPosts(viewpointId, currentUserId)
       .then((nextPosts) => {
-        if (active) setPosts(nextPosts);
+        if (active) {
+          setPosts(nextPosts);
+          void getPendingSakagramLikeIds(currentUserId ?? '').then((ids) => {
+            if (active) setQueuedLikeIds(new Set(ids));
+          });
+        }
       })
       .catch((error: unknown) => {
         if (active) {
@@ -69,6 +77,10 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
       active = false;
     };
   }, [viewpointId, currentUserId, reloadKey]);
+
+  useEffect(() => subscribeToSakagramSync(() => {
+    setReloadKey((value) => value + 1);
+  }), []);
 
   const handleAddPhoto = () => {
     if (!currentUserId) {
@@ -104,6 +116,8 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
 
     try {
       await toggleJournalLike(postId, liked);
+      const pendingIds = await getPendingSakagramLikeIds(currentUserId);
+      setQueuedLikeIds(new Set(pendingIds));
     } catch (error: unknown) {
       setPosts((current) => current.map((post) => (
         post.id === postId
@@ -198,6 +212,7 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
               post={post}
               onToggleLike={handleToggleLike}
               isLikePending={pendingLikeIds.has(post.id)}
+              isLikeQueued={queuedLikeIds.has(post.id)}
               locationLabel={viewpointName}
               focused={focused}
             />
