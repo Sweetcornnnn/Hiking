@@ -22,7 +22,16 @@ import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
 import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
-import GlobalChatNotifier from '../components/chat/GlobalChatNotifier'; // <-- NEW
+import GlobalChatNotifier from '../components/chat/GlobalChatNotifier';
+import {
+  AnimatedMessageIcon,
+  type AnimatedMessageIconHandle,
+  type ChatNotificationPayload,
+} from '../components/chat/AnimatedMessageIcon';
+import {
+  ChatNotificationProvider,
+  useChatNotifications,
+} from '../components/chat/ChatNotificationContext';
 import { mountainService, Mountain } from '../services/mountainService';
 import { persistProfileAvatarLocally } from '../services/profileAvatarService';
 import {
@@ -258,7 +267,12 @@ const MountainSlide = memo(function MountainSlide({
   );
 });
 
-export default function HomeScreen() {
+/**
+ * Everything that needs the chat-notification context lives here.
+ * Rendered as a child of <ChatNotificationProvider> so useChatNotifications()
+ * resolves correctly — no changes needed to _layout.tsx.
+ */
+function HomeContent() {
   const router = useRouter();
   const { returnToProfile } = useLocalSearchParams<{ returnToProfile?: string }>();
   const { user, profile, signOut, updateProfile } = useAuthStore();
@@ -269,10 +283,31 @@ export default function HomeScreen() {
   const profileImage = profile?.avatar_url ?? null;
   const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
 
-  // ── NOTIFICATION BANNER STATE ──
-  const [bannerData, setBannerData] = useState<{ type: string; id: string; senderName: string; content: string } | null>(null);
-  const bannerAnim = useRef(new Animated.Value(-100)).current;
-  const bannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── CHAT NOTIFICATIONS → HEADER ICON ──
+  const messageIconRef = useRef<AnimatedMessageIconHandle>(null);
+  const { subscribe, unreadCount, clearUnread } = useChatNotifications();
+
+  useEffect(() => {
+    return subscribe((payload) => {
+      messageIconRef.current?.notify(payload);
+    });
+  }, [subscribe]);
+
+  const handleOpenNotification = useCallback(
+    (payload: ChatNotificationPayload) => {
+      clearUnread();
+      router.push({
+        pathname: payload.type === 'private' ? '/chat/Conversation' : '/chat/GroupChat',
+        params: payload.type === 'private' ? { userId: payload.id } : { groupId: payload.id },
+      } as any);
+    },
+    [router, clearUnread]
+  );
+
+  const handleOpenInbox = useCallback(() => {
+    clearUnread();
+    router.push('/chat/Chat' as any);
+  }, [router, clearUnread]);
 
   const handleProfileImageSelect = async (uri: string) => {
     if (!user) {
@@ -301,7 +336,6 @@ export default function HomeScreen() {
   }, []);
 
   const [error, setError] = useState<string | null>(null);
-  // Above the early returns. Skipped when arriving straight into the profile card.
   const tutorial = useTutorial('home', { ready: mountains.length > 0 && returnToProfile !== 'true' });
   const scrollViewRef = useRef<any>(null);
 
@@ -392,39 +426,6 @@ export default function HomeScreen() {
     router.replace('/Login');
   }, [signOut, router]);
 
-  // ── NOTIFICATION BANNER LOGIC ──
-  const showBanner = useCallback((payload: any) => {
-    if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
-    setBannerData(payload);
-    
-    Animated.spring(bannerAnim, {
-      toValue: 0,
-      useNativeDriver: true,
-      speed: 14,
-      bounciness: 6,
-    }).start();
-
-    // Auto hide after 4 seconds
-    bannerTimeoutRef.current = setTimeout(() => {
-      Animated.timing(bannerAnim, {
-        toValue: -100,
-        duration: 250,
-        useNativeDriver: true,
-      }).start(() => setBannerData(null));
-    }, 4000);
-  }, [bannerAnim]);
-
-  const handleBannerPress = () => {
-    if (!bannerData) return;
-    Animated.timing(bannerAnim, { toValue: -100, duration: 200, useNativeDriver: true }).start(() => {
-      setBannerData(null);
-      router.push({
-        pathname: bannerData.type === 'private' ? '/chat/Conversation' : '/chat/GroupChat',
-        params: bannerData.type === 'private' ? { userId: bannerData.id } : { groupId: bannerData.id },
-      } as any);
-    });
-  };
-
   useEffect(() => {
     const onBack = () => {
       if (profileCardVisible) { closeProfileCard(); return true; }
@@ -459,35 +460,8 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.immersiveContainer}>
-      {/* NOTIFICATION BANNER */}
-      {bannerData && (
-        <Animated.View
-          style={[
-            styles.bannerContainer,
-            { transform: [{ translateY: bannerAnim }] },
-          ]}
-        >
-          <TouchableOpacity
-            style={styles.bannerContent}
-            onPress={handleBannerPress}
-            activeOpacity={0.9}
-          >
-            <View style={styles.bannerAvatar}>
-              <Ionicons name="chatbubble" size={16} color="#FFF" />
-            </View>
-            <View style={styles.bannerTextWrap}>
-              <Text style={styles.bannerSender}>{bannerData.senderName}</Text>
-              <Text style={styles.bannerMessage} numberOfLines={1}>
-                {bannerData.content}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.4)" />
-          </TouchableOpacity>
-        </Animated.View>
-      )}
-
-      {/* Global Listener */}
-      <GlobalChatNotifier onNotify={showBanner} />
+      {/* Global Listener — feeds AnimatedMessageIcon via shared context */}
+      <GlobalChatNotifier />
 
       <Animated.ScrollView
         ref={scrollViewRef}
@@ -552,7 +526,7 @@ export default function HomeScreen() {
 
         <View style={styles.headerRightButtons}>
           <OfflineStatusIndicator />
-          
+
           {profile?.role === 'organization' && (
             <TouchableOpacity
               onPress={() => router.push('/organizations/Dashboard')}
@@ -563,13 +537,16 @@ export default function HomeScreen() {
               <Ionicons name="business-outline" size={20} color="#3FD69D" />
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            onPress={() => router.push('/chat/Chat' as any)}
-            style={styles.chatButton}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="chatbubble-ellipses" size={20} color="#C9A96E" />
-          </TouchableOpacity>
+
+          {/* Animated chat icon: expands left with preview, then collapses */}
+          <View style={styles.chatIconWrap}>
+            <AnimatedMessageIcon
+              ref={messageIconRef}
+              unreadCount={unreadCount}
+              onPress={handleOpenInbox}
+              onPressNotification={handleOpenNotification}
+            />
+          </View>
         </View>
       </View>
 
@@ -638,6 +615,15 @@ export default function HomeScreen() {
         </Animated.View>
       )}
     </View>
+  );
+}
+
+/** Public screen: mounts the provider around the content. */
+export default function HomeScreen() {
+  return (
+    <ChatNotificationProvider>
+      <HomeContent />
+    </ChatNotificationProvider>
   );
 }
 
@@ -911,7 +897,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  // Backdrop so the 18px help circle stays readable over video
   helpButton: {
     marginRight: 4,
     backgroundColor: 'rgba(10,16,26,0.6)',
@@ -924,50 +909,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.18)',
   },
-
-  // ── BANNER STYLES ──
-  bannerContainer: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    right: 20,
-    zIndex: 9999,
-    elevation: 30,
-    backgroundColor: 'rgba(10, 16, 26, 0.95)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(201, 169, 110, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-  },
-  bannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  bannerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(201, 169, 110, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bannerTextWrap: {
-    flex: 1,
-  },
-  bannerSender: {
-    color: '#C9A96E',
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  bannerMessage: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 13,
+  chatIconWrap: {
+    marginLeft: 8,
   },
 });
