@@ -1,16 +1,17 @@
 {
   "expo": {
     "name": "Saka",
-    "slug": "Saka",
+    "slug": "saka",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "saka",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.yourname.saka",
       "supportsTablet": true,
       "config": {
-        "googleMapsApiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
+        "googleMapsApiKey": "AIzaSyAI-xnvFzV-h5lEFs9bUNn-muw-vb4HpK8"
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to track hiking progress and ensure your safety on trails.",
@@ -31,11 +32,11 @@
       },
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDqYfpzj1PMkOAffUEqh1foS9bRg_3Z1jo"
+          "apiKey": "AIzaSyAI-xnvFzV-h5lEFs9bUNn-muw-vb4HpK8"
         }
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.Saka"
+      "package": "com.yourname.saka"
     },
     "web": {
       "output": "static",
@@ -47,14 +48,14 @@
     },
     "plugins": [
       "expo-router",
-       [
-         "expo-notifications",
-         {
-           "icon": "./assets/images/icon.png",
-           "color": "#C9A96E",
-           "defaultChannel": "safety"
-         }
-       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#C9A96E",
+          "defaultChannel": "safety"
+        }
+      ],
       [
         "expo-splash-screen",
         {

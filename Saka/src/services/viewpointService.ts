@@ -1,6 +1,10 @@
 import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VIEWPOINTS_DATA, ViewpointsDataType } from '../data/viewpointsData';
 import { MOUNTAINS_INFO } from '../data/mountains';
+
+const VIEWPOINT_CACHE_PREFIX = 'SAKA_VIEWPOINT_CACHE:';
+const VIEWPOINT_CACHE_UPDATED_PREFIX = 'SAKA_VIEWPOINT_CACHE_UPDATED:';
 
 export type ViewpointDetailRecord = {
   id: string;
@@ -35,11 +39,39 @@ export async function fetchViewpointDetail(viewpointId: string): Promise<Viewpoi
     return null;
   }
 
-  const { data, error } = await supabase
+  const cacheKey = `${VIEWPOINT_CACHE_PREFIX}${viewpointId}`;
+  try {
+    const cachedJson = await AsyncStorage.getItem(cacheKey);
+    if (cachedJson) {
+      const cached = JSON.parse(cachedJson) as ViewpointDetailRecord;
+      if (cached?.id === viewpointId) {
+        void refreshViewpointDetail(viewpointId).catch((error) => {
+          console.warn('[viewpointService] Background viewpoint refresh failed:', error);
+        });
+        return cached;
+      }
+    }
+  } catch (cacheError) {
+    console.warn('[viewpointService] Failed to read cached viewpoint:', cacheError);
+  }
+
+  return refreshViewpointDetail(viewpointId);
+}
+
+async function refreshViewpointDetail(viewpointId: string): Promise<ViewpointDetailRecord | null> {
+  const request = supabase
     .from('viewpoints')
     .select('*')
     .eq('id', viewpointId)
     .maybeSingle();
+  let result: Awaited<typeof request>;
+  try {
+    result = await request;
+  } catch (requestError) {
+    console.warn('[viewpointService] Viewpoint request failed, using local fallback:', requestError);
+    return fallbackViewpoint(viewpointId);
+  }
+  const { data, error } = result;
 
   if (error) {
     console.warn('[viewpointService] Supabase query failed, using local fallback:', error.message);
@@ -50,7 +82,7 @@ export async function fetchViewpointDetail(viewpointId: string): Promise<Viewpoi
     return fallbackViewpoint(viewpointId);
   }
 
-  return {
+  const record: ViewpointDetailRecord = {
     id: data.id,
     name: data.name,
     subtitle: data.subtitle || '',
@@ -68,6 +100,26 @@ export async function fetchViewpointDetail(viewpointId: string): Promise<Viewpoi
     trailStatus: data.trail_status || 'Open',
     crowdLevel: data.crowd_level || 'Low',
   };
+  const cacheKey = `${VIEWPOINT_CACHE_PREFIX}${viewpointId}`;
+  const updatedAtKey = `${VIEWPOINT_CACHE_UPDATED_PREFIX}${viewpointId}`;
+  try {
+    await Promise.all([
+      AsyncStorage.setItem(cacheKey, JSON.stringify(record)),
+      AsyncStorage.setItem(updatedAtKey, new Date().toISOString()),
+    ]);
+  } catch (cacheError) {
+    console.warn('[viewpointService] Failed to persist viewpoint:', cacheError);
+  }
+  return record;
+}
+
+export async function getViewpointCacheUpdatedAt(viewpointId: string): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(`${VIEWPOINT_CACHE_UPDATED_PREFIX}${viewpointId}`);
+  } catch (error) {
+    console.warn('[viewpointService] Failed to read viewpoint cache timestamp:', error);
+    return null;
+  }
 }
 
 const normalizeMountainName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');

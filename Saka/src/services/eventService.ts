@@ -36,6 +36,94 @@ export interface MyRsvp {
 
 export type MyRsvpWithSafetyCheck = MyRsvp & { safety_check_id: string | null };
 
+export type EventAttendee = {
+  rsvpId: string;
+  userId: string;
+  fullName: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  status: 'confirmed' | 'pending' | 'waitlist' | string;
+  createdAt: string | null;
+};
+
+type EventAttendeeRsvpRow = {
+  id: string;
+  user_id: string;
+  status: string;
+  created_at: string | null;
+};
+
+type EventAttendeeProfileRow = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+};
+
+function normalizeAttendees(
+  rows: EventAttendeeRsvpRow[],
+  profiles: Map<string, EventAttendeeProfileRow>
+): EventAttendee[] {
+  const rank: Record<string, number> = { confirmed: 0, pending: 1, waitlist: 2 };
+
+  return rows
+    .filter((row) => Boolean(row.user_id))
+    .map((row) => {
+      const profile = profiles.get(row.user_id);
+      return {
+        rsvpId: String(row.id),
+        userId: String(row.user_id),
+        fullName: profile?.full_name ?? null,
+        username: profile?.username ?? null,
+        avatarUrl: profile?.avatar_url ?? null,
+        status: row.status,
+        createdAt: row.created_at ?? null,
+      };
+    })
+    .sort((a, b) => {
+      const statusOrder = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+      if (statusOrder !== 0) return statusOrder;
+      return (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
+    });
+}
+
+/**
+ * Fetch active RSVP attendees, ordered by status and then by join time.
+ */
+export async function getEventAttendees(eventId: string): Promise<EventAttendee[]> {
+  const { data, error } = await supabase
+    .from('event_rsvps')
+    .select('id, user_id, status, created_at')
+    .eq('event_id', eventId)
+    .in('status', ['confirmed', 'pending', 'waitlist'])
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.warn('[EventService] getEventAttendees RSVP lookup failed:', error.message);
+    return [];
+  }
+
+  const rsvps = (data ?? []) as EventAttendeeRsvpRow[];
+  const userIds = Array.from(new Set(rsvps.map((rsvp) => rsvp.user_id).filter(Boolean)));
+  let profiles = new Map<string, EventAttendeeProfileRow>();
+
+  if (userIds.length > 0) {
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, full_name, username, avatar_url')
+      .in('id', userIds);
+
+    if (profileError) {
+      console.warn('[EventService] getEventAttendees profile lookup failed:', profileError.message);
+    } else {
+      const profileRows = (profileData ?? []) as unknown as EventAttendeeProfileRow[];
+      profiles = new Map(profileRows.map((profile) => [profile.id, profile]));
+    }
+  }
+
+  return normalizeAttendees(rsvps, profiles);
+}
+
 export function eventPlannedFinish(event: {
   event_date: string;
   end_date?: string | null;
@@ -96,6 +184,8 @@ export function eventPlannedFinish(event: {
 }
 
 export const eventService = {
+  getEventAttendees,
+
   async getPublicEvents(filters?: PublicEventFilters): Promise<PublicEvent[]> {
     let query = supabase
       .from('hiking_events')

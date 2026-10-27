@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   ACCENT_GOLD,
   BG_CARD,
+  BG_GOLD_ICON,
   BG_PANEL,
   BG_SUBTLE,
   BORDER_DEFAULT,
@@ -117,8 +118,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: SPACING.gapLg,
-    borderRadius: RADIUS_BTN,
-    backgroundColor: BG_SUBTLE,
+    borderRadius: 18,
+    backgroundColor: BG_GOLD_ICON,
   },
   title: {
     flex: 1,

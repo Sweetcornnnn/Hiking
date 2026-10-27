@@ -197,23 +197,27 @@ export default function OrgAttendees() {
           }
         />
       ) : (
-        filtered.map((a) => {
-          const name = a.full_name || a.email || 'Unknown hiker';
-          const initials = name
-            .split(' ')
-            .map((p) => p[0])
-            .join('')
-            .slice(0, 2)
-            .toUpperCase();
-          const busy = busyRsvpId === a.rsvp_id;
+        <Card padded={false} style={styles.table}>
+          {filtered.map((a, i) => {
+            const name = a.full_name || a.email || 'Unknown hiker';
+            const initials = name
+              .split(' ')
+              .map((p) => p[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase();
+            const busy = busyRsvpId === a.rsvp_id;
 
-          return (
-            <Card key={a.rsvp_id} style={styles.attendeeCard}>
-              <View style={styles.attendeeHeader}>
+            return (
+              <View
+                key={a.rsvp_id}
+                style={[styles.row, i === filtered.length - 1 && { borderBottomWidth: 0 }]}
+              >
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{initials}</Text>
                 </View>
-                <View style={{ flex: 1 }}>
+
+                <View style={styles.who}>
                   <Text style={styles.attendeeName} numberOfLines={1}>
                     {name}
                   </Text>
@@ -222,16 +226,13 @@ export default function OrgAttendees() {
                     {a.contact_number ? ` · ${a.contact_number}` : ''}
                   </Text>
                 </View>
-                <StatusPill status={a.status} />
-              </View>
 
-              <View style={styles.attendeeFooter}>
                 <View style={styles.guestPill}>
-                  <Ionicons name="people-outline" size={12} color="rgba(255,255,255,0.65)" />
-                  <Text style={styles.guestPillText}>
-                    {a.guest_count} {a.guest_count === 1 ? 'guest' : 'guests'}
-                  </Text>
+                  <Ionicons name="people-outline" size={11} color="rgba(255,255,255,0.6)" />
+                  <Text style={styles.guestPillText}>{a.guest_count}</Text>
                 </View>
+
+                <StatusPill status={a.status} />
 
                 <View style={styles.actions}>
                   {a.status === 'waitlist' && (
@@ -285,9 +286,9 @@ export default function OrgAttendees() {
                   />
                 </View>
               </View>
-            </Card>
-          );
-        })
+            );
+          })}
+        </Card>
       )}
     </OrgLandscapeShell>
   );
@@ -326,7 +327,7 @@ function ActionButton({
         <ActivityIndicator size="small" color={filled ? '#0E1520' : PC.gold} />
       ) : (
         <>
-          <Ionicons name={icon} size={13} color={color} />
+          <Ionicons name={icon} size={12} color={color} />
           <Text style={[styles.actionText, { color }]}>{label}</Text>
         </>
       )}
@@ -335,50 +336,60 @@ function ActionButton({
 }
 
 const styles = StyleSheet.create({
-  filtersWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  filtersWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
 
-  attendeeCard: { gap: SP.md },
-  attendeeHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  table: { overflow: 'hidden' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: SP.md,
+    rowGap: SP.sm,
+    paddingHorizontal: SP.md,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.04)',
+  },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: PC.goldSoft,
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: { color: PC.gold, fontWeight: '800', fontSize: FS.body },
-  attendeeName: { color: '#FFF', fontSize: 14, fontWeight: '700' },
-  attendeeMeta: { color: 'rgba(255,255,255,0.5)', fontSize: FS.small, marginTop: 2 },
+  avatarText: { color: PC.gold, fontWeight: '800', fontSize: FS.small },
+  who: { flex: 1, minWidth: 120 },
+  attendeeName: { color: PC.textPrimary, fontSize: FS.base, fontWeight: '700' },
+  attendeeMeta: { color: PC.textMuted, fontSize: FS.small, marginTop: 1 },
 
-  attendeeFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SP.sm, flexWrap: 'wrap' },
   guestPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: PC.bgSubtle,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
+    paddingHorizontal: 7,
+    height: 18,
+    borderRadius: 6,
   },
-  guestPillText: { color: 'rgba(255,255,255,0.65)', fontSize: FS.small, fontWeight: '600' },
+  guestPillText: { color: PC.textSecondary, fontSize: FS.small, fontWeight: '700' },
 
-  actions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, rowGap: SP.sm },
+  actions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5 },
   actionBtn: {
-    minHeight: 32,
+    minHeight: 26,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 11,
-    borderRadius: 999,
+    gap: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: PC.borderCtrl,
+    backgroundColor: PC.bgSubtle,
   },
   actionBtnFilled: { backgroundColor: PC.green, borderColor: PC.green },
   actionBtnDisabled: { opacity: 0.4 },
-  actionText: { fontSize: FS.body, fontWeight: '700' },
+  actionText: { fontSize: FS.small, fontWeight: '700' },
 });

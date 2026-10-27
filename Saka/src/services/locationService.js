@@ -12,6 +12,7 @@ const BACKGROUND_LOCATION_TASK_NAME = 'HIKING_SAFETY_BACKGROUND_LOCATION_TASK';
 // Storage keys for persisting location data
 const LAST_LOCATION_KEY = 'HIKING_LAST_LOCATION';
 const LOCATION_HISTORY_KEY = 'HIKING_LOCATION_HISTORY';
+const LOCATION_UPLOAD_QUEUE_KEY = 'HIKING_LOCATION_UPLOAD_QUEUE';
 
 /**
  * LocationService - Manages all aspects of location tracking
@@ -24,7 +25,40 @@ class LocationService {
     this.isTrackingBackground = false;
     this.trackingSubscription = null;
     this.uploadQueue = [];
+    this.uploadQueueLoaded = false;
+    this.uploadQueueLoad = null;
     this.isOnline = true;
+  }
+
+  async _loadUploadQueue() {
+    if (this.uploadQueueLoaded) return;
+    if (!this.uploadQueueLoad) {
+      this.uploadQueueLoad = (async () => {
+        try {
+          const queueJson = await AsyncStorage.getItem(LOCATION_UPLOAD_QUEUE_KEY);
+          const queue = queueJson ? JSON.parse(queueJson) : [];
+          this.uploadQueue = Array.isArray(queue) ? queue : [];
+        } catch (error) {
+          console.error('Error loading location upload queue:', error);
+          this.uploadQueue = [];
+        } finally {
+          this.uploadQueueLoaded = true;
+          this.uploadQueueLoad = null;
+        }
+      })();
+    }
+    await this.uploadQueueLoad;
+  }
+
+  async _persistUploadQueue() {
+    try {
+      await AsyncStorage.setItem(
+        LOCATION_UPLOAD_QUEUE_KEY,
+        JSON.stringify(this.uploadQueue)
+      );
+    } catch (error) {
+      console.error('Error persisting location upload queue:', error);
+    }
   }
 
   /**
@@ -316,8 +350,10 @@ class LocationService {
    */
   async _queueLocationUpload(locationData) {
     try {
+      await this._loadUploadQueue();
       // Add to memory queue
       this.uploadQueue.push(locationData);
+      await this._persistUploadQueue();
 
       // Immediately try to upload
       await this._processUploadQueue();
@@ -332,6 +368,7 @@ class LocationService {
    * @private
    */
   async _processUploadQueue() {
+    await this._loadUploadQueue();
     while (this.uploadQueue.length > 0) {
       const locationData = this.uploadQueue[0];
 
@@ -354,18 +391,21 @@ class LocationService {
             // Table doesn't exist, log but don't retry infinitely
             console.warn('Hiker locations table not found in Supabase');
             this.uploadQueue.shift();
+            await this._persistUploadQueue();
           } else {
             throw error;
           }
         } else {
           // Successfully uploaded, remove from queue
           this.uploadQueue.shift();
+          await this._persistUploadQueue();
           console.log('✓ Location uploaded to Supabase');
         }
       } catch (error) {
         // Network error or offline - stop processing queue
         console.warn('Upload failed (will retry when online):', error.message);
         this.isOnline = false;
+        await this._persistUploadQueue();
         break;
       }
     }
@@ -376,6 +416,7 @@ class LocationService {
    * Called when network reconnects or manually by user
    */
   async retryQueuedUploads() {
+    await this._loadUploadQueue();
     console.log(`Retrying ${this.uploadQueue.length} queued location uploads...`);
     this.isOnline = true;
     await this._processUploadQueue();
@@ -393,6 +434,11 @@ class LocationService {
       console.error('Error retrieving last location:', error);
       return null;
     }
+  }
+
+  async saveLocationLocally(locationData) {
+    await AsyncStorage.setItem(LAST_LOCATION_KEY, JSON.stringify(locationData));
+    await this._addToLocationHistory(locationData);
   }
 
   /**
@@ -415,8 +461,10 @@ class LocationService {
    */
   async clearLocationData() {
     try {
+      await this._loadUploadQueue();
       await AsyncStorage.removeItem(LAST_LOCATION_KEY);
       await AsyncStorage.removeItem(LOCATION_HISTORY_KEY);
+      await AsyncStorage.removeItem(LOCATION_UPLOAD_QUEUE_KEY);
       this.uploadQueue = [];
       console.log('✓ Location data cleared');
     } catch (error) {

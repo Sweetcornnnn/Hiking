@@ -41,7 +41,7 @@ export default function TipsAndTricks({ mountainTips, onBack }: TipsAndTricksPro
             accessibilityRole="button"
             accessibilityLabel="Close tips and tricks"
           >
-            <Ionicons name="close" size={22} color={ACCENT_GOLD} />
+            <Ionicons name="chevron-back" size={22} color={ACCENT_GOLD} />
           </TouchableOpacity>
         ) : null}
         <View style={styles.headerText}>
@@ -49,15 +49,30 @@ export default function TipsAndTricks({ mountainTips, onBack }: TipsAndTricksPro
           <Text style={styles.subtitle}>Information, Tips & Tricks</Text>
           <View style={styles.goldLine} />
         </View>
+        <AlertsSection alerts={mountainTips.alerts} />
       </View>
 
-      <View style={styles.categoryGrid}>
-        <SafetySection items={mountainTips.safety} />
-        <TransportationSection items={mountainTips.transportation} />
-        <PreparationSection items={mountainTips.preparation} />
-        <TrailTipsSection items={mountainTips.trailTips} />
-        <EtiquetteSection items={mountainTips.etiquette} />
-        <AlertsSection alerts={mountainTips.alerts} />
+      <View style={styles.content}>
+        <View style={styles.row}>
+          <View style={styles.cell}>
+            <SafetySection items={mountainTips.safety} />
+          </View>
+          <View style={styles.cell}>
+            <TransportationSection items={mountainTips.transportation} />
+          </View>
+          <View style={styles.cell}>
+            <PreparationSection items={mountainTips.preparation} />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.cell}>
+            <EtiquetteSection items={mountainTips.etiquette} />
+          </View>
+          <View style={styles.cell}>
+            <TrailTipsSection items={mountainTips.trailTips} />
+          </View>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -106,14 +121,21 @@ const styles = StyleSheet.create({
     marginTop: SPACING.gap,
     borderRadius: 2,
   },
-  categoryGrid: {
+  content: {
     flex: 1,
     paddingHorizontal: SPACING.gapLg,
     paddingTop: SPACING.gapLg,
     paddingBottom: SPACING.cardPadB,
+    justifyContent: 'center',
+    gap: SPACING.gapLg,
+  },
+  row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    alignContent: 'flex-start',
+    gap: SPACING.gap,
+    alignItems: 'stretch',
+  },
+  cell: {
+    flex: 1,
+    minWidth: 0,
   },
 });

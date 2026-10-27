@@ -1,6 +1,6 @@
 import React from 'react';
 import InfoSection from '../InfoSection';
-import { ACCENT_GREEN } from '../../../theme/designTokens';
+import { ACCENT_GOLD } from '../../../theme/designTokens';
 
 export interface EtiquetteSectionProps {
   items: string[];
@@ -12,7 +12,7 @@ export default function EtiquetteSection({ items }: EtiquetteSectionProps) {
       title="Environmental Etiquette"
       subtitle="Keep the mountain clean and green."
       icon="leaf-outline"
-      iconColor={ACCENT_GREEN}
+      iconColor={ACCENT_GOLD}
       items={items}
       compact
       showArrow={false}

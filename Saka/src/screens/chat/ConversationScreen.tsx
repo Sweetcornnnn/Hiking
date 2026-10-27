@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
+  Modal,
   FlatList,
   TouchableOpacity,
   StyleSheet,
@@ -12,34 +13,41 @@ import {
   RefreshControl,
   Alert,
   TextInput,
-  useWindowDimensions,
-  Modal,
   Pressable,
   Animated,
   PanResponder,
+  Clipboard,
+  Image, // <-- Imported Image
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { MessageBubble, ReactionType } from '../../components/chat/MessageBubble';
+import MessageActionSheet from '../../components/chat/MessageActionSheet';
+import ReactionsList from '../../components/chat/ReactionsList';
+import ProfileCard from '../../components/chat/ProfileCard'; 
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
   TEXT_MUTED,
   CHAT_BG,
-  CHAT_SUBTLE,
+  CHAT_PANEL,
   CHAT_BORDER,
   CHAT_ONLINE,
   CHAT_DANGER,
   CHAT_RADIUS_BTN,
-  CHAT_RADIUS_MODAL,
-  CHAT_RADIUS_BUBBLE,
   CHAT_FS_BODY,
-  CHAT_FS_META,
   CHAT_OFFLINE,
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
+import { ReactionRow, summarizeReactions } from '../../utils/reactions';
+import {
+  getQueuedTextMessages,
+  queueTextMessage,
+  subscribeToQueuedMessages,
+} from '../../services/offlineMessageQueue';
 
 type Message = {
   id: number;
@@ -52,9 +60,12 @@ type Message = {
   read_at: string | null;
   created_at: string;
   updated_at: string;
+  is_edited: boolean;
   reply_to_id: number | null;
   reply_to_sender: string | null;
   reply_to_content: string | null;
+  reaction: ReactionType | null;
+  sync_status?: 'pending' | 'failed';
 };
 
 type Profile = {
@@ -79,23 +90,68 @@ const SELECT_COLS = `
   read_at,
   created_at,
   updated_at,
+  is_edited,
   reply_to_id,
   reply_to_sender,
-  reply_to_content
+  reply_to_content,
+  reaction
 `;
 
-const isEdited = (m: { created_at: string; updated_at: string }) => {
-  try {
-    return new Date(m.updated_at).getTime() - new Date(m.created_at).getTime() > 1000;
-  } catch {
-    return false;
-  }
+const REACTIONS_SELECT = `
+  id,
+  message_id,
+  user_id,
+  reaction,
+  created_at,
+  profiles:profiles (
+    full_name,
+    username,
+    avatar_url
+  )
+`;
+
+const isEdited = (message: Pick<Message, 'is_edited'>) => message.is_edited;
+
+const isSameDay = (first: string, second: string) => {
+  const firstDate = new Date(first);
+  const secondDate = new Date(second);
+  if (isNaN(firstDate.getTime()) || isNaN(secondDate.getTime())) return false;
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate()
+  );
+};
+
+const formatDateDivider = (timestamp: string) => {
+  const messageDate = new Date(timestamp);
+  if (isNaN(messageDate.getTime())) return '';
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageStart = new Date(
+    messageDate.getFullYear(),
+    messageDate.getMonth(),
+    messageDate.getDate()
+  );
+  const dayDifference = Math.round(
+    (todayStart.getTime() - messageStart.getTime()) / 86_400_000
+  );
+
+  if (dayDifference === 0) return 'Today';
+  if (dayDifference === 1) return 'Yesterday';
+  return messageDate.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    ...(messageDate.getFullYear() !== now.getFullYear()
+      ? { year: 'numeric' as const }
+      : {}),
+  });
 };
 
 const REPLY_THRESHOLD = 56;
 const REPLY_MAX = 76;
 
-// ── Swipe-to-reply wrapper ─────────────────────────────────
 function SwipeableRow({
   onReply,
   disabled,
@@ -177,10 +233,18 @@ function SwipeableRow({
   );
 }
 
-export default function ConversationScreen() {
+export default function ConversationScreen({
+  embedded = false,
+  overrideUserId,
+  onClose,
+}: {
+  embedded?: boolean;
+  overrideUserId?: string;
+  onClose?: () => void;
+}) {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const userId = params.userId as string;
+  const userId = overrideUserId || (params.userId as string);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,19 +254,24 @@ export default function ConversationScreen() {
   const [inputText, setInputText] = useState('');
   const [otherUser, setOtherUser] = useState<Profile | null>(null);
   const [firstUnreadId, setFirstUnreadId] = useState<number | null>(null);
-  const { width: windowWidth } = useWindowDimensions();
-
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
-  const [showDeleteSheet, setShowDeleteSheet] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
+
+  const [showProfile, setShowProfile] = useState(false);
+
+  const [reactionsByMessage, setReactionsByMessage] = useState<
+    Record<number, ReactionRow[]>
+  >({});
+  const [reactionsTarget, setReactionsTarget] = useState<number | null>(null);
 
   const listRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const user = useAuthStore((state) => state.user);
   const subscriptionRef = useRef<any>(null);
+  const reactionsChannelRef = useRef<any>(null);
   const mountedRef = useRef(true);
 
   const isNearBottomRef = useRef(true);
@@ -273,29 +342,83 @@ export default function ConversationScreen() {
         .eq('sender_id', userId)
         .eq('recipient_id', user.id)
         .eq('is_read', false);
-    } catch {
-      return;
+    } catch (err) {
+      console.warn('[markAllAsRead] threw:', err);
     }
   }, [user, userId]);
 
   const loadUserProfile = useCallback(async () => {
     if (!userId) return;
     try {
-      const { data, error } = await supabase
+      const { data, error: profileError } = await supabase
         .from('profiles')
         .select('id, full_name, username, email, avatar_url, status, is_online, last_seen')
         .eq('id', userId)
         .single();
-      if (error) throw error;
+      if (profileError) {
+        console.warn('[loadUserProfile] error:', profileError.message);
+        return;
+      }
       setOtherUser(data);
-    } catch {
-      return;
+    } catch (err) {
+      console.warn('[loadUserProfile] threw:', err);
     }
   }, [userId]);
 
+  const loadReactionsForMessages = useCallback(async (messageIds: number[]) => {
+    if (messageIds.length === 0) {
+      setReactionsByMessage({});
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('private_message_reactions')
+        .select(REACTIONS_SELECT)
+        .in('message_id', messageIds);
+      if (error) throw error;
+
+      const grouped: Record<number, ReactionRow[]> = {};
+      for (const row of (data || []) as any[]) {
+        const list = grouped[row.message_id] || [];
+        list.push({
+          ...row,
+          profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
+        });
+        grouped[row.message_id] = list;
+      }
+      if (mountedRef.current) setReactionsByMessage(grouped);
+    } catch (err) {
+      console.warn('[reactions] load failed:', err);
+    }
+  }, []);
+
+  const loadReactionsForOne = useCallback(async (messageId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('private_message_reactions')
+        .select(REACTIONS_SELECT)
+        .eq('message_id', messageId);
+      if (error) throw error;
+      const rows: ReactionRow[] = (data || []).map((row: any) => ({
+        ...row,
+        profiles: Array.isArray(row.profiles) ? row.profiles[0] : row.profiles,
+      }));
+      if (mountedRef.current) {
+        setReactionsByMessage((prev) => ({ ...prev, [messageId]: rows }));
+      }
+    } catch (err) {
+      console.warn('[reactions] single load failed:', err);
+    }
+  }, []);
+
   const loadMessages = useCallback(
     async (refresh = false) => {
-      if (!user || !userId) return;
+      if (!user || !userId) {
+        setError('Missing user or conversation id');
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
 
       try {
         setError(null);
@@ -314,15 +437,41 @@ export default function ConversationScreen() {
         if (queryError) throw queryError;
 
         const newMessages: Message[] = data || [];
+        const queued = await getQueuedTextMessages('private', user.id, userId);
+        const mergedMessages = [
+          ...newMessages,
+          ...queued.map((entry) => ({
+            id: entry.id,
+            sender_id: user.id,
+            recipient_id: userId,
+            content: String(entry.payload.content ?? ''),
+            type: 'text' as const,
+            media_url: null,
+            is_read: false,
+            read_at: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            sync_status: entry.status,
+          })),
+        ].sort((a, b) => a.created_at.localeCompare(b.created_at));
         const firstUnreadIndex = newMessages.findIndex(
           (message) => message.sender_id === userId && !message.is_read
         );
+
         initialScrollIndexRef.current = firstUnreadIndex >= 0 ? firstUnreadIndex : null;
         setFirstUnreadId(firstUnreadIndex >= 0 ? newMessages[firstUnreadIndex].id : null);
 
         await markAllAsRead();
         initialPositionPendingRef.current = true;
-        setMessages(newMessages);
+        setMessages(mergedMessages);
+
+        const ids = newMessages.map((m) => m.id);
+        await loadReactionsForMessages(ids);
 
         setTimeout(() => {
           if (firstUnreadIndex >= 0) {
@@ -335,15 +484,43 @@ export default function ConversationScreen() {
             listRef.current?.scrollToEnd({ animated: false });
           }
         }, 300);
-      } catch {
-        setError('Failed to load messages');
+      } catch (err: any) {
+        console.error('[loadMessages] caught:', err);
+        const queued = await getQueuedTextMessages('private', user.id, userId);
+        if (queued.length > 0) {
+          setMessages(queued.map((entry) => ({
+            id: entry.id,
+            sender_id: user.id,
+            recipient_id: userId,
+            content: String(entry.payload.content ?? ''),
+            type: 'text',
+            media_url: null,
+            is_read: false,
+            read_at: null,
+            created_at: entry.createdAt,
+            updated_at: entry.createdAt,
+            is_edited: false,
+            reply_to_id: null,
+            reply_to_sender: null,
+            reply_to_content: null,
+            reaction: null,
+            sync_status: entry.status,
+          })));
+          setError(null);
+        } else {
+          setError(err?.message ? `Failed to load: ${err.message}` : 'Failed to load messages');
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [user, userId, markAllAsRead]
+    [user, userId, markAllAsRead, loadReactionsForMessages]
   );
+
+  useEffect(() => subscribeToQueuedMessages(() => {
+    if (mountedRef.current) void loadMessages(true);
+  }), [loadMessages]);
 
   // ─── SEND ──────────────────────────────────────────────────
   const sendMessage = async () => {
@@ -372,9 +549,11 @@ export default function ConversationScreen() {
       read_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      is_edited: false,
       reply_to_id: reply?.id ?? null,
       reply_to_sender: repliedToName,
       reply_to_content: reply?.content ?? null,
+      reaction: null,
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -382,7 +561,7 @@ export default function ConversationScreen() {
     setTimeout(() => scrollToEnd(true), 100);
 
     try {
-      const { data, error } = await supabase
+      const { data, error: insertError } = await supabase
         .from('private_messages')
         .insert({
           sender_id: user.id,
@@ -396,12 +575,31 @@ export default function ConversationScreen() {
         .select(SELECT_COLS)
         .single();
 
-      if (error) throw error;
+      if (insertError) throw insertError;
 
       setMessages((prev) => prev.map((msg) => (msg.id === tempId ? data : msg)));
-    } catch {
-      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+    } catch (err: any) {
+      console.error('[sendMessage] caught:', err);
+      try {
+        await queueTextMessage('private', user.id, {
+          sender_id: user.id,
+          recipient_id: userId,
+          content: text,
+          type: 'text',
+          reply_to_id: reply?.id ?? null,
+          reply_to_sender: repliedToName,
+          reply_to_content: reply?.content ?? null,
+        }, tempId);
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === tempId ? { ...msg, sync_status: 'pending' } : msg
+        )));
+      } catch (queueError) {
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+        Alert.alert(
+          'Message not saved',
+          queueError instanceof Error ? queueError.message : 'Unable to save message on this device.',
+        );
+      }
     } finally {
       setSending(false);
     }
@@ -409,13 +607,12 @@ export default function ConversationScreen() {
 
   // ─── EDIT ──────────────────────────────────────────────────
   const openEditFromSheet = () => {
-    if (!selectedMessage) return;
-    const target = selectedMessage;
+    if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+    const target = actionTarget;
     setReplyingTo(null);
     setEditingMessage(target);
     setInputText(target.content);
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
+    setActionTarget(null);
     setTimeout(() => inputRef.current?.focus(), 120);
   };
 
@@ -425,7 +622,12 @@ export default function ConversationScreen() {
   };
 
   const saveEdit = async () => {
-    if (!editingMessage || !inputText.trim() || sending) return;
+    if (
+      !editingMessage ||
+      editingMessage.sender_id !== user?.id ||
+      !inputText.trim() ||
+      sending
+    ) return;
 
     const newContent = inputText.trim();
     if (newContent === editingMessage.content) {
@@ -439,36 +641,45 @@ export default function ConversationScreen() {
 
     setSending(true);
     setMessages((prev) =>
-      prev.map((m) => (m.id === targetId ? { ...m, content: newContent, updated_at: now } : m))
+      prev.map((m) =>
+        m.id === targetId
+          ? { ...m, content: newContent, updated_at: now, is_edited: true }
+          : m
+      )
     );
 
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('private_messages')
-        .update({ content: newContent, updated_at: now })
-        .eq('id', targetId);
+        .update({ content: newContent, updated_at: now, is_edited: true })
+        .eq('id', targetId)
+        .eq('sender_id', user.id);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       setEditingMessage(null);
       setInputText('');
-    } catch {
+    } catch (err: any) {
+      console.error('[saveEdit] caught:', err);
       setMessages(backup);
-      Alert.alert('Error', 'Failed to edit message. Please try again.');
+      Alert.alert('Error', err?.message || 'Failed to edit message. Please try again.');
     } finally {
       setSending(false);
     }
   };
 
   // ─── REPLY ─────────────────────────────────────────────────
-  const startReply = (msg: Message) => {
-    if (editingMessage) {
-      setEditingMessage(null);
-      setInputText('');
-    }
-    setReplyingTo(msg);
-    setTimeout(() => inputRef.current?.focus(), 120);
-  };
+  const startReply = useCallback(
+    (msg: Message) => {
+      if (editingMessage) {
+        setEditingMessage(null);
+        setInputText('');
+      }
+      setReplyingTo(msg);
+      setTimeout(() => inputRef.current?.focus(), 120);
+    },
+    [editingMessage]
+  );
 
   const cancelReply = () => setReplyingTo(null);
 
@@ -477,37 +688,113 @@ export default function ConversationScreen() {
     return sendMessage();
   };
 
-  // ─── DELETE ────────────────────────────────────────────────
-  const openDeleteSheet = (message: Message) => {
-    setSelectedMessage(message);
-    setShowDeleteSheet(true);
-  };
+  // ─── REACT ────────────────────────────────────────────────
+  const applyReaction = async (reaction: ReactionType) => {
+    if (!actionTarget || !user) return;
+    const messageId = actionTarget.id;
+    setActionTarget(null);
 
-  const closeDeleteSheet = () => {
-    if (deleting) return;
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
-  };
+    if (typeof messageId !== 'number' || messageId >= 1_000_000_000_000) return;
 
-  const confirmDeleteMessage = async () => {
-    if (!selectedMessage || !user) return;
-    const msgId = selectedMessage.id;
-    setDeleting(true);
+    const current = reactionsByMessage[messageId] || [];
+    const existing = current.find((r) => r.user_id === user.id);
+    const next = existing?.reaction === reaction ? null : reaction;
 
-    const backup = messages;
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    setShowDeleteSheet(false);
-    setSelectedMessage(null);
+    const backup = reactionsByMessage;
+    setReactionsByMessage((prev) => {
+      const list = (prev[messageId] || []).filter((r) => r.user_id !== user.id);
+      if (next) {
+        list.push({
+          id: `temp-${Date.now()}`,
+          message_id: messageId,
+          user_id: user.id,
+          reaction: next,
+          created_at: new Date().toISOString(),
+          profiles: {
+            full_name: user.user_metadata?.full_name || null,
+            username: user.user_metadata?.username || null,
+            avatar_url: null,
+          },
+        });
+      }
+      return { ...prev, [messageId]: list };
+    });
 
     try {
-      const { error } = await supabase.from('private_messages').delete().eq('id', msgId);
-      if (error) throw error;
-    } catch {
-      setMessages(backup);
-      Alert.alert('Error', 'Failed to delete message. Please try again.');
-    } finally {
-      setDeleting(false);
+      if (next === null) {
+        const { error } = await supabase
+          .from('private_message_reactions')
+          .delete()
+          .eq('message_id', messageId)
+          .eq('user_id', user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('private_message_reactions')
+          .upsert(
+            { message_id: messageId, user_id: user.id, reaction: next },
+            { onConflict: 'message_id,user_id' }
+          );
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      console.warn('[reaction] failed:', err);
+      setReactionsByMessage(backup);
+      Alert.alert('Error', err?.message || 'Failed to react. Please try again.');
     }
+  };
+
+  // ─── ACTION SHEET ─────────────────────────────────────────
+  const openActionSheet = useCallback((message: Message) => {
+    if (typeof message.id !== 'number' || message.id >= 1_000_000_000_000) return;
+    setActionTarget(message);
+  }, []);
+
+  const closeActionSheet = () => {
+    setActionTarget(null);
+  };
+
+  const confirmDeleteFromSheet = () => {
+    if (!actionTarget || actionTarget.sender_id !== user?.id) return;
+
+    Alert.alert(
+      'Unsend this message?',
+      'This will remove it for everyone in this chat.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unsend',
+          style: 'destructive',
+          onPress: async () => {
+            const msgId = actionTarget.id;
+            const backup = messages;
+            setMessages((prev) => prev.filter((m) => m.id !== msgId));
+            setActionTarget(null);
+
+            try {
+              const { error: deleteError } = await supabase
+                .from('private_messages')
+                .delete()
+                .eq('id', msgId)
+                .eq('sender_id', user!.id);
+
+              if (deleteError) throw deleteError;
+              setNotice({ title: 'Message unsent', message: 'The message was removed for everyone.' });
+            } catch (err: any) {
+              console.error('[unsend] caught:', err);
+              setMessages(backup);
+              Alert.alert('Error', 'Failed to unsend. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const copyMessage = () => {
+    if (!actionTarget) return;
+    Clipboard.setString(actionTarget.content);
+    setActionTarget(null);
   };
 
   // ─── REALTIME ──────────────────────────────────────────────
@@ -520,13 +807,15 @@ export default function ConversationScreen() {
         (newMessage.sender_id === user?.id && newMessage.recipient_id === userId) ||
         (newMessage.sender_id === userId && newMessage.recipient_id === user?.id)
       ) {
-        const { data, error } = await supabase
+        const { data, error: fetchError } = await supabase
           .from('private_messages')
           .select(SELECT_COLS)
           .eq('id', newMessage.id)
           .single();
 
-        if (!error && data && mountedRef.current) {
+        if (fetchError) return;
+
+        if (data && mountedRef.current) {
           setMessages((prev) => {
             if (prev.some((m) => m.id === data.id)) return prev;
             return [...prev, data];
@@ -567,6 +856,7 @@ export default function ConversationScreen() {
               is_read: updated.is_read ?? msg.is_read,
               read_at: updated.read_at ?? msg.read_at,
               updated_at: updated.updated_at ?? msg.updated_at,
+              is_edited: updated.is_edited ?? msg.is_edited,
               reply_to_id: updated.reply_to_id ?? msg.reply_to_id,
               reply_to_sender: updated.reply_to_sender ?? msg.reply_to_sender,
               reply_to_content: updated.reply_to_content ?? msg.reply_to_content,
@@ -581,6 +871,12 @@ export default function ConversationScreen() {
     const deletedId = payload.old?.id;
     if (deletedId === undefined) return;
     setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+    setReactionsByMessage((prev) => {
+      if (!(deletedId in prev)) return prev;
+      const next = { ...prev };
+      delete next[deletedId];
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -645,6 +941,36 @@ export default function ConversationScreen() {
     };
   }, [user, userId, loadUserProfile, loadMessages, handleNewMessage, handleDeletedMessage, handleUpdatedMessage]);
 
+  useEffect(() => {
+    const channelName = `private-reactions-${user?.id}-${userId}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'private_message_reactions' },
+        (payload: any) => {
+          const msgId = payload.new?.message_id ?? payload.old?.message_id;
+          if (!msgId) return;
+          setMessages((current) => {
+            if (current.some((m) => m.id === msgId)) {
+              loadReactionsForOne(msgId);
+            }
+            return current;
+          });
+        }
+      )
+      .subscribe();
+
+    reactionsChannelRef.current = channel;
+
+    return () => {
+      if (reactionsChannelRef.current) {
+        supabase.removeChannel(reactionsChannelRef.current);
+        reactionsChannelRef.current = null;
+      }
+    };
+  }, [user?.id, userId, loadReactionsForOne]);
+
   useFocusEffect(
     useCallback(() => {
       loadMessages(true);
@@ -653,129 +979,112 @@ export default function ConversationScreen() {
 
   const goBack = async () => {
     await markAllAsRead();
-    router.back();
+    if (embedded && onClose) {
+      onClose();
+    } else {
+      router.back();
+    }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isMe = item.sender_id === user?.id;
-    const time = item.created_at
-      ? new Date(item.created_at).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : '';
-    const showDivider = firstUnreadId !== null && item.id === firstUnreadId;
-    const edited = isEdited(item);
-    const hasReply = !!item.reply_to_id;
+  const renderMessage = useCallback(
+    ({ item, index }: { item: Message; index: number }) => {
+      const isMe = item.sender_id === user?.id;
+      const time = item.created_at
+        ? new Date(item.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '';
+      const showDivider = firstUnreadId !== null && item.id === firstUnreadId;
+      const previousMessage = index > 0 ? messages[index - 1] : null;
+      const showDateDivider =
+        !previousMessage || !isSameDay(previousMessage.created_at, item.created_at);
+      const dateLabel = showDateDivider ? formatDateDivider(item.created_at) : '';
+      const edited = isEdited(item);
+      const hasReply = !!item.reply_to_id;
 
-    const replyCaption = isMe
-      ? `You replied to ${otherDisplayName}`
-      : `${otherDisplayName} replied to you`;
-    const repliedMessage = hasReply
-      ? messages.find((message) => message.id === item.reply_to_id)
-      : null;
-    const replyPreview =
-      repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
-    const bubbleTextLength = Math.max(
-      item.content.length,
-      hasReply ? replyCaption.length : 0,
-      hasReply ? replyPreview.length : 0
-    );
-    const bubbleWidth = Math.min(
-      Math.max(48, bubbleTextLength * 7.2 + 24),
-      windowWidth * 0.75
-    );
+      const replyCaption = isMe
+        ? `You replied to ${otherDisplayName}`
+        : `${otherDisplayName} replied to you`;
+      const repliedMessage = hasReply
+        ? messages.find((message) => message.id === item.reply_to_id)
+        : null;
+      const replyPreview =
+        repliedMessage?.content ?? item.reply_to_content ?? 'Original message unavailable';
 
-    return (
-      <>
-        {showDivider && (
-          <View style={styles.unreadDivider}>
-            <View style={styles.unreadDividerLine} />
-            <Text style={styles.unreadDividerText}>NEW</Text>
-            <View style={styles.unreadDividerLine} />
-          </View>
-        )}
+      const rows = reactionsByMessage[item.id] || [];
+      const summaries = summarizeReactions(rows, user?.id);
 
-        <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
-          <Pressable
-            onLongPress={() => openDeleteSheet(item)}
-            delayLongPress={350}
-            style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
-          >
-            {hasReply && (
-              <View
-                style={[
-                  styles.replyPreview,
-                  isMe ? styles.replyPreviewMe : styles.replyPreviewOther,
-                  { maxWidth: bubbleWidth, alignSelf: isMe ? 'flex-end' : 'flex-start' },
-                ]}
-              >
-                <View style={styles.replyPreviewAccent} />
-                <View style={styles.replyPreviewText}>
-                  <Text
-                    style={[
-                      styles.replyPreviewCaption,
-                      isMe ? styles.replyPreviewCaptionMe : styles.replyPreviewCaptionOther,
-                    ]}
-                  >
-                    {replyCaption}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.replyPreviewContent,
-                      isMe ? styles.replyPreviewContentMe : styles.replyPreviewContentOther,
-                    ]}
-                  >
-                    {replyPreview}
-                  </Text>
-                </View>
+      return (
+        <>
+          {dateLabel ? (
+            <View style={styles.dateDivider}>
+              <View style={styles.dateDividerLine} />
+              <View style={styles.datePill}>
+                <Text style={styles.datePillText}>{dateLabel}</Text>
               </View>
-            )}
+              <View style={styles.dateDividerLine} />
+            </View>
+          ) : null}
 
-            <View
-              style={[
-                styles.messageBubble,
-                isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-                { maxWidth: bubbleWidth },
-              ]}
+          {showDivider && (
+            <View style={styles.unreadDivider}>
+              <View style={styles.unreadDividerLine} />
+              <Text style={styles.unreadDividerText}>NEW</Text>
+              <View style={styles.unreadDividerLine} />
+            </View>
+          )}
+
+          <SwipeableRow onReply={() => startReply(item)} disabled={sending}>
+            <Pressable
+              onLongPress={() => openActionSheet(item)}
+              delayLongPress={350}
+              style={[styles.messageRow, isMe ? styles.messageRight : styles.messageLeft]}
             >
-              <Text
-                style={[
-                  styles.messageText,
-                  { color: isMe ? CHAT_BG : TEXT_PRIMARY },
-                  isMe && { fontWeight: '600' },
-                ]}
-              >
-                {item.content}
-              </Text>
-            </View>
-
-            <View style={styles.messageFooter} pointerEvents="none">
-              <Text style={styles.messageTime}>
-                {time}
-                {edited ? ' · edited' : ''}
-              </Text>
-              {isMe && (
-                <Ionicons
-                  name={item.is_read ? 'checkmark-done' : 'checkmark'}
-                  size={11}
-                  color={item.is_read ? CHAT_ONLINE : 'rgba(255,255,255,0.35)'}
-                  style={styles.readReceipt}
-                />
-              )}
-            </View>
-          </Pressable>
-        </SwipeableRow>
-      </>
-    );
-  };
+              <MessageBubble
+                content={item.content}
+                time={time}
+                isMe={isMe}
+                deliveryStatus={item.sync_status}
+                isRead={item.is_read}
+                edited={edited}
+                hasReply={hasReply}
+                replyCaption={replyCaption}
+                replyPreview={replyPreview}
+                reactionSummaries={summaries}
+                onPressReactions={
+                  summaries.length > 0 ? () => setReactionsTarget(item.id) : undefined
+                }
+                avatarUri={otherUser?.avatar_url}
+                avatarLabel={otherDisplayName}
+                avatarColorSeed={userId || ''}
+                onPressSender={!isMe ? () => setShowProfile(true) : undefined}
+              />
+            </Pressable>
+          </SwipeableRow>
+        </>
+      );
+    },
+    [
+      firstUnreadId,
+      messages,
+      reactionsByMessage,
+      otherDisplayName,
+      otherUser?.avatar_url,
+      sending,
+      startReply,
+      user?.id,
+      userId,
+      openActionSheet,
+    ]
+  );
 
   if (loading && messages.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="small" color={ACCENT_GOLD} />
         <Text style={styles.loadingText}>Loading conversation…</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -786,23 +1095,49 @@ export default function ConversationScreen() {
       : otherDisplayName
     : '';
 
+  const isActionTargetMine = !!actionTarget && actionTarget.sender_id === user?.id;
+
+  const actionTargetMyReaction =
+    actionTarget && user
+      ? (reactionsByMessage[actionTarget.id] || []).find(
+          (r) => r.user_id === user.id
+        )?.reaction ?? null
+      : null;
+
+  const reactionsSummaries =
+    reactionsTarget !== null
+      ? summarizeReactions(reactionsByMessage[reactionsTarget] || [], user?.id)
+      : [];
+
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { style: styles.container } : { style: styles.container, edges: ['top'] as any };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <Wrapper {...wrapperProps}>
       <View style={styles.header}>
         <TouchableOpacity onPress={goBack} style={styles.backBtn} hitSlop={8}>
-          <Ionicons name="arrow-back" size={18} color={TEXT_PRIMARY} />
+          <Ionicons name={embedded ? "close" : "arrow-back"} size={18} color={TEXT_PRIMARY} />
         </TouchableOpacity>
 
-        <View style={styles.headerUser}>
+        <TouchableOpacity 
+          style={styles.headerUser}
+          onPress={() => setShowProfile(true)}
+          activeOpacity={0.7}
+        >
           <View
             style={[
               styles.headerAvatar,
               { backgroundColor: getAvatarColor(userId || '') },
             ]}
           >
-            <Text style={styles.headerAvatarText}>
-              {getInitials(otherUser?.full_name || otherUser?.username || '?')}
-            </Text>
+            {/* Check for avatar image first */}
+            {otherUser?.avatar_url ? (
+              <Image source={{ uri: otherUser.avatar_url }} style={styles.headerAvatarImage} />
+            ) : (
+              <Text style={styles.headerAvatarText}>
+                {getInitials(otherUser?.full_name || otherUser?.username || '?')}
+              </Text>
+            )}
           </View>
           <View style={styles.headerUserInfo}>
             <Text style={styles.headerName} numberOfLines={1}>
@@ -820,7 +1155,7 @@ export default function ConversationScreen() {
               </Text>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.backBtn} hitSlop={8}>
           <Ionicons name="ellipsis-vertical" size={16} color={TEXT_PRIMARY} />
@@ -835,8 +1170,8 @@ export default function ConversationScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' && !embedded ? 90 : 0}
       >
         <FlatList
           ref={listRef}
@@ -878,7 +1213,6 @@ export default function ConversationScreen() {
           }
         />
 
-        {/* Reply bar */}
         {replyingTo && (
           <View style={styles.replyBar}>
             <View style={styles.replyBarAccent} />
@@ -900,7 +1234,6 @@ export default function ConversationScreen() {
           </View>
         )}
 
-        {/* Edit bar */}
         {editingMessage && (
           <View style={styles.editingBar}>
             <Ionicons name="create-outline" size={13} color={ACCENT_GOLD} />
@@ -972,57 +1305,59 @@ export default function ConversationScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Message options sheet */}
+      <MessageActionSheet
+        visible={!!actionTarget}
+        isMe={isActionTargetMine}
+        currentReaction={actionTargetMyReaction}
+        onClose={closeActionSheet}
+        onReact={applyReaction}
+        onReply={
+          !isActionTargetMine && actionTarget
+            ? () => {
+                const target = actionTarget;
+                setActionTarget(null);
+                startReply(target);
+              }
+            : undefined
+        }
+        onEdit={isActionTargetMine ? openEditFromSheet : undefined}
+        onUnsend={isActionTargetMine ? confirmDeleteFromSheet : undefined}
+        onCopy={copyMessage}
+      />
+
+      <ReactionsList
+        visible={reactionsTarget !== null}
+        onClose={() => setReactionsTarget(null)}
+        summaries={reactionsSummaries}
+        currentUserId={user?.id}
+      />
       <Modal
-        visible={showDeleteSheet}
+        visible={notice !== null}
         transparent
         animationType="fade"
-        onRequestClose={closeDeleteSheet}
+        onRequestClose={() => setNotice(null)}
       >
-        <Pressable style={styles.sheetBackdrop} onPress={closeDeleteSheet}>
-          <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.sheetTitle}>Message options</Text>
-
-            <View style={styles.sheetBtnRow}>
-              <TouchableOpacity
-                style={[styles.sheetBtn, styles.sheetBtnEdit]}
-                onPress={openEditFromSheet}
-                disabled={deleting}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="create-outline" size={14} color={TEXT_PRIMARY} />
-                <Text style={styles.sheetBtnEditText}>Edit</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.sheetBtn, styles.sheetBtnDelete]}
-                onPress={confirmDeleteMessage}
-                disabled={deleting}
-                activeOpacity={0.85}
-              >
-                {deleting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="trash-outline" size={14} color="#fff" />
-                    <Text style={styles.sheetBtnDeleteText}>Unsend</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>{notice?.title}</Text>
+            <Text style={styles.noticeText}>{notice?.message}</Text>
             <TouchableOpacity
-              style={styles.sheetCancelBtn}
-              onPress={closeDeleteSheet}
-              disabled={deleting}
-              activeOpacity={0.7}
+              style={styles.noticeButton}
+              onPress={() => setNotice(null)}
+              activeOpacity={0.85}
             >
-              <Text style={styles.sheetCancelText}>Cancel</Text>
+              <Text style={styles.noticeButtonText}>OK</Text>
             </TouchableOpacity>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
-    </SafeAreaView>
+      
+      <ProfileCard
+        userId={userId}
+        visible={showProfile}
+        onClose={() => setShowProfile(false)}
+      />
+    </Wrapper>
   );
 }
 
@@ -1063,6 +1398,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden', // <-- Added to clip image to circle
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   headerUserInfo: { marginLeft: 9, flex: 1, minWidth: 0 },
@@ -1081,6 +1421,32 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(224,112,112,0.22)',
   },
   errorText: { color: CHAT_DANGER, fontSize: 11, textAlign: 'center' },
+  noticeBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 340,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_PANEL,
+  },
+  noticeTitle: { color: TEXT_PRIMARY, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  noticeText: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 },
+  noticeButton: {
+    alignItems: 'center',
+    marginTop: 18,
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: ACCENT_GOLD,
+  },
+  noticeButtonText: { color: CHAT_BG, fontSize: 12, fontWeight: '800' },
 
   keyboardContainer: { flex: 1 },
   messageList: {
@@ -1090,7 +1456,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // ── Swipe wrapper ──
   swipeContainer: {
     width: '100%',
     marginVertical: 2,
@@ -1112,60 +1477,34 @@ const styles = StyleSheet.create({
   messageLeft: { alignItems: 'flex-start' },
   messageRight: { alignItems: 'flex-end' },
 
-  replyPreview: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-    marginTop: 4,
-    marginBottom: -8,
-    borderRadius: 6,
-  },
-  replyPreviewMe: { backgroundColor: 'rgba(217,221,227,0.84)' },
-  replyPreviewOther: { backgroundColor: 'rgba(217,221,227,0.84)' },
-  replyPreviewAccent: { width: 2, borderRadius: 1, backgroundColor: ACCENT_GOLD },
-  replyPreviewText: { flex: 1, minWidth: 0 },
-  replyPreviewCaption: { fontSize: 10, fontWeight: '700' },
-  replyPreviewCaptionMe: { color: '#3F4650' },
-  replyPreviewCaptionOther: { color: '#3F4650' },
-  replyPreviewContent: { fontSize: 11, marginTop: 2, flexShrink: 1 },
-  replyPreviewContentMe: { color: '#252A31' },
-  replyPreviewContentOther: { color: '#252A31' },
-
-  messageBubble: {
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: CHAT_RADIUS_BUBBLE,
-    marginVertical: 1,
-  },
-  messageBubbleMe: {
-    backgroundColor: ACCENT_GOLD,
-    borderBottomRightRadius: 4,
-    alignSelf: 'flex-end',
-  },
-  messageBubbleOther: {
-    backgroundColor: CHAT_SUBTLE,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: CHAT_BORDER,
-    alignSelf: 'flex-start',
-  },
-  messageText: { fontSize: CHAT_FS_BODY, lineHeight: 17, flexShrink: 1 },
-  messageFooter: {
+  dateDivider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
-    gap: 4,
+    gap: 10,
+    paddingHorizontal: 24,
+    marginTop: 12,
+    marginBottom: 8,
   },
-  messageTime: {
-    fontSize: CHAT_FS_META,
+  dateDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: CHAT_BORDER,
+  },
+  datePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+  },
+  datePillText: {
+    fontSize: 9,
+    fontWeight: '800',
     color: TEXT_MUTED,
-    opacity: 0.75,
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 0.2,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
-  readReceipt: { marginLeft: 2 },
 
   unreadDivider: {
     flexDirection: 'row',
@@ -1186,7 +1525,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
 
-  // ── Reply bar (above input) ──
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1226,7 +1564,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
 
-  // ── Edit bar (above input) ──
   editingBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1299,61 +1636,5 @@ const styles = StyleSheet.create({
     borderRadius: CHAT_RADIUS_BTN,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  sheetCard: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: CHAT_BG,
-    borderRadius: CHAT_RADIUS_MODAL,
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderWidth: 1,
-    borderColor: CHAT_BORDER,
-  },
-  sheetTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  sheetBtnRow: { flexDirection: 'row', gap: 8 },
-  sheetBtn: {
-    flex: 1,
-    height: 38,
-    borderRadius: CHAT_RADIUS_BTN,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  sheetBtnEdit: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  sheetBtnEditText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
-  sheetBtnDelete: { backgroundColor: CHAT_DANGER },
-  sheetBtnDeleteText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  sheetCancelBtn: {
-    marginTop: 8,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: CHAT_RADIUS_BTN,
-  },
-  sheetCancelText: {
-    color: TEXT_MUTED,
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

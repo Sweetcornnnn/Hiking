@@ -13,9 +13,10 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
-import ChatMessage from '../../components/chat/ChatMessage';
+import { MessageBubble } from '../../components/chat/MessageBubble';
 import MessageInput from '../../components/chat/MessageInput';
 import ProfileCard from '../../components/chat/ProfileCard';
+import OnlineUsersList from '../../components/chat/OnlineUsersList';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -27,8 +28,19 @@ import {
   CHAT_RADIUS_BTN,
 } from '../../theme/designTokens';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  getQueuedTextMessages,
+  queueTextMessage,
+  subscribeToQueuedMessages,
+} from '../../services/offlineMessageQueue';
 
-export default function WorldChatScreen() {
+export default function WorldChatScreen({
+  embedded = false,
+  onSelectUser,
+}: {
+  embedded?: boolean;
+  onSelectUser?: (userId: string) => void;
+}) {
   const router = useRouter();
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +71,8 @@ export default function WorldChatScreen() {
   const handleContentSizeChange = useCallback(() => {
     if (initialPositionPendingRef.current && messages.length > 0) {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
-      if (initialPositionTimerRef.current) clearTimeout(initialPositionTimerRef.current);
+      if (initialPositionTimerRef.current)
+        clearTimeout(initialPositionTimerRef.current);
       initialPositionTimerRef.current = setTimeout(() => {
         initialPositionPendingRef.current = false;
       }, 750);
@@ -91,10 +104,14 @@ export default function WorldChatScreen() {
   const handleProfileMessage = (uid: string) => {
     setShowProfile(false);
     setProfileUserId(null);
-    router.push({
-      pathname: '/chat/Conversation',
-      params: { userId: uid },
-    } as any);
+    if (onSelectUser) {
+      onSelectUser(uid);
+    } else {
+      router.push({
+        pathname: '/chat/Conversation',
+        params: { userId: uid },
+      } as any);
+    }
   };
 
   const loadMessages = useCallback(async (refresh = false) => {
@@ -125,7 +142,27 @@ export default function WorldChatScreen() {
 
       initialPositionPendingRef.current = true;
 
-      setMessages(data || []);
+      const queued = user
+        ? await getQueuedTextMessages('world', user.id)
+        : [];
+      setMessages([
+        ...(data || []),
+        ...queued.map((entry) => ({
+          id: entry.id,
+          user_id: user?.id,
+          content: String(entry.payload.content ?? ''),
+          type: 'text',
+          media_url: null,
+          created_at: entry.createdAt,
+          updated_at: entry.createdAt,
+          profiles: {
+            full_name: user?.user_metadata?.full_name || null,
+            username: user?.user_metadata?.username || null,
+            avatar_url: null,
+          },
+          sync_status: entry.status,
+        })),
+      ]);
       setTimeout(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: false });
       }, 300);
@@ -135,17 +172,19 @@ export default function WorldChatScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [user]);
+
+  useEffect(() => subscribeToQueuedMessages(() => {
+    if (mountedRef.current) void loadMessages(true);
+  }), [loadMessages]);
 
   const fetchOnlineCount = useCallback(async () => {
     try {
       await supabase.rpc('cleanup_stale_users');
-
       const { count, error } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
         .eq('is_online', true);
-
       if (!error && count !== null) setOnlineCount(count);
     } catch {
       return;
@@ -154,7 +193,6 @@ export default function WorldChatScreen() {
 
   const handleNewMessage = useCallback(async (payload: any) => {
     if (!mountedRef.current) return;
-
     const { data, error } = await supabase
       .from('chat_messages')
       .select(`
@@ -177,16 +215,15 @@ export default function WorldChatScreen() {
     if (!error && data && mountedRef.current) {
       setMessages((prev) => {
         if (prev.some((m) => m.id === data.id)) return prev;
-
         const pendingKey = `${data.user_id}:${data.content}`;
         const pendingIds = pendingMessagesRef.current.get(pendingKey);
         const pendingId = pendingIds?.shift();
         if (pendingIds?.length === 0) pendingMessagesRef.current.delete(pendingKey);
-
         if (pendingId !== undefined) {
-          return prev.map((message) => (message.id === pendingId ? data : message));
+          return prev.map((message) =>
+            message.id === pendingId ? data : message
+          );
         }
-
         return [...prev, data];
       });
 
@@ -200,7 +237,6 @@ export default function WorldChatScreen() {
 
   const handleSend = async (text: string) => {
     if (!user) return;
-
     const tempId = Date.now();
     const optimisticMessage = {
       id: tempId,
@@ -230,15 +266,24 @@ export default function WorldChatScreen() {
       const { error } = await supabase
         .from('chat_messages')
         .insert({ user_id: user.id, content: text });
-
       if (error) throw error;
     } catch {
       const pids = pendingMessagesRef.current.get(pendingKey) || [];
       const idx = pids.indexOf(tempId);
       if (idx !== -1) pids.splice(idx, 1);
       if (pids.length === 0) pendingMessagesRef.current.delete(pendingKey);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setError('Failed to send message');
+      try {
+        await queueTextMessage('world', user.id, {
+          user_id: user.id,
+          content: text,
+        }, tempId);
+        setMessages((prev) => prev.map((message) => (
+          message.id === tempId ? { ...message, sync_status: 'pending' } : message
+        )));
+      } catch {
+        setMessages((prev) => prev.filter((message) => message.id !== tempId));
+        setError('Message could not be sent or saved on this device.');
+      }
     }
   };
 
@@ -250,12 +295,9 @@ export default function WorldChatScreen() {
 
   useEffect(() => {
     mountedRef.current = true;
-
     loadMessages(true);
     fetchOnlineCount();
-
     const channelName = `chat-channel-${Date.now()}`;
-
     const channel = supabase
       .channel(channelName)
       .on(
@@ -264,11 +306,8 @@ export default function WorldChatScreen() {
         handleNewMessage
       )
       .subscribe();
-
     subscriptionRef.current = channel;
-
     const interval = setInterval(fetchOnlineCount, 30000);
-
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
@@ -306,23 +345,31 @@ export default function WorldChatScreen() {
     );
   }
 
-  return (
+  const sectionBar = embedded ? (
+    <View style={styles.embeddedHeader}>
+      <Text style={styles.embeddedTitle}>World Chat</Text>
+      <Text style={styles.embeddedSubtitle}>Chat with all registered users</Text>
+    </View>
+  ) : (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionLeft}>
+        <Ionicons name="earth-outline" size={12} color={ACCENT_GOLD} />
+        <Text style={styles.sectionTitle}>WORLD CHAT</Text>
+      </View>
+      <View style={styles.onlinePill}>
+        <View style={styles.onlineDot} />
+        <Text style={styles.onlineText}>{onlineCount} online</Text>
+      </View>
+    </View>
+  );
+
+  const chatContent = (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      behavior={Platform.OS === 'ios' && !embedded ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' && !embedded ? 90 : 0}
     >
-      {/* Compact section header — same recipe as Discoveries */}
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionLeft}>
-          <Ionicons name="earth-outline" size={12} color={ACCENT_GOLD} />
-          <Text style={styles.sectionTitle}>WORLD CHAT</Text>
-        </View>
-        <View style={styles.onlinePill}>
-          <View style={styles.onlineDot} />
-          <Text style={styles.onlineText}>{onlineCount} online</Text>
-        </View>
-      </View>
+      {sectionBar}
 
       {error && (
         <View style={styles.errorBanner}>
@@ -335,13 +382,45 @@ export default function WorldChatScreen() {
         data={[...messages].reverse()}
         inverted
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <ChatMessage
-            message={item}
-            currentUserId={user?.id}
-            onAvatarPress={openProfile}
-          />
-        )}
+        renderItem={({ item }) => {
+          const isMe = item.user_id === user?.id;
+          const profile = item.profiles || item.users || {};
+          const senderName = profile.full_name || profile.username || 'Anonymous';
+          const senderAvatar = profile.avatar_url || null;
+          const time = item.created_at
+            ? new Date(item.created_at).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : '';
+          const canOpenProfile = !isMe && !!item.user_id;
+
+          return (
+            <View style={styles.messageItem}>
+              <MessageBubble
+                content={item.content}
+                time={time}
+                isMe={isMe}
+                deliveryStatus={item.sync_status}
+                showReadReceipt={false}
+                showAvatar={true}
+                showSenderHeader={false}
+                senderName={senderName}
+                senderColorSeed={item.user_id}
+                senderAvatarUrl={senderAvatar}
+                avatarUri={senderAvatar}
+                avatarLabel={senderName}
+                disableAvatarLift={true}
+                onPressSender={
+                  canOpenProfile ? () => openProfile(item.user_id) : undefined
+                }
+                onPressBubble={
+                  canOpenProfile ? () => openProfile(item.user_id) : undefined
+                }
+              />
+            </View>
+          );
+        }}
         style={styles.list}
         contentContainerStyle={styles.messageList}
         showsVerticalScrollIndicator={false}
@@ -377,10 +456,41 @@ export default function WorldChatScreen() {
       />
     </KeyboardAvoidingView>
   );
+
+  if (embedded) {
+    return (
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        <View style={{ flex: 1 }}>{chatContent}</View>
+        {/* Removed onSelectUser prop entirely */}
+        <OnlineUsersList />
+      </View>
+    );
+  }
+
+  return chatContent;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: CHAT_BG },
+
+  embeddedHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: CHAT_BORDER,
+  },
+  embeddedTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.2,
+  },
+  embeddedSubtitle: {
+    fontSize: 11,
+    color: TEXT_MUTED,
+    opacity: 0.75,
+    marginTop: 2,
+  },
 
   sectionHeader: {
     flexDirection: 'row',
@@ -391,25 +501,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.8,
     borderBottomColor: CHAT_BORDER,
   },
-  sectionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionTitle: {
     fontSize: 10,
     fontWeight: '700',
     color: TEXT_PRIMARY,
     letterSpacing: 0.9,
     textTransform: 'uppercase',
-    paddingTop: -8,
   },
   onlinePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: -1,
+    paddingVertical: 2,
     borderRadius: 999,
     backgroundColor: CHAT_SUBTLE,
     borderWidth: 1,
@@ -452,6 +557,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     flexGrow: 1,
   },
+  messageItem: { marginVertical: 8 },
 
   inputWrapper: {
     paddingHorizontal: 12,

@@ -4,7 +4,6 @@ import {
   View,
   Text,
   Modal,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Platform,
@@ -12,26 +11,22 @@ import {
   RefreshControl,
   FlatList,
   Alert,
-  KeyboardAvoidingView,
-  useWindowDimensions,
+  Image, // <-- Imported Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
   TEXT_MUTED,
   CHAT_BG,
   CHAT_PANEL,
-  CHAT_SUBTLE,
   CHAT_BORDER,
   CHAT_ONLINE,
   CHAT_RADIUS_BTN,
-  CHAT_RADIUS_CARD,
   CHAT_RADIUS_MODAL,
 } from '../../theme/designTokens';
 import UserSearch from '../../components/chat/UserSearch';
-import SelectedMembers from '../../components/chat/SelectedMembers';
+import CreateGroupModal from '../../components/chat/CreateGroupModal';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -49,6 +44,7 @@ type Conversation = {
   conversation_id?: string;
   sortTimestamp?: number;
   is_online?: boolean;
+  avatar_url?: string | null; // <-- Added
 };
 
 const rowColorKey = (c: Conversation): string => {
@@ -57,17 +53,38 @@ const rowColorKey = (c: Conversation): string => {
   return c.id;
 };
 
-export default function PrivateChatScreen() {
+export default function PrivateChatScreen({
+  embedded = false,
+  maxWidth,
+  onOpenCreateGroup,
+  onSelectConversation,
+  activeConversationId,
+}: {
+  embedded?: boolean;
+  maxWidth?: number;
+  onOpenCreateGroup?: () => void;
+  onSelectConversation?: (conv: { type: 'private' | 'group'; id: string }) => void;
+  activeConversationId?: string | null;
+}) {
   const router = useRouter();
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreateLocal, setShowCreateLocal] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [selectedConversation, setSelectedConversation] =
+    useState<Conversation | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const user = useAuthStore((state) => state.user);
+
+  const openCreateGroup = useCallback(() => {
+    if (onOpenCreateGroup) {
+      onOpenCreateGroup();
+    } else {
+      setShowCreateLocal(true);
+    }
+  }, [onOpenCreateGroup]);
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -80,153 +97,176 @@ export default function PrivateChatScreen() {
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
-  const loadConversations = useCallback(async (refresh = false) => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    try {
-      setError(null);
-      if (!refresh) setLoading(true);
-      const conversationsList: Conversation[] = [];
-
-      const { data: privateData, error: privateError } = await supabase
-        .from('conversations')
-        .select('id, participant1_id, participant2_id, last_message_at')
-        .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
-        .order('last_message_at', { ascending: false });
-
-      if (privateError) throw privateError;
-
-      if (privateData && privateData.length > 0) {
-        for (const conv of privateData as any[]) {
-          const otherUserId =
-            conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
-
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('id, full_name, username, email, avatar_url, is_online, last_seen')
-            .eq('id', otherUserId)
-            .single();
-
-          const { data: latestMessage } = await supabase
-            .from('private_messages')
-            .select('id, content, sender_id, created_at')
-            .or(
-              `and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),` +
-                `and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`
-            )
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          const { count: unreadCount } = await supabase
-            .from('private_messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('sender_id', otherUserId)
-            .eq('recipient_id', user.id)
-            .eq('is_read', false);
-
-          const name = profileData?.full_name || profileData?.username || 'Unknown User';
-          const preview = latestMessage?.content || 'No messages yet';
-          const effectiveTimestamp = latestMessage?.created_at || conv.last_message_at;
-          const time = effectiveTimestamp ? formatTime(effectiveTimestamp) : '';
-
-          conversationsList.push({
-            id: `private_${conv.id}`,
-            title: name,
-            preview,
-            type: 'private',
-            time,
-            unread: unreadCount || 0,
-            user_id: otherUserId,
-            conversation_id: String(conv.id),
-            sortTimestamp: effectiveTimestamp ? new Date(effectiveTimestamp).getTime() : 0,
-            is_online: profileData?.is_online || false,
-          });
-        }
+  const loadConversations = useCallback(
+    async (refresh = false) => {
+      if (!user) {
+        setLoading(false);
+        return;
       }
+      try {
+        setError(null);
+        if (!refresh) setLoading(true);
+        const conversationsList: Conversation[] = [];
 
-      const { data: groupData, error: groupError } = await supabase
-        .from('group_members')
-        .select(`
-          groups!inner (
-            id,
-            name,
-            description,
-            creator_id,
-            avatar_url,
-            updated_at,
-            group_messages (
+        const { data: privateData, error: privateError } = await supabase
+          .from('conversations')
+          .select('id, participant1_id, participant2_id, last_message_at')
+          .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
+          .order('last_message_at', { ascending: false });
+
+        if (privateError) throw privateError;
+
+        if (privateData && privateData.length > 0) {
+          for (const conv of privateData as any[]) {
+            const otherUserId =
+              conv.participant1_id === user.id
+                ? conv.participant2_id
+                : conv.participant1_id;
+
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('id, full_name, username, email, avatar_url, is_online, last_seen')
+              .eq('id', otherUserId)
+              .single();
+
+            const { data: latestMessage } = await supabase
+              .from('private_messages')
+              .select('id, content, sender_id, created_at')
+              .or(
+                `and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),` +
+                  `and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`
+              )
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            const { count: unreadCount } = await supabase
+              .from('private_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('sender_id', otherUserId)
+              .eq('recipient_id', user.id)
+              .eq('is_read', false);
+
+            const name =
+              profileData?.full_name || profileData?.username || 'Unknown User';
+            const preview = latestMessage?.content || 'No messages yet';
+            const effectiveTimestamp =
+              latestMessage?.created_at || conv.last_message_at;
+            const time = effectiveTimestamp ? formatTime(effectiveTimestamp) : '';
+
+            conversationsList.push({
+              id: `private_${conv.id}`,
+              title: name,
+              preview,
+              type: 'private',
+              time,
+              unread: unreadCount || 0,
+              user_id: otherUserId,
+              conversation_id: String(conv.id),
+              sortTimestamp: effectiveTimestamp
+                ? new Date(effectiveTimestamp).getTime()
+                : 0,
+              is_online: profileData?.is_online || false,
+              avatar_url: profileData?.avatar_url || null, // <-- Mapped
+            });
+          }
+        }
+
+        const { data: groupData, error: groupError } = await supabase
+          .from('group_members')
+          .select(`
+            groups!inner (
               id,
-              content,
-              sender_id,
-              created_at
+              name,
+              description,
+              creator_id,
+              avatar_url,
+              updated_at,
+              group_messages (
+                id,
+                content,
+                sender_id,
+                type,
+                metadata,
+                created_at
+              )
             )
-          )
-        `)
-        .eq('user_id', user.id);
+          `)
+          .eq('user_id', user.id)
+          .is('hidden_at', null);
 
-      if (groupError) throw groupError;
+        if (groupError) throw groupError;
 
-      if (groupData && groupData.length > 0) {
-        for (const item of groupData as any[]) {
-          const group = item.groups;
+        if (groupData && groupData.length > 0) {
+          for (const item of groupData as any[]) {
+            const group = item.groups;
+            const sortedMessages = (group.group_messages || []).sort(
+              (a: any, b: any) =>
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+            const latestMessage = sortedMessages[0];
+            const messageMetadata = latestMessage?.metadata;
+            const preview =
+              latestMessage?.type === 'system' &&
+              messageMetadata?.action === 'member_added' &&
+              messageMetadata.actor_id === user.id &&
+              messageMetadata.target_name
+                ? `You added ${messageMetadata.target_name} to the group.`
+                : latestMessage?.content || 'No messages yet';
 
-          const sortedMessages = (group.group_messages || []).sort(
-            (a: any, b: any) =>
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-          const latestMessage = sortedMessages[0];
+            const { data: receipt } = await supabase
+              .from('group_read_receipts')
+              .select('last_read_at')
+              .eq('group_id', group.id)
+              .eq('user_id', user.id)
+              .single();
 
-          const { data: receipt } = await supabase
-            .from('group_read_receipts')
-            .select('last_read_at')
-            .eq('group_id', group.id)
-            .eq('user_id', user.id)
-            .single();
+            const lastReadAt = receipt?.last_read_at
+              ? new Date(receipt.last_read_at)
+              : new Date(0);
 
-          const lastReadAt = receipt?.last_read_at
-            ? new Date(receipt.last_read_at)
-            : new Date(0);
+            const { count: unreadCount } = await supabase
+              .from('group_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('group_id', group.id)
+              .gt('created_at', lastReadAt.toISOString())
+              .neq('sender_id', user.id);
 
-          const { count: unreadCount } = await supabase
-            .from('group_messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('group_id', group.id)
-            .gt('created_at', lastReadAt.toISOString())
-            .neq('sender_id', user.id);
-
-          conversationsList.push({
-            id: `group_${group.id}`,
-            title: group.name,
-            preview: latestMessage?.content || 'No messages yet',
-            type: 'group',
-            time: latestMessage?.created_at
-              ? formatTime(latestMessage.created_at)
-              : group.updated_at
-              ? formatTime(group.updated_at)
-              : '',
-            unread: unreadCount || 0,
-            group_id: String(group.id),
-            sortTimestamp: latestMessage?.created_at
-              ? new Date(latestMessage.created_at).getTime()
-              : group.updated_at
-              ? new Date(group.updated_at).getTime()
-              : 0,
-          });
+            conversationsList.push({
+              id: `group_${group.id}`,
+              title: group.name,
+              preview,
+              type: 'group',
+              time: latestMessage?.created_at
+                ? formatTime(latestMessage.created_at)
+                : group.updated_at
+                ? formatTime(group.updated_at)
+                : '',
+              unread: unreadCount || 0,
+              group_id: String(group.id),
+              sortTimestamp: latestMessage?.created_at
+                ? new Date(latestMessage.created_at).getTime()
+                : group.updated_at
+                ? new Date(group.updated_at).getTime()
+                : 0,
+              avatar_url: group.avatar_url || null, // <-- Mapped group avatar too just in case
+            });
+          }
         }
-      }
 
-      conversationsList.sort((a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0));
-      setConversations(conversationsList);
-    } catch {
-      setError('Failed to load conversations');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [user]);
+        conversationsList.sort(
+          (a, b) => (b.sortTimestamp || 0) - (a.sortTimestamp || 0)
+        );
+        setConversations(conversationsList);
+      } catch {
+        setError('Failed to load conversations');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [user]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -239,12 +279,36 @@ export default function PrivateChatScreen() {
     const channelName = `conversation-updates-${user.id}-${Date.now()}`;
     const channel = supabase
       .channel(channelName)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, () => loadConversations(true))
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'private_messages' }, () => loadConversations(true))
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, () => loadConversations(true))
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'group_messages' }, () => loadConversations(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_read_receipts' }, () => loadConversations(true))
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => loadConversations(true))
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'private_messages' },
+        () => loadConversations(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'private_messages' },
+        () => loadConversations(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'group_messages' },
+        () => loadConversations(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'group_messages' },
+        () => loadConversations(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'group_read_receipts' },
+        () => loadConversations(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' }, // Triggers on avatar update
+        () => loadConversations(true)
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -275,21 +339,22 @@ export default function PrivateChatScreen() {
           .delete()
           .eq('id', selectedConversation.conversation_id);
       } else if (isGroup && selectedConversation.group_id) {
-        const { error: leaveError } = await supabase
+        const { error: hideError } = await supabase
           .from('group_members')
-          .delete()
+          .update({ hidden_at: new Date().toISOString() })
           .eq('group_id', selectedConversation.group_id)
           .eq('user_id', user.id);
-        if (leaveError) throw leaveError;
+        if (hideError) throw hideError;
       }
 
       await loadConversations(true);
       setShowActionSheet(false);
-      const wasGroup = isGroup;
       setSelectedConversation(null);
       Alert.alert(
         'Success',
-        wasGroup ? 'You have left the group' : 'Conversation deleted'
+        isGroup
+          ? 'Chat removed from your list. It will reappear when someone posts.'
+          : 'Conversation deleted'
       );
     } catch {
       Alert.alert('Error', 'Action failed. Please try again.');
@@ -327,7 +392,12 @@ export default function PrivateChatScreen() {
       } catch {}
     }
 
-    if (conversation.type === 'private' && conversation.user_id) {
+    if (onSelectConversation) {
+      onSelectConversation({
+        type: conversation.type,
+        id: conversation.type === 'private' ? conversation.user_id! : conversation.group_id!,
+      });
+    } else if (conversation.type === 'private' && conversation.user_id) {
       router.push({
         pathname: '/chat/Conversation',
         params: { userId: conversation.user_id },
@@ -341,10 +411,14 @@ export default function PrivateChatScreen() {
   };
 
   const handleUserSelect = (selectedUser: any) => {
-    router.push({
-      pathname: '/chat/Conversation',
-      params: { userId: selectedUser.id },
-    } as any);
+    if (onSelectConversation) {
+      onSelectConversation({ type: 'private', id: selectedUser.id });
+    } else {
+      router.push({
+        pathname: '/chat/Conversation',
+        params: { userId: selectedUser.id },
+      } as any);
+    }
   };
 
   const handleLongPress = (conversation: Conversation) => {
@@ -357,19 +431,32 @@ export default function PrivateChatScreen() {
     const hasUnread = (item.unread || 0) > 0;
     const isOnline = item.type === 'private' && item.is_online === true;
     const color = getAvatarColor(rowColorKey(item));
+    
+    const isActive = activeConversationId === (item.type === 'private' ? item.user_id : item.group_id);
 
     return (
       <TouchableOpacity
-        style={[styles.conversationItem, hasUnread && styles.conversationItemUnread]}
+        style={[
+          styles.conversationItem,
+          hasUnread && styles.conversationItemUnread,
+          isActive && styles.conversationItemActive,
+          maxWidth ? { maxWidth, alignSelf: 'center', width: '100%' } : undefined,
+        ]}
         onPress={() => handleConversationPress(item)}
         onLongPress={() => handleLongPress(item)}
         delayLongPress={400}
         activeOpacity={0.7}
       >
         <View style={styles.avatarWrap}>
-          <View style={[styles.avatar, { backgroundColor: color }]}>
-            <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
-          </View>
+          {/* Render Image if avatar_url exists, else fallback to initials */}
+          {item.avatar_url ? (
+            <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: color }]}>
+              <Text style={styles.avatarText}>{getInitials(item.title)}</Text>
+            </View>
+          )}
+          
           {isOnline && <View style={styles.onlineIndicator} />}
           {isGroup && (
             <View style={styles.groupBadgeSmall}>
@@ -381,20 +468,31 @@ export default function PrivateChatScreen() {
         <View style={styles.conversationContent}>
           <View style={styles.conversationHeader}>
             <Text
-              style={[styles.conversationTitle, hasUnread && styles.conversationTitleUnread]}
+              style={[
+                styles.conversationTitle,
+                (hasUnread || isActive) && styles.conversationTitleUnread,
+              ]}
               numberOfLines={1}
             >
               {item.title}
             </Text>
             {item.time && (
-              <Text style={[styles.conversationTime, hasUnread && styles.conversationTimeUnread]}>
+              <Text
+                style={[
+                  styles.conversationTime,
+                  (hasUnread || isActive) && styles.conversationTimeUnread,
+                ]}
+              >
                 {item.time}
               </Text>
             )}
           </View>
           <View style={styles.previewRow}>
             <Text
-              style={[styles.conversationPreview, hasUnread && styles.conversationPreviewUnread]}
+              style={[
+                styles.conversationPreview,
+                (hasUnread || isActive) && styles.conversationPreviewUnread,
+              ]}
               numberOfLines={1}
             >
               {item.preview}
@@ -430,21 +528,28 @@ export default function PrivateChatScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderConversation}
         ListHeaderComponent={
-          <View style={styles.headerContainer}>
-            <View style={styles.headerRow}>
-              <View style={styles.headerLeft}>
-                <Text style={styles.title}>Messages</Text>
-                <Text style={styles.hint}>Find or start a conversation</Text>
+          <View
+            style={[
+              styles.headerContainer,
+              maxWidth ? { maxWidth, alignSelf: 'center', width: '100%' } : undefined,
+            ]}
+          >
+            {!embedded && (
+              <View style={styles.headerRow}>
+                <View style={styles.headerLeft}>
+                  <Text style={styles.title}>Messages</Text>
+                  <Text style={styles.hint}>Find or start a conversation</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.createButton}
+                  onPress={openCreateGroup}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add" size={13} color={CHAT_BG} />
+                  <Text style={styles.createButtonText}>New Group</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={() => setShowCreate(true)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="add" size={13} color={CHAT_BG} />
-                <Text style={styles.createButtonText}>New Group</Text>
-              </TouchableOpacity>
-            </View>
+            )}
 
             <View style={styles.searchWrapper}>
               <UserSearch onSelect={handleUserSelect} buttonLabel="Message" />
@@ -484,7 +589,9 @@ export default function PrivateChatScreen() {
         windowSize={15}
       />
 
-      {showCreate && <CreateGroupModal onClose={() => setShowCreate(false)} />}
+      {showCreateLocal && (
+        <CreateGroupModal onClose={() => setShowCreateLocal(false)} />
+      )}
 
       <Modal
         visible={showActionSheet}
@@ -531,14 +638,10 @@ export default function PrivateChatScreen() {
               {deleting ? (
                 <ActivityIndicator size="small" color="#E07070" />
               ) : (
-                <Ionicons
-                  name={isSelectedGroup ? 'exit-outline' : 'trash-outline'}
-                  size={16}
-                  color="#E07070"
-                />
+                <Ionicons name="trash-outline" size={16} color="#E07070" />
               )}
               <Text style={[styles.actionOptionText, { color: '#E07070' }]}>
-                {isSelectedGroup ? 'Leave Group' : 'Delete Conversation'}
+                {isSelectedGroup ? 'Delete Chat' : 'Delete Conversation'}
               </Text>
             </TouchableOpacity>
 
@@ -546,220 +649,14 @@ export default function PrivateChatScreen() {
               style={[styles.actionOption, styles.actionCancel]}
               onPress={() => setShowActionSheet(false)}
             >
-              <Text style={[styles.actionOptionText, { color: TEXT_PRIMARY }]}>Cancel</Text>
+              <Text style={[styles.actionOptionText, { color: TEXT_PRIMARY }]}>
+                Cancel
+              </Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
     </View>
-  );
-}
-
-function CreateGroupModal({ onClose }: { onClose: () => void }) {
-  const [name, setName] = useState('');
-  const [members, setMembers] = useState<any[]>([]);
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const user = useAuthStore((state) => state.user);
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-
-  const addMember = (member: any) => {
-    if (!members.find((existingMember) => existingMember.id === member.id)) {
-      setMembers((currentMembers) => [...currentMembers, member]);
-    }
-  };
-
-  const removeMember = (id: string) =>
-    setMembers((currentMembers) => currentMembers.filter((member) => member.id !== id));
-
-  const createGroup = async () => {
-    if (!user || !name.trim() || members.length === 0) return;
-    setCreating(true);
-    setError(null);
-    try {
-      const { data: group, error: groupError } = await supabase
-        .from('groups')
-        .insert({ name: name.trim(), creator_id: user.id })
-        .select()
-        .single();
-
-      if (groupError) throw groupError;
-
-      const memberRows = [
-        { group_id: group.id, user_id: user.id, role: 'admin' },
-        ...members.map((member) => ({
-          group_id: group.id,
-          user_id: member.id,
-          role: 'member',
-        })),
-      ];
-
-      const { error: memberError } = await supabase
-        .from('group_members')
-        .insert(memberRows);
-      if (memberError) throw memberError;
-
-      const receiptRows = [
-        { group_id: group.id, user_id: user.id, last_read_at: new Date().toISOString() },
-        ...members.map((member) => ({
-          group_id: group.id,
-          user_id: member.id,
-          last_read_at: '1970-01-01T00:00:00Z',
-        })),
-      ];
-      await supabase
-        .from('group_read_receipts')
-        .upsert(receiptRows, { onConflict: 'group_id,user_id' });
-
-      onClose();
-      router.push({
-        pathname: '/chat/GroupChat',
-        params: { groupId: String(group.id) },
-      } as any);
-    } catch {
-      setError('Failed to create group. Please try again.');
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const canCreate = name.trim().length > 0 && members.length > 0 && !creating;
-
-  const listHeader = (
-    <View style={styles.createBodyContent}>
-      <Text style={styles.createLabel}>GROUP NAME</Text>
-      <View style={styles.createInputRow}>
-        <Ionicons
-          name="people-outline"
-          size={13}
-          color={TEXT_MUTED}
-          style={styles.createInputIcon}
-        />
-        <TextInput
-          placeholder="e.g. Design Team"
-          placeholderTextColor="rgba(255,255,255,0.28)"
-          value={name}
-          onChangeText={setName}
-          maxLength={50}
-          style={styles.createInput}
-          returnKeyType="done"
-        />
-      </View>
-
-      <View style={styles.createSection}>
-        <Text style={styles.createLabel}>ADD MEMBERS</Text>
-        <UserSearch onSelect={addMember} />
-      </View>
-
-      {members.length > 0 && (
-        <View style={styles.createSection}>
-          <SelectedMembers members={members} onRemove={removeMember} />
-        </View>
-      )}
-
-      {error && (
-        <View style={styles.createErrorBanner}>
-          <Ionicons name="alert-circle-outline" size={12} color="#E07070" />
-          <Text style={styles.createErrorText}>{error}</Text>
-        </View>
-      )}
-    </View>
-  );
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.createBackdrop}>
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.createKeyboardWrap}
-          pointerEvents="box-none"
-        >
-          <View
-            style={[
-              styles.createCard,
-              { minHeight: Math.min(520, windowHeight * 0.68) },
-            ]}
-          >
-            <View style={styles.createHeader}>
-              <TouchableOpacity
-                onPress={onClose}
-                style={styles.createHeaderBtn}
-                hitSlop={6}
-              >
-                <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
-              </TouchableOpacity>
-              <Text style={styles.createTitle}>New Group</Text>
-              <View style={styles.createHeaderBtn} />
-            </View>
-
-            <FlatList
-              data={[]}
-              keyExtractor={() => 'x'}
-              renderItem={null as any}
-              ListHeaderComponent={listHeader}
-              style={styles.createBody}
-              contentContainerStyle={styles.createBodyScrollContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            />
-
-            <View
-              style={[
-                styles.createFooter,
-                { paddingBottom: Math.max(insets.bottom, 12) },
-              ]}
-            >
-              <TouchableOpacity
-                onPress={onClose}
-                style={[styles.createFooterBtn, styles.createFooterCancel]}
-                disabled={creating}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.createFooterCancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={createGroup}
-                style={[
-                  styles.createFooterBtn,
-                  styles.createFooterPrimary,
-                  !canCreate && styles.createFooterPrimaryDisabled,
-                ]}
-                disabled={!canCreate}
-                activeOpacity={0.85}
-              >
-                {creating ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="checkmark"
-                      size={13}
-                      color={canCreate ? CHAT_BG : 'rgba(255,255,255,0.4)'}
-                    />
-                    <Text
-                      style={[
-                        styles.createFooterPrimaryText,
-                        !canCreate && styles.createFooterPrimaryTextDisabled,
-                      ]}
-                    >
-                      Create
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
   );
 }
 
@@ -820,6 +717,10 @@ const styles = StyleSheet.create({
   conversationItemUnread: {
     backgroundColor: 'rgba(201,169,110,0.08)',
     borderColor: 'rgba(201,169,110,0.22)',
+  },
+  conversationItemActive: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   avatarWrap: { position: 'relative', marginRight: 10 },
   avatar: {
@@ -938,124 +839,6 @@ const styles = StyleSheet.create({
   },
   errorText: { color: '#E07070', fontSize: 11, textAlign: 'center' },
 
-  // Create Group Modal
-  createBackdrop: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  createKeyboardWrap: {
-    width: '100%',
-    maxHeight: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  createCard: {
-    width: '100%',
-    maxWidth: 560,
-    maxHeight: '95%',
-    alignSelf: 'center',
-    backgroundColor: CHAT_PANEL,
-    borderRadius: CHAT_RADIUS_MODAL,
-    borderWidth: 1,
-    borderColor: CHAT_BORDER,
-    overflow: 'hidden',
-  },
-  createHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: CHAT_BORDER,
-  },
-  createHeaderBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  createTitle: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
-  createBody: { flexGrow: 1, flexShrink: 1, minHeight: 120 },
-  createBodyScrollContent: { flexGrow: 0 },
-  createBodyContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14 },
-  createFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: CHAT_BORDER,
-    backgroundColor: CHAT_PANEL,
-  },
-  createFooterBtn: {
-    minWidth: 88,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 14,
-    borderRadius: CHAT_RADIUS_BTN,
-  },
-  createFooterCancel: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  createFooterCancelText: { color: TEXT_MUTED, fontWeight: '600', fontSize: 12 },
-  createFooterPrimary: { backgroundColor: ACCENT_GOLD },
-  createFooterPrimaryDisabled: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  createFooterPrimaryText: { color: CHAT_BG, fontWeight: '700', fontSize: 12 },
-  createFooterPrimaryTextDisabled: { color: 'rgba(255,255,255,0.4)' },
-
-  createLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.9,
-    color: TEXT_MUTED,
-    opacity: 0.75,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  createInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 36,
-    borderRadius: CHAT_RADIUS_BTN,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    paddingLeft: 34,
-    paddingRight: 12,
-  },
-  createInputIcon: { position: 'absolute', left: 11 },
-  createInput: { flex: 1, fontSize: 12, color: TEXT_PRIMARY, paddingVertical: 0 },
-  createSection: { marginTop: 16 },
-  createErrorBanner: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: CHAT_RADIUS_BTN,
-    backgroundColor: 'rgba(224,112,112,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.22)',
-  },
-  createErrorText: { color: '#E07070', fontSize: 11, flex: 1 },
-
-  // Action sheet
   actionBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
