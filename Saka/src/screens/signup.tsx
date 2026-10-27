@@ -491,11 +491,11 @@ const styles = StyleSheet.create({
   },
   footerMuted: {
     color: 'rgba(255,255,255,0.25)',
-    fontSize: s(11),
+    fontSize: s(12),
   },
   footerLink: {
     color: '#C9A96E',
-    fontSize: s(15),
+    fontSize: s(12),
     fontWeight: '600',
   },
   modalOverlay: {
