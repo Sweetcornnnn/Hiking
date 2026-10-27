@@ -93,7 +93,7 @@ export default function RootLayout() {
       <StatusBar hidden={true} />
       <Stack screenOptions={stackScreenOptions}>
         {/* ...unchanged screens... */}
-        <Stack.Screen name="Index" options={screenOptionsNoHeader} />
+        <Stack.Screen name="index" options={screenOptionsNoHeader} />
         <Stack.Screen name="Auth" options={screenOptionsNoHeader} />
         <Stack.Screen name="Intro" options={screenOptionsNoHeader} />
         <Stack.Screen name="Login" options={screenOptionsNoHeader} />
