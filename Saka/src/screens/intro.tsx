@@ -140,11 +140,61 @@ const thin = {
   strokeLinecap: 'round' as const,
 };
 
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+// A soft curve that passes THROUGH an elbow/knee (instead of a hard angled stick)
+const via = (s: Pt, j: Pt, e: Pt) =>
+  `M${s[0]} ${s[1]} Q${2 * j[0] - (s[0] + e[0]) / 2} ${2 * j[1] - (s[1] + e[1]) / 2} ${e[0]} ${e[1]}`;
+
+// A gentle bow instead of a ruler-straight line
+const bow = (s: Pt, e: Pt, b = 0.1) => {
+  const dx = e[0] - s[0];
+  const dy = e[1] - s[1];
+  return `M${s[0]} ${s[1]} Q${s[0] + dx / 2 - dy * b} ${s[1] + dy / 2 + dx * b} ${e[0]} ${e[1]}`;
+};
+
+const Hand = ({ at }: { at: Pt }) => <Circle cx={at[0]} cy={at[1]} r={1.35} fill={GOLD} />;
+
+const Boot = ({ at }: { at: Pt }) => (
+  <Line x1={at[0] - 0.5} y1={at[1] - 0.2} x2={at[0] + 2} y2={at[1] - 0.2} stroke={GOLD} strokeWidth={2.9} strokeLinecap="round" />
+);
+
+// Arm whose elbow leads and whose hand lags a beat behind (follow-through)
+function swingArm(s: Pt, rest: Pt, act: Pt, k: number, k2: number, bend: number) {
+  const lead: Pt = [lerp(rest[0], act[0], k), lerp(rest[1], act[1], k)];
+  const tip: Pt = [lerp(rest[0], act[0], k2), lerp(rest[1], act[1], k2)];
+  const dx = lead[0] - s[0];
+  const dy = lead[1] - s[1];
+  const cx = s[0] + dx / 2 - dy * bend;
+  const cy = s[1] + dy / 2 + dx * bend;
+  return (
+    <>
+      <Path {...limb} d={`M${s[0]} ${s[1]} Q${cx} ${cy} ${tip[0]} ${tip[1]}`} />
+      <Hand at={tip} />
+    </>
+  );
+}
+
 const POSE_TOP: Record<Pose, number> = { cheer: 7.2, flag: 3.2, hike: 6.2, point: 7.2, wave: 7.2 };
 
-function Hiker({ pose, height, flip, frame = 0 }: { pose: Pose; height: number; flip?: boolean; frame?: number }) {
-  const f = frame === 1;
+// k  = main motion, 0..1 (arm swing, stride, flag flutter)
+// k2 = same motion a few ms late, so hands/flag trail the body
+// air = how far off the ground (tucks the legs while jumping)
+// lean = tiny spine bend in degrees
+type HikerProps = {
+  pose: Pose;
+  height: number;
+  flip?: boolean;
+  k?: number;
+  k2?: number;
+  air?: number;
+  lean?: number;
+};
+
+function Hiker({ pose, height, flip, k = 0, k2 = 0, air = 0, lean = 0 }: HikerProps) {
   const width = (height * VB_W) / VB_H;
+  const S: Pt = [18, 24.5]; // shoulder
+  const H: Pt = [18, 30.5]; // hip
 
   const pack = (
     <>
@@ -153,11 +203,7 @@ function Hiker({ pose, height, flip, frame = 0 }: { pose: Pose; height: number; 
     </>
   );
 
-  const torso = (
-    <>
-      <Line {...limb} x1={18} y1={21.5} x2={18} y2={30.5} />
-    </>
-  );
+  const torso = <Line {...limb} x1={18} y1={21.5} x2={18} y2={30.5} />;
 
   const head = (
     <>
@@ -167,75 +213,129 @@ function Hiker({ pose, height, flip, frame = 0 }: { pose: Pose; height: number; 
     </>
   );
 
+  // everything above the hip bends together, so the whole body flows
+  const upper = (inner: React.ReactNode) => (
+    <G rotation={lean} origin="18, 30.5">{inner}</G>
+  );
+
   let body: React.ReactNode;
   switch (pose) {
-    case 'cheer':
+    case 'cheer': {
+      const f1: Pt = [12.8, 41.5 - 2.4 * air];
+      const f2: Pt = [26.6, 40.6 - 2.4 * air];
       body = (
         <>
-          <Line {...limb} x1={18} y1={24.5} x2={f ? 7.6 : 9.4} y2={f ? 12.2 : 17.8} />
-          <Line {...limb} x1={18} y1={24.5} x2={f ? 28.4 : 26.6} y2={f ? 12.2 : 17.8} />
-          {torso}
-          <Line {...limb} x1={18} y1={30.5} x2={12.8} y2={41.5} />
-          <Path {...limb} d="M18 30.5 L24.8 35.2 L26.6 40.6" />
-          {head}
+          <Path {...limb} d={bow(H, f1)} />
+          <Boot at={f1} />
+          <Path {...limb} d={via(H, [24.8, 35.2 - 1.8 * air], f2)} />
+          <Boot at={f2} />
+          {upper(
+            <>
+              {swingArm(S, [9.4, 17.8], [7.6, 12.2], k, k2, -0.14)}
+              {swingArm(S, [26.6, 17.8], [28.4, 12.2], k, k2, 0.14)}
+              {torso}
+              {head}
+            </>
+          )}
         </>
       );
       break;
-    case 'flag':
+    }
+    case 'flag': {
+      const tip: Pt = [lerp(33.6, 34.6, k2), lerp(4.4, 7.4, k2)];
+      const mid: Pt = [lerp(30.2, 31.2, k), lerp(3.4, 4.8, k)];
+      const f1: Pt = [13.6, 41.6];
+      const f2: Pt = [22.2, 41.6];
       body = (
         <>
           <Line {...thin} x1={26.2} y1={3.2} x2={26.2} y2={41.8} />
-          <Path d={f ? "M26.2 3.2 L33.6 4.4 L26.2 9.6 Z" : "M26.2 3.2 L34.6 7.4 L26.2 9.6 Z"} fill={GOLD} />
-          <Path {...limb} d="M18 24.5 L12.8 27.6 L15.8 30.6" />
-          {torso}
-          <Line {...limb} x1={18} y1={30.5} x2={13.6} y2={41.6} />
-          <Line {...limb} x1={18} y1={30.5} x2={22.2} y2={41.6} />
-          <Line {...limb} x1={18} y1={24.5} x2={26} y2={21.2} />
-          {head}
+          <Path d={`M26.2 3.2 Q${mid[0]} ${mid[1]} ${tip[0]} ${tip[1]} L26.2 9.6 Z`} fill={GOLD} />
+          <Path {...limb} d={bow(H, f1)} />
+          <Boot at={f1} />
+          <Path {...limb} d={bow(H, f2)} />
+          <Boot at={f2} />
+          {upper(
+            <>
+              <Path {...limb} d={via(S, [12.8, 27.6], [15.8, 30.6])} />
+              <Hand at={[15.8, 30.6]} />
+              <Path {...limb} d={bow(S, [26, 21.2], 0.08)} />
+              {torso}
+              {head}
+            </>
+          )}
         </>
       );
       break;
-    case 'hike':
+    }
+    case 'hike': {
+      const back: Pt = [lerp(11.4, 16, k), 41.5 - 1.8 * Math.sin(Math.PI * k)];
+      const knee: Pt = [lerp(23.6, 21.5, k), lerp(35.6, 36, k)];
+      const front: Pt = [lerp(25.2, 22, k), 41.4];
       body = (
-        <>
-          <G rotation={8} origin="18, 42">
-            {pack}
-            <Line {...thin} x1={24.4} y1={28.6} x2={29.4} y2={40.6} />
-            {torso}
-            <Line {...limb} x1={18} y1={30.5} x2={f ? 16 : 11.4} y2={41.5} />
-            <Path {...limb} d={f ? "M18 30.5 L21.5 36 L22 41.4" : "M18 30.5 L23.6 35.6 L25.2 41.4"} />
-            <Line {...limb} x1={18} y1={24.5} x2={24.4} y2={28.6} />
-            {head}
-          </G>
-        </>
+        <G rotation={8} origin="18, 42">
+          <Path {...limb} d={bow(H, back)} />
+          <Boot at={back} />
+          <Path {...limb} d={via(H, knee, front)} />
+          <Boot at={front} />
+          {upper(
+            <>
+              {pack}
+              <Line {...thin} x1={24.4} y1={28.6} x2={29.4} y2={40.6} />
+              {torso}
+              <Path {...limb} d={bow(S, [24.4, 28.6], 0.1)} />
+              <Hand at={[24.4, 28.6]} />
+              {head}
+            </>
+          )}
+        </G>
       );
       break;
-    case 'point':
+    }
+    case 'point': {
+      const f1: Pt = [13.2, 41.5];
+      const f2: Pt = [26.4, 35.9];
       body = (
         <>
           <Path d="M20.4 42 L22.2 37 L29.6 36.4 L33.2 42 Z" fill={ROCK} />
-          {pack}
-          {torso}
-          <Line {...limb} x1={18} y1={30.5} x2={13.2} y2={41.5} />
-          <Path {...limb} d="M18 30.5 L23.8 34.4 L26.4 35.9" />
-          <Line {...limb} x1={18} y1={24.5} x2={f ? 27.6 : 29.2} y2={f ? 12.6 : 18.2} />
-          {head}
+          <Path {...limb} d={bow(H, f1)} />
+          <Boot at={f1} />
+          <Path {...limb} d={via(H, [23.8, 34.4], f2)} />
+          <Boot at={f2} />
+          {upper(
+            <>
+              {pack}
+              {torso}
+              {swingArm(S, [29.2, 18.2], [27.6, 12.6], k, k2, 0.12)}
+              {head}
+            </>
+          )}
         </>
       );
       break;
-    case 'wave':
+    }
+    case 'wave': {
+      const f1: Pt = [15.2, 41.5];
+      const f2: Pt = [21.2, 41.5];
       body = (
         <>
-          {pack}
-          {torso}
-          <Line {...limb} x1={18} y1={30.5} x2={15.2} y2={41.5} />
-          <Line {...limb} x1={18} y1={30.5} x2={21.2} y2={41.5} />
-          <Line {...limb} x1={18} y1={24.5} x2={22.2} y2={31.2} />
-          <Line {...limb} x1={18} y1={24.5} x2={f ? 21 : 27.4} y2={f ? 13.2 : 16.8} />
-          {head}
+          <Path {...limb} d={bow(H, f1)} />
+          <Boot at={f1} />
+          <Path {...limb} d={bow(H, f2)} />
+          <Boot at={f2} />
+          {upper(
+            <>
+              {pack}
+              <Path {...limb} d={bow(S, [22.2, 31.2], 0.1)} />
+              <Hand at={[22.2, 31.2]} />
+              {torso}
+              {swingArm(S, [27.4, 16.8], [22, 12.6], k, k2, 0.16)}
+              {head}
+            </>
+          )}
         </>
       );
       break;
+    }
     default:
       body = null;
   }
@@ -258,6 +358,8 @@ function Hiker({ pose, height, flip, frame = 0 }: { pose: Pose; height: number; 
 const LOGO_TRIM = 70 / 290;
 const BRAND_EXTRA = 116;
 const BUBBLE_W = 164;
+const SPLASH_RIGHT = 0.02;  // fraction of logo size from the right edge
+const SPLASH_BOTTOM = 0.04; // fraction of logo size above the logo's visible bottom
 
 const STARS = Array.from({ length: 40 }, (_, i) => {
   const r1 = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
@@ -291,66 +393,129 @@ type HikerSpotProps = {
   label: string;
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Motion rig: ONE clock drives the body, limbs, squash and lean together,
+//  so everything moves as a single smooth, connected motion.
+// ─────────────────────────────────────────────────────────────────────────
+type Rig = { k: number; k2: number; hop: number; tilt: number; sx: number; lean: number; sy: number };
+const REST: Rig = { k: 0, k2: 0, hop: 0, tilt: 0, sx: 0, lean: 0, sy: 1 };
+const ACTION_MS: Record<Pose, number> = { cheer: 1100, wave: 1200, flag: 1000, point: 1100, hike: 1200 };
+
+const TAU = Math.PI * 2;
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const ease = (x: number) => x * x * (3 - 2 * x);
+const osc = (ms: number, period: number) => 0.5 - 0.5 * Math.cos((TAU * ms) / period); // 0 → 1 → 0, no hard edges
+const wob = (ms: number, period: number) => Math.sin((TAU * ms) / period);
+const arc = (ms: number, period: number) => {
+  const u = (((ms % period) + period) % period) / period;
+  return 4 * u * (1 - u); // parabola: what a real jump looks like
+};
+
+function rigAt(pose: Pose, ms: number, dir: number): Rig {
+  const D = ACTION_MS[pose];
+  const u = clamp01(ms / D);
+  const env = ease(clamp01(Math.min(u / 0.15, (1 - u) / 0.15))); // ease in / ease out of the whole move
+  const lag = Math.max(0, ms - 90); // hands & flag trail the body by ~90ms
+  const tail = ease(clamp01((D - ms) / 150));
+
+  switch (pose) {
+    case 'cheer': {
+      const hop = arc(ms, 550); // two jumps
+      const squash = ease(clamp01(ms / 80)) * ease(clamp01((D - ms) / 80));
+      return {
+        k: hop,
+        k2: arc(lag, 550) * tail,
+        hop,
+        tilt: 0,
+        sx: 0,
+        lean: 0,
+        sy: 1 - 0.07 * Math.pow(1 - hop, 6) * squash, // squash on landing
+      };
+    }
+    case 'wave':
+      return {
+        k: env * osc(ms, 300),
+        k2: env * osc(lag, 300) * tail,
+        hop: 0.25 * arc(ms, 600),
+        tilt: 0.8 * wob(ms, 600) * env,
+        sx: 0,
+        lean: 3 * wob(ms - 60, 600) * env,
+        sy: 1,
+      };
+    case 'flag':
+      return {
+        k: env * osc(ms, 260),
+        k2: env * osc(lag, 260) * tail,
+        hop: 0.3 * arc(ms, 500),
+        tilt: 0.6 * wob(ms, 1000),
+        sx: 0,
+        lean: 2 * wob(ms - 80, 1000) * env,
+        sy: 1,
+      };
+    case 'point':
+      return {
+        k: env * (0.6 + 0.4 * osc(ms, 550)),
+        k2: env * (0.6 + 0.4 * osc(lag, 550)) * tail,
+        hop: 0.4 * arc(ms, 550),
+        tilt: dir * 0.9 * env,
+        sx: 0,
+        lean: 0,
+        sy: 1,
+      };
+    case 'hike':
+      return {
+        k: osc(ms, 300), // stride
+        k2: osc(lag, 300) * tail,
+        hop: 0.35 * arc(ms, 150), // little bob each step
+        tilt: 0,
+        sx: osc(ms, D), // glide forward and back
+        lean: 0,
+        sy: 1,
+      };
+    default:
+      return REST;
+  }
+}
+
 function HikerSpot({
   pose, flip, name, quote, px, py, figH, figW, headRise, screenW, isOpen, onPress, label,
 }: HikerSpotProps) {
   const [shown, setShown] = useState(false);
-  const [frame, setFrame] = useState(0);
+  const [rig, setRig] = useState<Rig>(REST);
   const [bubbleH, setBubbleH] = useState(44);
   const pop = useRef(new Animated.Value(0)).current;
-  const hop = useRef(new Animated.Value(0)).current;
-  const tilt = useRef(new Animated.Value(0)).current;
-  const sx = useRef(new Animated.Value(0)).current;
   const spark = useRef(new Animated.Value(0)).current;
+  const breathe = useRef(new Animated.Value(0)).current;
   const firstRun = useRef(true);
   const acting = useRef(false);
-  const bodyAnim = useRef<Animated.CompositeAnimation | null>(null);
-  const frameTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const raf = useRef<number | null>(null);
   const dir = flip ? -1 : 1;
 
-  const t = (v: Animated.Value, to: number, d: number, easing = Easing.inOut(Easing.quad)) =>
-    Animated.timing(v, { toValue: to, duration: d, easing, useNativeDriver: true });
-  const jump = (h = 1) =>
-    Animated.sequence([t(hop, h, 150, Easing.out(Easing.quad)), t(hop, 0, 150, Easing.in(Easing.quad))]);
-
-  // each pose has its own little move (~600ms)
-  const makeAction = (): Animated.CompositeAnimation => {
-    switch (pose) {
-      case 'cheer': // two happy jumps, arms pumping
-        return Animated.sequence([jump(1), jump(1)]);
-      case 'wave': // sway side to side while waving
-        return Animated.parallel([
-          Animated.sequence([t(tilt, -1, 120), t(tilt, 1, 200), t(tilt, -1, 200), t(tilt, 0, 120)]),
-          jump(0.5),
-        ]);
-      case 'flag': // flag flutter + proud sway
-        return Animated.sequence([t(tilt, -0.6, 140), t(tilt, 0.6, 280), t(tilt, 0, 140), jump(0.7)]);
-      case 'point': // lean in, bounce, point up
-        return Animated.sequence([t(tilt, dir, 180), jump(0.6), jump(0.6), t(tilt, 0, 140)]);
-      case 'hike': // quick marching steps forward and back
-        return Animated.parallel([
-          Animated.sequence([t(sx, 1, 300, Easing.linear), t(sx, 0, 300, Easing.linear)]),
-          Animated.sequence(
-            Array.from({ length: 4 }, () =>
-              Animated.sequence([t(hop, 0.35, 75), t(hop, 0, 75)])
-            )
-          ),
-        ]);
-      default:
-        return jump(1);
-    }
+  const cancelFrame = () => {
+    if (raf.current != null) cancelAnimationFrame(raf.current);
+    raf.current = null;
   };
 
   const stopAction = () => {
     acting.current = false;
-    bodyAnim.current?.stop();
-    bodyAnim.current = null;
-    if (frameTimer.current) clearInterval(frameTimer.current);
-    frameTimer.current = null;
-    setFrame(0);
-    hop.setValue(0);
-    tilt.setValue(0);
-    sx.setValue(0);
+    cancelFrame();
+    setRig(REST);
+  };
+
+  const runAction = (onDone: () => void) => {
+    const start = Date.now();
+    const tick = () => {
+      const ms = Date.now() - start;
+      if (ms >= ACTION_MS[pose]) {
+        raf.current = null;
+        setRig(REST);
+        onDone();
+        return;
+      }
+      setRig(rigAt(pose, ms, dir));
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
   };
 
   const showBubble = () => {
@@ -360,27 +525,29 @@ function HikerSpot({
     Animated.timing(spark, { toValue: 1, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   };
 
+  // idle: a slow "breathing" so nobody is ever frozen (each hiker on its own rhythm)
+  useEffect(() => {
+    const dur = 2400 + (Math.round(px) % 9) * 140;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breathe, { toValue: 1, duration: dur, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(breathe, { toValue: 0, duration: dur, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    const timer = setTimeout(() => loop.start(), (Math.round(px) % 11) * 160);
+    return () => {
+      clearTimeout(timer);
+      loop.stop();
+    };
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       // 1) do the action  2) then pop the message
       stopAction();
       acting.current = true;
-
-      let n = 0;
-      frameTimer.current = setInterval(() => {
-        n += 1;
-        setFrame(n % 2);
-        if (n >= 6 && frameTimer.current) {
-          clearInterval(frameTimer.current);
-          frameTimer.current = null;
-        }
-      }, 100);
-
-      const anim = makeAction();
-      bodyAnim.current = anim;
-      anim.start(({ finished }) => {
-        if (!finished) return;
-        stopAction();
+      runAction(() => {
+        acting.current = false;
         showBubble();
       });
     } else if (!firstRun.current) {
@@ -396,7 +563,7 @@ function HikerSpot({
     firstRun.current = false;
   }, [isOpen]);
 
-  useEffect(() => () => stopAction(), []);
+  useEffect(() => () => cancelFrame(), []);
 
   // keep the bubble inside the screen, with the tail still pointing at the hiker
   const EDGE = 8;
@@ -415,6 +582,11 @@ function HikerSpot({
       { scale },
     ],
   };
+
+  // pivot the lean / squash around the FEET (not the middle) so shoes stay planted
+  const d = figH * (FEET_Y / VB_H - 0.5);
+  const tiltDeg = rig.tilt * 7;
+  const th = (tiltDeg * Math.PI) / 180;
 
   return (
     <View style={[styles.anchor, { left: px, top: py, zIndex: isOpen || shown ? 999 : Math.round(py) }]}>
@@ -436,13 +608,23 @@ function HikerSpot({
         <Animated.View
           style={{
             transform: [
-              { translateX: sx.interpolate({ inputRange: [0, 1], outputRange: [0, 6 * dir] }) },
-              { translateY: hop.interpolate({ inputRange: [0, 1], outputRange: [0, -11] }) },
-              { rotate: tilt.interpolate({ inputRange: [-1, 1], outputRange: ['-7deg', '7deg'] }) },
+              { translateY: breathe.interpolate({ inputRange: [0, 1], outputRange: [0, -0.025 * d] }) },
+              { scaleY: breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.025] }) },
             ],
           }}
         >
-          <Hiker pose={pose} height={figH} flip={flip} frame={frame} />
+          <View
+            style={{
+              transform: [
+                { translateX: rig.sx * 6 * dir + d * Math.sin(th) },
+                { translateY: -11 * rig.hop + (1 - rig.sy) * d + d * (1 - Math.cos(th)) },
+                { rotate: `${tiltDeg}deg` },
+                { scaleY: rig.sy },
+              ],
+            }}
+          >
+            <Hiker pose={pose} height={figH} flip={flip} k={rig.k} k2={rig.k2} air={rig.hop} lean={rig.lean} />
+          </View>
         </Animated.View>
       </Pressable>
 
@@ -512,6 +694,8 @@ export default function IntroScreen() {
   const ridgeFade  = useRef(new Animated.Value(0)).current;
   const starFade   = useRef(new Animated.Value(0)).current;
   const twinkle    = useRef(new Animated.Value(0)).current;
+  const hintFade   = useRef(new Animated.Value(0)).current;
+  const hintPulse  = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     let isMounted = true;
@@ -573,6 +757,21 @@ export default function IntroScreen() {
       isMounted = false;
     };
   }, []);
+
+  // "splash text" nudge: only appears once the logo is actually tappable
+  const canStart = ready && authRestored;
+  useEffect(() => {
+    if (!canStart) return;
+    Animated.timing(hintFade, { toValue: 1, duration: 700, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(hintPulse, { toValue: 1, duration: 520, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(hintPulse, { toValue: 0, duration: 520, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [canStart]);
 
   const handleStart = () => {
     if (!ready || !authRestored || navigating.current) return;
@@ -690,6 +889,28 @@ export default function IntroScreen() {
                 style={{ width: logoSize, height: logoSize }}
                 resizeMode="contain"
               />
+              {/* Minecraft-style splash text. Nudge SPLASH_RIGHT / SPLASH_BOTTOM to sit it where you like on the logo */}
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.splashWrap,
+                  { right: logoSize * SPLASH_RIGHT, bottom: logoSize * (LOGO_TRIM + SPLASH_BOTTOM), opacity: hintFade },
+                ]}
+              >
+                <Animated.Text
+                  style={[
+                    styles.splashText,
+                    {
+                      transform: [
+                        { rotate: '-14deg' },
+                        { scale: hintPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.1] }) },
+                      ],
+                    },
+                  ]}
+                >
+                  Tap the logo!
+                </Animated.Text>
+              </Animated.View>
             </Animated.View>
           </Pressable>
 
@@ -812,6 +1033,22 @@ const styles = StyleSheet.create({
   },
   scene: {
     width: '100%',
+  },
+  splashWrap: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splashText: {
+    color: '#E9CD94',
+    fontFamily: SERIF,
+    fontStyle: 'italic',
+    fontWeight: '700',
+    fontSize: 15,
+    letterSpacing: 0.4,
+    textShadowColor: 'rgba(8, 13, 20, 0.95)',
+    textShadowOffset: { width: 1.5, height: 1.5 },
+    textShadowRadius: 0,
   },
   anchor: {
     position: 'absolute',
