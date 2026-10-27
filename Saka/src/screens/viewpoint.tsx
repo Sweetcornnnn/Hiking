@@ -560,7 +560,7 @@ export default function ViewpointScreen() {
       {tutorial.element}
 
       {!loadingScreenComplete && (
-        <View style={StyleSheet.absoluteFillObject}>
+        <View style={[StyleSheet.absoluteFill, { zIndex: 1000, elevation: 1000 }]}>
           <LoadingScreen
             ready={!loading && (!waitsForFirstImage || activeImageReady)}
             loadingDuration={1000}
@@ -765,7 +765,7 @@ function MediaCard({
         ) : imageSource ? (
           <>
             {!imageLoaded && (
-              <View style={[styles.cardMediaFill, StyleSheet.absoluteFillObject]}>
+              <View style={[styles.cardMediaFill, StyleSheet.absoluteFill]}>
                 <Ionicons
                   name={imageFailed ? 'alert-circle-outline' : 'image-outline'}
                   size={24}
