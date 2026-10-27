@@ -17,13 +17,11 @@ export default function ChatSidebar({
   active,
   onChange,
   onCreateGroup,
-  onSettings,
   onBack,
 }: {
   active: ChatSidebarTab;
   onChange: (tab: ChatSidebarTab) => void;
   onCreateGroup: () => void;
-  onSettings: () => void;
   onBack: () => void;
 }) {
   const NavItem = ({
@@ -98,16 +96,6 @@ export default function ChatSidebar({
       </View>
 
       <View style={{ flex: 1 }} />
-
-      {/* Footer */}
-      <TouchableOpacity
-        style={styles.footer}
-        onPress={onSettings}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="settings-outline" size={14} color={TEXT_MUTED} />
-        <Text style={styles.footerText}>Settings</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -187,17 +175,4 @@ const styles = StyleSheet.create({
   },
   navLabelActive: { color: CHAT_BG, fontWeight: '800' },
 
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  footerText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: TEXT_MUTED,
-  },
 });
