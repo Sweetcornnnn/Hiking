@@ -10,6 +10,7 @@ import ResponsiveMapImage, { MapPoint } from '../components/ResponsiveMapImage';
 import { getMountainMap } from '../data/mountainMaps';
 import LoadingScreen from './Loading';
 import ZoomableView from '../components/ZoomableView';
+import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
 
 type TableViewpoint = {
   id: string;
@@ -33,9 +34,6 @@ export default function MountainTopScreen() {
     ? mountainService.getCachedMountainById(mountainId)
     : null;
   const [mountain, setMountain] = useState<Mountain | null>(cachedMountain);
-  const [mountainUpdatedAt, setMountainUpdatedAt] = useState(
-    () => mountainService.getMountainsLastUpdatedAt()
-  );
   const [loading, setLoading] = useState(!cachedMountain);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -43,7 +41,6 @@ export default function MountainTopScreen() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number }[]>([]);
   const [viewpointList, setViewpointList] = useState<TableViewpoint[]>([]);
-  const [viewpointsUpdatedAt, setViewpointsUpdatedAt] = useState<string | null>(null);
   // NEW: viewpoints have their own loading lifecycle. The map is the feature,
   // and its dots/trail come from this query, so `ready` must wait for it.
   const [viewpointsLoading, setViewpointsLoading] = useState(true);
@@ -64,7 +61,6 @@ export default function MountainTopScreen() {
         const data = await mountainService.fetchMountainById(mountainId);
         if (active && data) {
           setMountain(data);
-          setMountainUpdatedAt(mountainService.getMountainsLastUpdatedAt());
         }
         else if (active && !data) setError('Mountain not found');
       } catch (err: any) {
@@ -98,17 +94,13 @@ export default function MountainTopScreen() {
       let hasCachedViewpoints = false;
 
       try {
-        const [cachedJson, cachedUpdatedAt] = await Promise.all([
-          AsyncStorage.getItem(cacheKey),
-          AsyncStorage.getItem(updatedAtKey),
-        ]);
+        const cachedJson = await AsyncStorage.getItem(cacheKey);
         if (cachedJson) {
           const cached = JSON.parse(cachedJson) as TableViewpoint[];
           if (Array.isArray(cached)) {
             hasCachedViewpoints = true;
             if (active) {
               setViewpointList(cached);
-              setViewpointsUpdatedAt(cachedUpdatedAt);
               setViewpointsLoading(false);
             }
           }
@@ -137,7 +129,6 @@ export default function MountainTopScreen() {
           const viewpoints = (data ?? []) as TableViewpoint[];
           setViewpointList(viewpoints);
           const updatedAt = new Date().toISOString();
-          setViewpointsUpdatedAt(updatedAt);
           void Promise.all([
             AsyncStorage.setItem(cacheKey, JSON.stringify(viewpoints)),
             AsyncStorage.setItem(updatedAtKey, updatedAt),
@@ -237,7 +228,6 @@ export default function MountainTopScreen() {
     !viewpointsLoading;
 
   const total = viewpointList.length;
-  const cacheTimestamp = viewpointsUpdatedAt ?? mountainUpdatedAt;
   const nextViewpoint = viewpointList[draft.length];
   const allPlaced = total > 0 && draft.length >= total;
 
@@ -308,11 +298,7 @@ export default function MountainTopScreen() {
                   </>
                 ) : null}
               </View>
-              {cacheTimestamp ? (
-                <Text style={styles.cacheTimestamp}>
-                  Trail data saved {new Date(cacheTimestamp).toLocaleDateString()}
-                </Text>
-              ) : null}
+              <OfflineStatusIndicator />
             </View>
           </SafeAreaView>
 
@@ -419,19 +405,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   difficultyText: { color: '#C9A96E', fontSize: 11, fontWeight: '600' },
-  cacheTimestamp: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    marginLeft: 42,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 10,
-    overflow: 'hidden',
-    color: 'rgba(255,255,255,0.72)',
-    backgroundColor: 'rgba(14, 21, 32, 0.78)',
-    fontSize: 10,
-  },
-
   placeBar: {
     position: 'absolute',
     bottom: 24,

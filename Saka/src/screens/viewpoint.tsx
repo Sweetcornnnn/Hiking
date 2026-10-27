@@ -28,7 +28,8 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchViewpointDetail, getViewpointCacheUpdatedAt } from '../services/viewpointService';
+import { fetchViewpointDetail } from '../services/viewpointService';
+import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
 import SakagramSection from '../components/sakagram/SakagramSection';
 import LoadingScreen from './Loading';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
@@ -75,6 +76,63 @@ const IMAGE_MAP: Record<string, ImageSourcePropType> = {
   v8:  require('../../assets/Viewpoints/mt-madjaas/v8-grassy-meadow/MossyForest.jpg'),
   v9:  require('../../assets/Viewpoints/mt-madjaas/v9-mt-madjaas-summit/Summit.png'),
   v10: require('../../assets/Viewpoints/mt-madjaas/v10-summit-ridge/SummitRidge.jpg'),
+  'mb1-1': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 1.jpg'),
+  'mb1-2': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 2.jpg'),
+  'mb1-3': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 3.jpg'),
+  'mb1-4': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 4.jpg'),
+  'mb1-5': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 5.jpg'),
+  'mb2-1': require('../../assets/Viewpoints/mt-balinsayaw/v5-mabusao-river-crossing/mabusao river 1.jpg'),
+  'mb2-2': require('../../assets/Viewpoints/mt-balinsayaw/v5-mabusao-river-crossing/mabusao river 2.jpg'),
+  'mb2-3': require('../../assets/Viewpoints/mt-balinsayaw/v5-mabusao-river-crossing/mabusao river 3.jpg'),
+  'mb2-4': require('../../assets/Viewpoints/mt-balinsayaw/v5-mabusao-river-crossing/mabusao river 4.jpg'),
+  'mb3-1': require('../../assets/Viewpoints/mt-balinsayaw/v4-jungle-trail-section/trail sec 1.jpg'),
+  'mb3-2': require('../../assets/Viewpoints/mt-balinsayaw/v4-jungle-trail-section/trail sec  2.jpg'),
+  'mb3-3': require('../../assets/Viewpoints/mt-balinsayaw/v4-jungle-trail-section/trail sec 3.jpg'),
+  'mb3-4': require('../../assets/Viewpoints/mt-balinsayaw/v4-jungle-trail-section/trail sec 4.jpg'),
+  'mb4-1': require('../../assets/Viewpoints/mt-balinsayaw/v3-balinsayaw-grassland/grassland 1.jpg'),
+  'mb4-2': require('../../assets/Viewpoints/mt-balinsayaw/v3-balinsayaw-grassland/grassland 2.jpg'),
+  'mb4-3': require('../../assets/Viewpoints/mt-balinsayaw/v3-balinsayaw-grassland/grassland 3.jpg'),
+  'mb4-4': require('../../assets/Viewpoints/mt-balinsayaw/v3-balinsayaw-grassland/grassland 4.jpg'),
+  'mb4-5': require('../../assets/Viewpoints/mt-balinsayaw/v3-balinsayaw-grassland/grassland 5.jpg'),
+  mb5: require('../../assets/Viewpoints/mt-balinsayaw/v2-upper-ridge-viewpoint/upper ridge viewpoint.jpg'),
+  'mb5-1': require('../../assets/Viewpoints/mt-balinsayaw/v2-upper-ridge-viewpoint/upper ridge view 1.jpg'),
+  'mb5-2': require('../../assets/Viewpoints/mt-balinsayaw/v2-upper-ridge-viewpoint/upper ridge view 2.jpg'),
+  'mb5-3': require('../../assets/Viewpoints/mt-balinsayaw/v2-upper-ridge-viewpoint/upper ridge view 3.jpg'),
+  'mb5-4': require('../../assets/Viewpoints/mt-balinsayaw/v2-upper-ridge-viewpoint/upper ridge view 4.jpg'),
+  'mb5-5': require('../../assets/Viewpoints/mt-balinsayaw/v2-upper-ridge-viewpoint/upper ridge view 5.jpg'),
+  'mb5-6': require('../../assets/Viewpoints/mt-balinsayaw/v2-upper-ridge-viewpoint/upper ridge view 6.jpg'),
+  'mb6-1': require('../../assets/Viewpoints/mt-balinsayaw/v1-mountain-balinsayaw-summit/mt balinsayaw summit.jpg'),
+  'mb6-2': require('../../assets/Viewpoints/mt-balinsayaw/v1-mountain-balinsayaw-summit/summit 1.jpg'),
+  'mb6-3': require('../../assets/Viewpoints/mt-balinsayaw/v1-mountain-balinsayaw-summit/summit 2.jpg'),
+  'mb6-4': require('../../assets/Viewpoints/mt-balinsayaw/v1-mountain-balinsayaw-summit/summit 3.jpg'),
+  'ph1-1': require('../../assets/Viewpoints/pandan-hills/v1-barangay-bay ang-trailhead/bay ang trailhead 1.jpg'),
+  'ph1-2': require('../../assets/Viewpoints/pandan-hills/v1-barangay-bay ang-trailhead/bay ang trailhead 2.jpg'),
+  'ph1-3': require('../../assets/Viewpoints/pandan-hills/v1-barangay-bay ang-trailhead/bay ang trailhead 3.jpg'),
+  'ph1-4': require('../../assets/Viewpoints/pandan-hills/v1-barangay-bay ang-trailhead/bay ang trailhead 4.jpg'),
+  'ph1-5': require('../../assets/Viewpoints/pandan-hills/v1-barangay-bay ang-trailhead/bay ang trailhead 5.jpg'),
+  'ph1-6': require('../../assets/Viewpoints/pandan-hills/v1-barangay-bay ang-trailhead/bay ang trailhead 6.jpg'),
+  'ph2-1': require('../../assets/Viewpoints/pandan-hills/v2-pandan-hills-lower-trail/ph lower trail 1.jpg'),
+  'ph2-2': require('../../assets/Viewpoints/pandan-hills/v2-pandan-hills-lower-trail/pd lower trail 2.jpg'),
+  'ph2-3': require('../../assets/Viewpoints/pandan-hills/v2-pandan-hills-lower-trail/pd lower trail 3.jpg'),
+  'ph2-4': require('../../assets/Viewpoints/pandan-hills/v2-pandan-hills-lower-trail/pd lower trail 4.jpg'),
+  'ph2-5': require('../../assets/Viewpoints/pandan-hills/v2-pandan-hills-lower-trail/pd lower trail 5.jpg'),
+  'ph3-1': require('../../assets/Viewpoints/pandan-hills/v3-pandan-hills-viewpoint/pd viewpoints 1.jpg'),
+  'ph3-2': require('../../assets/Viewpoints/pandan-hills/v3-pandan-hills-viewpoint/pd viewpoints 2.jpg'),
+  'ph3-3': require('../../assets/Viewpoints/pandan-hills/v3-pandan-hills-viewpoint/pd viewpoints 3.jpg'),
+  'ph3-4': require('../../assets/Viewpoints/pandan-hills/v3-pandan-hills-viewpoint/pd viewpoints 4.jpg'),
+  'ph3-5': require('../../assets/Viewpoints/pandan-hills/v3-pandan-hills-viewpoint/pd viewpoints 5.jpg'),
+  'ph4-1': require('../../assets/Viewpoints/pandan-hills/v4-pandan-hills-cross/pd cross.jpg'),
+  'ph4-2': require('../../assets/Viewpoints/pandan-hills/v4-pandan-hills-cross/pd cross 1.jpg'),
+  'ph4-3': require('../../assets/Viewpoints/pandan-hills/v4-pandan-hills-cross/pd cross 2.jpg'),
+  'ph4-4': require('../../assets/Viewpoints/pandan-hills/v4-pandan-hills-cross/pd cross 3.jpg'),
+  'ph4-5': require('../../assets/Viewpoints/pandan-hills/v4-pandan-hills-cross/pd cross 4.jpg'),
+  'ph4-6': require('../../assets/Viewpoints/pandan-hills/v4-pandan-hills-cross/pd cross 5.jpg'),
+  'ph5-1': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit.jpg'),
+  'ph5-2': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 1.jpg'),
+  'ph5-3': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 2.jpg'),
+  'ph5-4': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 3.jpg'),
+  'ph5-5': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 4.jpg'),
+  'ph5-6': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 5.jpg'),
 };
 
 interface StatChipProps {
@@ -89,6 +147,28 @@ interface MediaItem {
   uri?: string;
 }
 
+const BALINSAYAW_GALLERIES: Record<string, MediaItem[]> = {
+  mb1: [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `mb1-${index}` })),
+  mb2: [1, 2, 3, 4].map((index) => ({ type: 'image', key: `mb2-${index}` })),
+  mb3: [1, 2, 3, 4].map((index) => ({ type: 'image', key: `mb3-${index}` })),
+  mb4: [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `mb4-${index}` })),
+  mb5: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `mb5-${index}` })),
+  mb6: [
+    { type: 'image', key: 'mb6-1' },
+    { type: 'image', key: 'mb6-2' },
+    { type: 'image', key: 'mb6-3' },
+    { type: 'image', key: 'mb6-4' },
+  ],
+};
+
+const PANDAN_GALLERIES: Record<string, MediaItem[]> = {
+  ph1: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ph1-${index}` })),
+  ph2: [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `ph2-${index}` })),
+  ph3: [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `ph3-${index}` })),
+  ph4: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ph4-${index}` })),
+  ph5: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ph5-${index}` })),
+};
+
 export default function ViewpointScreen() {
   const router      = useRouter();
   const params      = useLocalSearchParams();
@@ -96,7 +176,6 @@ export default function ViewpointScreen() {
   const mountainId  = params.mountainId as string | undefined;
 
   const [data, setData] = React.useState<any>(null);
-  const [cacheUpdatedAt, setCacheUpdatedAt] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadingScreenComplete, setLoadingScreenComplete] = React.useState(false);
   const [activeImageReady, setActiveImageReady] = React.useState(false);
@@ -117,10 +196,8 @@ export default function ViewpointScreen() {
       try {
         const selectedId = viewpointId || 'v1';
         const nextData = await fetchViewpointDetail(selectedId);
-        const updatedAt = await getViewpointCacheUpdatedAt(selectedId);
         if (active) {
           setData(nextData);
-          setCacheUpdatedAt(updatedAt);
         }
       } catch (error) {
         console.warn('[ViewpointScreen] Failed to load data from Supabase', error);
@@ -144,6 +221,12 @@ export default function ViewpointScreen() {
   const mediaList: MediaItem[] = React.useMemo(() => {
     if (data?.media && Array.isArray(data.media) && data.media.length > 0) {
       return data.media as MediaItem[];
+    }
+    if (BALINSAYAW_GALLERIES[data?.id]) {
+      return BALINSAYAW_GALLERIES[data.id];
+    }
+    if (PANDAN_GALLERIES[data?.id]) {
+      return PANDAN_GALLERIES[data.id];
     }
     if (data?.imageKey) {
       return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.id }));
@@ -232,16 +315,12 @@ export default function ViewpointScreen() {
                   <Text style={styles.subtitleText} numberOfLines={1}>{data.subtitle}</Text>
                   <Text style={styles.titleText} numberOfLines={2}>{data.name}</Text>
                 </View>
+                <OfflineStatusIndicator />
                 <View style={styles.elevBadge}>
                   <Ionicons name="trending-up-outline" size={10} color={PC.bgCard} />
                   <Text style={styles.elevText}>{data.elevation}</Text>
                 </View>
               </View>
-              {cacheUpdatedAt ? (
-                <Text style={styles.cacheTimestamp}>
-                  Saved {new Date(cacheUpdatedAt).toLocaleDateString()}
-                </Text>
-              ) : null}
 
               <View style={styles.statsGridInline}>
                 <StatChip icon="walk-outline" label="Distance" value={data.distanceFromStart} />
@@ -758,12 +837,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: PC.radiusBtn, backgroundColor: PC.gold,
   },
   elevText: { color: PC.bgCard, fontSize: 10, fontWeight: '700' },
-  cacheTimestamp: {
-    color: PC.textMuted,
-    fontSize: 10,
-    marginTop: 6,
-    marginBottom: 2,
-  },
   statsGridInline: {
     flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, paddingTop: 8,
     borderTopWidth: 1, borderTopColor: PC.border,

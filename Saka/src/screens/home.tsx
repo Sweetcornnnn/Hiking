@@ -21,6 +21,7 @@ import { useVideoPlayer, VideoView, type VideoThumbnail } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
+import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
 import GlobalChatNotifier from '../components/chat/GlobalChatNotifier'; // <-- NEW
 import { mountainService, Mountain } from '../services/mountainService';
 import { persistProfileAvatarLocally } from '../services/profileAvatarService';
@@ -30,7 +31,15 @@ import {
   preloadHomeVideoPosters,
   MOUNTAIN_VIDEOS,
 } from '../services/homeVideoAssets';
-import { ACCENT_GOLD, BG_SUBTLE, BORDER_SUBTLE, SPACING } from '../theme/designTokens';
+import { MOUNTAIN_TIPS } from '../data/mountainTips';
+import {
+  ACCENT_GOLD,
+  BG_CARD,
+  BG_SUBTLE,
+  BORDER_SUBTLE,
+  SPACING,
+  TEXT_DANGER,
+} from '../theme/designTokens';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
@@ -171,6 +180,11 @@ const MountainSlide = memo(function MountainSlide({
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
   const localVideo = MOUNTAIN_VIDEOS[mountain.id];
+  const normalizedMountainName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const alertCount = MOUNTAIN_TIPS.find((tips) =>
+    tips.id === mountain.id ||
+    tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedMountainName
+  )?.alerts.length ?? 0;
 
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
@@ -219,8 +233,21 @@ const MountainSlide = memo(function MountainSlide({
             style={styles.guideButton}
             onPress={() => onOpenTips(mountain)}
             activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={
+              alertCount > 0
+                ? `Open ${mountain.name} tips and guide, ${alertCount} alerts`
+                : `Open ${mountain.name} tips and guide`
+            }
           >
             <Ionicons name="information-circle-outline" size={22} color={ACCENT_GOLD} />
+            {alertCount > 0 ? (
+              <View style={styles.guideAlertBadge} pointerEvents="none">
+                <Text style={styles.guideAlertBadgeText}>
+                  {alertCount > 9 ? '9+' : alertCount}
+                </Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
         <Text style={styles.mountainDescription} numberOfLines={2}>
@@ -241,7 +268,6 @@ export default function HomeScreen() {
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
-  const [mountainsUpdatedAt, setMountainsUpdatedAt] = useState(() => mountainService.getMountainsLastUpdatedAt());
 
   // ── NOTIFICATION BANNER STATE ──
   const [bannerData, setBannerData] = useState<{ type: string; id: string; senderName: string; content: string } | null>(null);
@@ -282,9 +308,8 @@ export default function HomeScreen() {
   const isPortrait = dimensions.height > dimensions.width;
 
   useEffect(() => {
-    const unsubscribe = mountainService.subscribeToCache((updatedMountains, updatedAt) => {
+    const unsubscribe = mountainService.subscribeToCache((updatedMountains) => {
       setMountains(updatedMountains);
-      setMountainsUpdatedAt(updatedAt);
     });
     if (mountains.length === 0) {
       void mountainService.fetchMountains().catch((fetchError) => {
@@ -519,11 +544,6 @@ export default function HomeScreen() {
             <Text style={styles.profileName} numberOfLines={1}>
               {user?.name?.split(' ')[0] || 'Hiker'}
             </Text>
-            {mountainsUpdatedAt ? (
-              <Text style={styles.cacheTimestamp} numberOfLines={1}>
-                Trail data saved {new Date(mountainsUpdatedAt).toLocaleDateString()}
-              </Text>
-            ) : null}
           </View>
           <View style={styles.profileChevronWrap}>
             <Ionicons name="chevron-down" size={11} color="#C9A96E" />
@@ -531,6 +551,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerRightButtons}>
+          <OfflineStatusIndicator />
           <TutorialHelpButton onPress={tutorial.open} style={styles.helpButton} />
           {profile?.role === 'organization' && (
             <TouchableOpacity
@@ -717,6 +738,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
   },
+  guideAlertBadge: {
+    position: 'absolute',
+    top: 1,
+    right: 1,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: TEXT_DANGER,
+    borderWidth: 1.5,
+    borderColor: BG_CARD,
+  },
+  guideAlertBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+  },
   elevationPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -820,7 +860,6 @@ const styles = StyleSheet.create({
   profileTextContainer: { justifyContent: 'center', marginRight: 8 },
   profileGreeting: { color: 'rgba(255,255,255,0.38)', fontSize: 9, lineHeight: 11, fontWeight: '500', letterSpacing: 0.3 },
   profileName: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 16, letterSpacing: 0.1 },
-  cacheTimestamp: { color: 'rgba(255,255,255,0.58)', fontSize: 8, lineHeight: 10, marginTop: 1 },
   profileChevronWrap: {
     width: 20, height: 20, borderRadius: 10,
     backgroundColor: 'rgba(201,169,110,0.12)',

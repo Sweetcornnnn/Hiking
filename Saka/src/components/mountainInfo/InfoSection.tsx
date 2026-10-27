@@ -1,171 +1,166 @@
-import React, { useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useState, type ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import CategoryInfoModal from './CategoryInfoModal';
+import { SceneFrame, withAlpha } from './scenes/Primitives';
 import {
-  ACCENT_GOLD,
-  BG_GOLD_ICON,
-  BG_GOLD_TINT,
-  BORDER_GOLD_SOFT,
-  FONT,
-  SPACING,
+  BG_PANEL,
   TEXT_FAINT,
-  TEXT_MUTED,
   TEXT_PRIMARY,
+  TEXT_SECONDARY,
 } from '../../theme/designTokens';
 
 export interface InfoSectionProps {
   title: string;
   subtitle: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconColor?: string;
-  items: string[];
-  compact?: boolean;
-  showArrow?: boolean;
+  /** The topic's colour: tints the tile border, scene backdrop and bullets. */
+  accent: string;
+  /** The animated scene that shows the topic's situation. */
+  scene: ReactNode;
+  items?: string[];
+  /** Replaces the default bullet list in the detail panel. */
+  detail?: ReactNode;
+  /** Short label on the tile; defaults to the tip count. */
+  countLabel?: string;
 }
 
+/**
+ * One dashboard tile: an animated scene on top, the topic below.
+ * Tapping opens the full list, so the main screen never needs to scroll.
+ */
 export default function InfoSection({
   title,
   subtitle,
-  icon,
-  iconColor = ACCENT_GOLD,
-  items,
-  compact = false,
-  showArrow = true,
+  accent,
+  scene,
+  items = [],
+  detail,
+  countLabel,
 }: InfoSectionProps) {
-  const [modalVisible, setModalVisible] = useState(false);
+  const [open, setOpen] = useState(false);
+  const label = countLabel ?? `${items.length} ${items.length === 1 ? 'tip' : 'tips'}`;
 
   return (
     <>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => setModalVisible(true)}
-        style={[styles.card, compact && styles.compactCard]}
+      <Pressable
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [
+          styles.tile,
+          { borderColor: withAlpha(accent, 0.3) },
+          pressed && styles.pressed,
+        ]}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${title}`}
-        accessibilityHint="Opens this category's tips"
+        accessibilityLabel={`${title}, ${label}`}
+        accessibilityHint="Opens the full list"
       >
-        <View style={[styles.iconWrap, compact && styles.compactIconWrap]}>
-          <Ionicons name={icon} size={compact ? 18 : 22} color={iconColor} />
-        </View>
+        <SceneFrame accent={accent} style={styles.scene}>
+          {scene}
+        </SceneFrame>
 
-        <View style={[styles.textWrap, compact && styles.compactTextWrap]}>
-          <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={2}>
-            {title}
-          </Text>
-          <Text style={[styles.subtitle, compact && styles.compactSubtitle]} numberOfLines={3}>
-            {subtitle}
-          </Text>
+        <View style={styles.footer}>
+          <View style={styles.footerText}>
+            <Text style={styles.title} numberOfLines={2}>{title}</Text>
+            <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text>
+          </View>
+          <View style={[styles.pill, { backgroundColor: withAlpha(accent, 0.16) }]}>
+            <Text style={[styles.pillText, { color: accent }]}>{label}</Text>
+          </View>
         </View>
-
-        {showArrow ? (
-          <Ionicons name="arrow-forward" size={14} color={ACCENT_GOLD} />
-        ) : null}
-      </TouchableOpacity>
+      </Pressable>
 
       <CategoryInfoModal
-        visible={modalVisible}
+        visible={open}
         title={title}
-        icon={icon}
-        onClose={() => setModalVisible(false)}
+        subtitle={subtitle}
+        accent={accent}
+        scene={scene}
+        onClose={() => setOpen(false)}
       >
-        {items.map((item, index) => (
-          <View key={`${index}-${item}`} style={styles.itemRow}>
-            <View style={styles.bullet} />
-            <Text style={styles.itemText}>{item}</Text>
-          </View>
-        ))}
+        {detail ??
+          (items.length > 0 ? (
+            items.map((item, index) => (
+              <View key={`${index}-${item}`} style={styles.itemRow}>
+                <View style={[styles.bullet, { backgroundColor: accent }]} />
+                <Text style={styles.itemText}>{item}</Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.empty}>No tips have been added for this category yet.</Text>
+          ))}
       </CategoryInfoModal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  // Match ProfileCard's gold-tinted quick-action tiles.
-  card: {
-    flexGrow: 1,
-    alignSelf: 'stretch',
-    minHeight: 104,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: BORDER_GOLD_SOFT,
-    backgroundColor: BG_GOLD_TINT,
-  },
-  compactCard: {
-    minHeight: 116,
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: BG_GOLD_ICON,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  compactIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-  },
-  textWrap: {
+  tile: {
     flex: 1,
+    padding: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: BG_PANEL,
+    overflow: 'hidden',
   },
-  compactTextWrap: {
-    flex: 0,
-    width: '100%',
+  scene: {
+    flex: 1,
+    borderRadius: 12,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 4,
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
+  footerText: {
+    flex: 1,
   },
   title: {
     color: TEXT_PRIMARY,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
-  },
-  compactTitle: {
-    fontSize: 10.5,
-    lineHeight: 12,
+    lineHeight: 19,
   },
   subtitle: {
     color: TEXT_FAINT,
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 2,
   },
-  compactSubtitle: {
-    fontSize: 8.5,
-    lineHeight: 10,
+  pill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  pillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   itemRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginTop: SPACING.gapLg,
+    marginTop: 14,
   },
   bullet: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: ACCENT_GOLD,
-    marginTop: 7,
-    marginRight: SPACING.gapLg,
+    marginTop: 8,
+    marginRight: 14,
   },
   itemText: {
     flex: 1,
-    color: TEXT_MUTED,
-    fontSize: FONT.itemSize,
+    color: TEXT_SECONDARY,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  empty: {
+    color: TEXT_FAINT,
+    fontSize: 14,
     lineHeight: 20,
+    marginTop: 14,
+  },
+  pressed: {
+    opacity: 0.8,
   },
 });

@@ -1,26 +1,18 @@
 import React from 'react';
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { MountainTips } from '../../data/mountainTips';
-import PreparationSection from './categories/PreparationSection';
+import ContourMark from './ContourMark';
+import AlertsSection from './categories/AlertsSection';
 import SafetySection from './categories/SafetySection';
+import PreparationSection from './categories/PreparationSection';
 import TransportationSection from './categories/TransportationSection';
 import TrailTipsSection from './categories/TrailTipsSection';
 import EtiquetteSection from './categories/EtiquetteSection';
-import AlertsSection from './categories/AlertsSection';
 import {
   ACCENT_GOLD,
   BG_CARD,
   BORDER_DEFAULT,
-  FONT,
-  RADIUS_BTN,
-  SPACING,
   TEXT_MUTED,
   TEXT_PRIMARY,
 } from '../../theme/designTokens';
@@ -30,112 +22,137 @@ export interface TipsAndTricksProps {
   onBack?: () => void;
 }
 
+/**
+ * A fixed, non-scrolling dashboard. Six tiles fill the screen: three across
+ * in landscape, two across in portrait. Each tile opens its full list on tap.
+ *
+ * The screen is full-bleed: it ignores safe-area insets and pads itself instead.
+ */
 export default function TipsAndTricks({ mountainTips, onBack }: TipsAndTricksProps) {
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;
+  const columns = landscape ? 3 : 2;
+
+  const tiles = [
+    <AlertsSection key="alerts" alerts={mountainTips.alerts} />,
+    <SafetySection key="safety" items={mountainTips.safety} />,
+    <PreparationSection key="preparation" items={mountainTips.preparation} />,
+    <TransportationSection key="transportation" items={mountainTips.transportation} />,
+    <TrailTipsSection key="trailTips" items={mountainTips.trailTips} />,
+    <EtiquetteSection key="etiquette" items={mountainTips.etiquette} />,
+  ];
+
+  const rows: React.ReactElement[][] = [];
+  for (let i = 0; i < tiles.length; i += columns) {
+    rows.push(tiles.slice(i, i + columns));
+  }
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <View style={[styles.header, landscape && styles.headerLandscape]}>
+        <ContourMark size={landscape ? 150 : 170} summit fade={0.85} style={styles.headerContour} />
+
         {onBack ? (
-          <TouchableOpacity
-            style={styles.backButton}
+          <Pressable
             onPress={onBack}
+            hitSlop={8}
+            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel="Close tips and tricks"
           >
             <Ionicons name="chevron-back" size={22} color={ACCENT_GOLD} />
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
+
         <View style={styles.headerText}>
-          <Text style={styles.mountainName} numberOfLines={2}>{mountainTips.mountainName}</Text>
-          <Text style={styles.subtitle}>Information, Tips & Tricks</Text>
-          <View style={styles.goldLine} />
-        </View>
-        <AlertsSection alerts={mountainTips.alerts} />
-      </View>
-
-      <View style={styles.content}>
-        <View style={styles.row}>
-          <View style={styles.cell}>
-            <SafetySection items={mountainTips.safety} />
-          </View>
-          <View style={styles.cell}>
-            <TransportationSection items={mountainTips.transportation} />
-          </View>
-          <View style={styles.cell}>
-            <PreparationSection items={mountainTips.preparation} />
-          </View>
-        </View>
-
-        <View style={styles.row}>
-          <View style={styles.cell}>
-            <EtiquetteSection items={mountainTips.etiquette} />
-          </View>
-          <View style={styles.cell}>
-            <TrailTipsSection items={mountainTips.trailTips} />
-          </View>
+          <Text style={styles.mountainName} numberOfLines={1} accessibilityRole="header">
+            {mountainTips.mountainName}
+          </Text>
+          <Text style={styles.subtitle} numberOfLines={1}>Tap a tile for the full guide</Text>
         </View>
       </View>
-    </SafeAreaView>
+
+      <View style={styles.grid}>
+        {rows.map((row, rowIndex) => (
+          <View key={rowIndex} style={styles.row}>
+            {row.map((tile, i) => (
+              <View key={tile.key ?? i} style={styles.cell}>
+                {tile}
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  // Full-bleed on purpose: no safe-area insets, so the layout runs behind the camera
+  // cutout and rounded corners. Spacing comes from the fixed padding below.
+  screen: {
     flex: 1,
     backgroundColor: BG_CARD,
   },
   header: {
-    minHeight: 92,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.gapLg,
-    paddingVertical: SPACING.gapLg,
+    gap: 14,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 14,
+    overflow: 'hidden',
+  },
+  headerLandscape: {
+    paddingBottom: 8,
+  },
+  headerContour: {
+    position: 'absolute',
+    right: -30,
+    top: -34,
   },
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: RADIUS_BTN,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
-    marginRight: SPACING.gapLg,
   },
   headerText: {
     flex: 1,
   },
   mountainName: {
     color: TEXT_PRIMARY,
-    fontSize: FONT.nameSize,
-    fontWeight: '700',
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+    letterSpacing: -0.4,
   },
   subtitle: {
     color: TEXT_MUTED,
-    fontSize: FONT.itemSize,
-    marginTop: SPACING.gap / 2,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 1,
   },
-  goldLine: {
-    height: 3,
-    width: 40,
-    backgroundColor: ACCENT_GOLD,
-    marginTop: SPACING.gap,
-    borderRadius: 2,
-  },
-  content: {
+  grid: {
     flex: 1,
-    paddingHorizontal: SPACING.gapLg,
-    paddingTop: SPACING.gapLg,
-    paddingBottom: SPACING.cardPadB,
-    justifyContent: 'center',
-    gap: SPACING.gapLg,
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   row: {
+    flex: 1,
     flexDirection: 'row',
-    gap: SPACING.gap,
-    alignItems: 'stretch',
+    gap: 12,
   },
   cell: {
     flex: 1,
     minWidth: 0,
+  },
+  pressed: {
+    opacity: 0.7,
   },
 });

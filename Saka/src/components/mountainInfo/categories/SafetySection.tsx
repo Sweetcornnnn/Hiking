@@ -1,6 +1,7 @@
 import React from 'react';
 import InfoSection from '../InfoSection';
-import { ACCENT_GOLD } from '../../../theme/designTokens';
+import SafetyScene from '../scenes/SafetyScene';
+import { PALETTE } from '../scenes/Primitives';
 
 export interface SafetySectionProps {
   items: string[];
@@ -11,11 +12,9 @@ export default function SafetySection({ items }: SafetySectionProps) {
     <InfoSection
       title="Safety Guidelines"
       subtitle="Stay safe and be prepared."
-      icon="shield-checkmark-outline"
-      iconColor={ACCENT_GOLD}
+      accent={PALETTE.coral}
+      scene={<SafetyScene />}
       items={items}
-      compact
-      showArrow={false}
     />
   );
 }

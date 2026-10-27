@@ -1,14 +1,69 @@
-import React from 'react';
-import { Text, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { Text, StyleSheet, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import TipsAndTricks from '../../components/mountainInfo/TipsAndTricks';
+import ContourMark from '../../components/mountainInfo/ContourMark';
 import { MOUNTAIN_TIPS } from '../../data/mountainTips';
 import { ACCENT_GOLD, BG_CARD, TEXT_PRIMARY } from '../../theme/designTokens';
 
+const GOLD_SOFT = 'rgba(201,169,110,0.12)';
+const GOLD_LINE = 'rgba(201,169,110,0.35)';
+
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function normalize(value: string | undefined) {
+  return value?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? '';
+}
+
+type EmptyStateProps = {
+  mountainName?: string;
+  onBack: () => void;
+};
+
+function EmptyState({ mountainName, onBack }: EmptyStateProps) {
+  const hasName = Boolean(mountainName);
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <View style={styles.emptyRoot}>
+        <Pressable
+          onPress={onBack}
+          hitSlop={8}
+          style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={22} color={ACCENT_GOLD} />
+        </Pressable>
+
+        <View style={styles.emptyBody}>
+          <ContourMark size={180} summit style={styles.contour} />
+          <Text style={styles.title} accessibilityRole="header">
+            {hasName ? `No guide for ${mountainName} yet` : 'Choose a mountain first'}
+          </Text>
+          <Text style={styles.description}>
+            {hasName
+              ? 'We haven’t written trail tips for this mountain. Check back after the next update.'
+              : 'Open a mountain from the list to see its trail tips.'}
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={onBack}
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.primaryButtonText}>
+            {hasName ? 'Back to mountain' : 'Back to mountains'}
+          </Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
 }
 
 export default function TipsAndTricksScreen() {
@@ -17,86 +72,94 @@ export default function TipsAndTricksScreen() {
     mountainId?: string | string[];
     mountainName?: string | string[];
   }>();
+
   const mountainId = firstParam(mountainIdParam);
   const mountainName = firstParam(mountainNameParam);
-  const normalizedName = mountainName?.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const mountainTips = MOUNTAIN_TIPS.find((tips) =>
-    tips.id === mountainId ||
-    (normalizedName && tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedName)
-  );
 
+  const mountainTips = useMemo(() => {
+    const byId = mountainId ? MOUNTAIN_TIPS.find((tips) => tips.id === mountainId) : undefined;
+    if (byId) return byId;
+
+    const target = normalize(mountainName);
+    if (!target) return undefined;
+    return MOUNTAIN_TIPS.find((tips) => normalize(tips.mountainName) === target);
+  }, [mountainId, mountainName]);
+
+  const goBack = () => router.back();
+
+  // TipsAndTricks manages its own safe area, so it is not wrapped again here.
   if (mountainTips) {
     return (
-      <SafeAreaView style={styles.fullScreen}>
-        <TipsAndTricks mountainTips={mountainTips} onBack={() => router.back()} />
-      </SafeAreaView>
+      <View style={styles.screen}>
+        <TipsAndTricks mountainTips={mountainTips} onBack={goBack} />
+      </View>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.fullScreen}>
-      <View style={styles.emptyState}>
-        <TouchableOpacity
-          style={styles.closeButton}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="Close tips and tricks"
-        >
-          <View style={styles.backIconCircle}>
-            <Ionicons name="chevron-back" size={14} color={ACCENT_GOLD} />
-          </View>
-        </TouchableOpacity>
-        <View style={styles.message}>
-          <Text style={styles.title}>Guide not available</Text>
-          <Text style={styles.description}>Tips for this mountain are not available yet.</Text>
-        </View>
-      </View>
-    </SafeAreaView>
-  );
+  return <EmptyState mountainName={mountainName} onBack={goBack} />;
 }
 
 const styles = StyleSheet.create({
-  fullScreen: {
+  screen: {
     flex: 1,
     backgroundColor: BG_CARD,
   },
-  emptyState: {
+  emptyRoot: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    backgroundColor: BG_CARD,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 24,
   },
-  closeButton: {
-    width: 42,
-    height: 42,
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: GOLD_SOFT,
+    borderWidth: 1,
+    borderColor: GOLD_LINE,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'flex-end',
-    marginBottom: 12,
   },
-  backIconCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(201,169,110,0.1)',
-    justifyContent: 'center',
+  emptyBody: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
   },
-  message: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
+  contour: {
+    marginBottom: 36,
   },
   title: {
     color: TEXT_PRIMARY,
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: '700',
-    marginBottom: 8,
+    lineHeight: 30,
+    letterSpacing: -0.3,
+    textAlign: 'center',
+    marginBottom: 12,
   },
   description: {
     color: TEXT_PRIMARY,
-    fontSize: 14,
+    opacity: 0.68,
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: 'center',
+    maxWidth: 300,
+  },
+  primaryButton: {
+    minHeight: 52,
+    borderRadius: 14,
+    backgroundColor: ACCENT_GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  primaryButtonText: {
+    color: BG_CARD,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  pressed: {
+    opacity: 0.75,
   },
 });
