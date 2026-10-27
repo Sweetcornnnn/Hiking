@@ -20,6 +20,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // ─────────────────────────────────────────────────────────────────────────
 const SUBTITLE = 'Hiking Trails of Aklan';
 const MEMBERS = ['Angel Lanorias', 'Joy Dagohoy', 'Renz Ibañez', 'Carlos Conanan', 'Jered Asuncion'];
+// One quote per member, same order as MEMBERS (keep them short so the bubble stays compact)
+const QUOTES = [
+  'Every summit starts with one small step.',
+  'Good trails, good friends, good vibes.',
+  'Slow and steady still reaches the top.',
+  'The mountains are calling, so I packed snacks.',
+  'The view is worth every single blister.',
+];
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Colors
@@ -133,7 +141,8 @@ const thin = {
 
 const POSE_TOP: Record<Pose, number> = { cheer: 7.2, flag: 3.2, hike: 6.2, point: 7.2, wave: 7.2 };
 
-function Hiker({ pose, height, flip }: { pose: Pose; height: number; flip?: boolean }) {
+function Hiker({ pose, height, flip, frame = 0 }: { pose: Pose; height: number; flip?: boolean; frame?: number }) {
+  const f = frame === 1;
   const width = (height * VB_W) / VB_H;
 
   const pack = (
@@ -162,8 +171,8 @@ function Hiker({ pose, height, flip }: { pose: Pose; height: number; flip?: bool
     case 'cheer':
       body = (
         <>
-          <Line {...limb} x1={18} y1={24.5} x2={9.4} y2={17.8} />
-          <Line {...limb} x1={18} y1={24.5} x2={26.6} y2={17.8} />
+          <Line {...limb} x1={18} y1={24.5} x2={f ? 7.6 : 9.4} y2={f ? 12.2 : 17.8} />
+          <Line {...limb} x1={18} y1={24.5} x2={f ? 28.4 : 26.6} y2={f ? 12.2 : 17.8} />
           {torso}
           <Line {...limb} x1={18} y1={30.5} x2={12.8} y2={41.5} />
           <Path {...limb} d="M18 30.5 L24.8 35.2 L26.6 40.6" />
@@ -175,7 +184,7 @@ function Hiker({ pose, height, flip }: { pose: Pose; height: number; flip?: bool
       body = (
         <>
           <Line {...thin} x1={26.2} y1={3.2} x2={26.2} y2={41.8} />
-          <Path d="M26.2 3.2 L34.6 6.4 L26.2 9.6 Z" fill={GOLD} />
+          <Path d={f ? "M26.2 3.2 L33.6 4.4 L26.2 9.6 Z" : "M26.2 3.2 L34.6 7.4 L26.2 9.6 Z"} fill={GOLD} />
           <Path {...limb} d="M18 24.5 L12.8 27.6 L15.8 30.6" />
           {torso}
           <Line {...limb} x1={18} y1={30.5} x2={13.6} y2={41.6} />
@@ -192,8 +201,8 @@ function Hiker({ pose, height, flip }: { pose: Pose; height: number; flip?: bool
             {pack}
             <Line {...thin} x1={24.4} y1={28.6} x2={29.4} y2={40.6} />
             {torso}
-            <Line {...limb} x1={18} y1={30.5} x2={11.4} y2={41.5} />
-            <Path {...limb} d="M18 30.5 L23.6 35.6 L25.2 41.4" />
+            <Line {...limb} x1={18} y1={30.5} x2={f ? 16 : 11.4} y2={41.5} />
+            <Path {...limb} d={f ? "M18 30.5 L21.5 36 L22 41.4" : "M18 30.5 L23.6 35.6 L25.2 41.4"} />
             <Line {...limb} x1={18} y1={24.5} x2={24.4} y2={28.6} />
             {head}
           </G>
@@ -208,7 +217,7 @@ function Hiker({ pose, height, flip }: { pose: Pose; height: number; flip?: bool
           {torso}
           <Line {...limb} x1={18} y1={30.5} x2={13.2} y2={41.5} />
           <Path {...limb} d="M18 30.5 L23.8 34.4 L26.4 35.9" />
-          <Line {...limb} x1={18} y1={24.5} x2={29.2} y2={18.2} />
+          <Line {...limb} x1={18} y1={24.5} x2={f ? 27.6 : 29.2} y2={f ? 12.6 : 18.2} />
           {head}
         </>
       );
@@ -221,7 +230,7 @@ function Hiker({ pose, height, flip }: { pose: Pose; height: number; flip?: bool
           <Line {...limb} x1={18} y1={30.5} x2={15.2} y2={41.5} />
           <Line {...limb} x1={18} y1={30.5} x2={21.2} y2={41.5} />
           <Line {...limb} x1={18} y1={24.5} x2={22.2} y2={31.2} />
-          <Line {...limb} x1={18} y1={24.5} x2={27.4} y2={16.8} />
+          <Line {...limb} x1={18} y1={24.5} x2={f ? 21 : 27.4} y2={f ? 13.2 : 16.8} />
           {head}
         </>
       );
@@ -247,7 +256,7 @@ function Hiker({ pose, height, flip }: { pose: Pose; height: number; flip?: bool
 // ─────────────────────────────────────────────────────────────────────────
 const LOGO_TRIM = 70 / 290;
 const BRAND_EXTRA = 116;
-const BUBBLE_W = 132;
+const BUBBLE_W = 164;
 
 const STARS = Array.from({ length: 40 }, (_, i) => {
   const r1 = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
@@ -255,6 +264,229 @@ const STARS = Array.from({ length: 40 }, (_, i) => {
   const r3 = Math.abs(Math.sin(i * 39.346 + 4.1) * 98765.4321) % 1;
   return { x: r1, y: r2, r: 0.5 + r3 * 0.9, twinkle: i % 3 === 0 };
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Tappable hiker + cute quote bubble (pop in / pop out)
+// ─────────────────────────────────────────────────────────────────────────
+const SPARKS = [
+  { side: -1, rise: 20, delay: 0, size: 9 },
+  { side: 1, rise: 26, delay: 70, size: 11 },
+  { side: -1, rise: 32, delay: 140, size: 7 },
+];
+
+type HikerSpotProps = {
+  pose: Pose;
+  flip?: boolean;
+  name: string;
+  quote: string;
+  px: number;
+  py: number;
+  figH: number;
+  figW: number;
+  headRise: number;
+  screenW: number;
+  isOpen: boolean;
+  onPress: () => void;
+  label: string;
+};
+
+function HikerSpot({
+  pose, flip, name, quote, px, py, figH, figW, headRise, screenW, isOpen, onPress, label,
+}: HikerSpotProps) {
+  const [shown, setShown] = useState(false);
+  const [frame, setFrame] = useState(0);
+  const [bubbleH, setBubbleH] = useState(44);
+  const pop = useRef(new Animated.Value(0)).current;
+  const hop = useRef(new Animated.Value(0)).current;
+  const tilt = useRef(new Animated.Value(0)).current;
+  const sx = useRef(new Animated.Value(0)).current;
+  const spark = useRef(new Animated.Value(0)).current;
+  const firstRun = useRef(true);
+  const acting = useRef(false);
+  const bodyAnim = useRef<Animated.CompositeAnimation | null>(null);
+  const frameTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dir = flip ? -1 : 1;
+
+  const t = (v: Animated.Value, to: number, d: number, easing = Easing.inOut(Easing.quad)) =>
+    Animated.timing(v, { toValue: to, duration: d, easing, useNativeDriver: true });
+  const jump = (h = 1) =>
+    Animated.sequence([t(hop, h, 150, Easing.out(Easing.quad)), t(hop, 0, 150, Easing.in(Easing.quad))]);
+
+  // each pose has its own little move (~600ms)
+  const makeAction = (): Animated.CompositeAnimation => {
+    switch (pose) {
+      case 'cheer': // two happy jumps, arms pumping
+        return Animated.sequence([jump(1), jump(1)]);
+      case 'wave': // sway side to side while waving
+        return Animated.parallel([
+          Animated.sequence([t(tilt, -1, 120), t(tilt, 1, 200), t(tilt, -1, 200), t(tilt, 0, 120)]),
+          jump(0.5),
+        ]);
+      case 'flag': // flag flutter + proud sway
+        return Animated.sequence([t(tilt, -0.6, 140), t(tilt, 0.6, 280), t(tilt, 0, 140), jump(0.7)]);
+      case 'point': // lean in, bounce, point up
+        return Animated.sequence([t(tilt, dir, 180), jump(0.6), jump(0.6), t(tilt, 0, 140)]);
+      case 'hike': // quick marching steps forward and back
+        return Animated.parallel([
+          Animated.sequence([t(sx, 1, 300, Easing.linear), t(sx, 0, 300, Easing.linear)]),
+          Animated.sequence(
+            Array.from({ length: 4 }, () =>
+              Animated.sequence([t(hop, 0.35, 75), t(hop, 0, 75)])
+            )
+          ),
+        ]);
+      default:
+        return jump(1);
+    }
+  };
+
+  const stopAction = () => {
+    acting.current = false;
+    bodyAnim.current?.stop();
+    bodyAnim.current = null;
+    if (frameTimer.current) clearInterval(frameTimer.current);
+    frameTimer.current = null;
+    setFrame(0);
+    hop.setValue(0);
+    tilt.setValue(0);
+    sx.setValue(0);
+  };
+
+  const showBubble = () => {
+    setShown(true);
+    Animated.spring(pop, { toValue: 1, friction: 5, tension: 170, useNativeDriver: true }).start();
+    spark.setValue(0);
+    Animated.timing(spark, { toValue: 1, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      // 1) do the action  2) then pop the message
+      stopAction();
+      acting.current = true;
+
+      let n = 0;
+      frameTimer.current = setInterval(() => {
+        n += 1;
+        setFrame(n % 2);
+        if (n >= 6 && frameTimer.current) {
+          clearInterval(frameTimer.current);
+          frameTimer.current = null;
+        }
+      }, 100);
+
+      const anim = makeAction();
+      bodyAnim.current = anim;
+      anim.start(({ finished }) => {
+        if (!finished) return;
+        stopAction();
+        showBubble();
+      });
+    } else if (!firstRun.current) {
+      if (acting.current) {
+        stopAction(); // closed mid-action: cancel, no bubble
+      } else {
+        // bubble shrinks back into the hiker
+        Animated.timing(pop, { toValue: 0, duration: 200, easing: Easing.in(Easing.back(1.8)), useNativeDriver: true }).start(
+          ({ finished }) => { if (finished) setShown(false); }
+        );
+      }
+    }
+    firstRun.current = false;
+  }, [isOpen]);
+
+  useEffect(() => () => stopAction(), []);
+
+  // keep the bubble inside the screen, with the tail still pointing at the hiker
+  const EDGE = 8;
+  const bx = Math.min(Math.max(-BUBBLE_W / 2, EDGE - px), screenW - EDGE - BUBBLE_W - px);
+  const tailCenter = Math.min(Math.max(-bx, 14), BUBBLE_W - 14);
+  const tailDx = tailCenter - BUBBLE_W / 2;
+
+  // scale pops from the tail (bottom) instead of from the middle
+  const scale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] });
+  const bubbleStyle = {
+    opacity: pop.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 1], extrapolate: 'clamp' as const }),
+    transform: [
+      { translateX: pop.interpolate({ inputRange: [0, 1], outputRange: [0.8 * tailDx, 0] }) },
+      { translateY: pop.interpolate({ inputRange: [0, 1], outputRange: [0.4 * bubbleH, 0] }) },
+      { rotate: pop.interpolate({ inputRange: [0, 1], outputRange: ['-7deg', '0deg'] }) },
+      { scale },
+    ],
+  };
+
+  return (
+    <View style={[styles.anchor, { left: px, top: py, zIndex: isOpen || shown ? 999 : Math.round(py) }]}>
+      <Pressable
+        onPress={onPress}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={{
+          position: 'absolute',
+          left: -figW / 2 - 6,
+          top: -(figH * FEET_Y) / VB_H - 6,
+          width: figW + 12,
+          height: figH + 12,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Animated.View
+          style={{
+            transform: [
+              { translateX: sx.interpolate({ inputRange: [0, 1], outputRange: [0, 6 * dir] }) },
+              { translateY: hop.interpolate({ inputRange: [0, 1], outputRange: [0, -11] }) },
+              { rotate: tilt.interpolate({ inputRange: [-1, 1], outputRange: ['-7deg', '7deg'] }) },
+            ],
+          }}
+        >
+          <Hiker pose={pose} height={figH} flip={flip} frame={frame} />
+        </Animated.View>
+      </Pressable>
+
+      {shown &&
+        SPARKS.map((sp, k) => (
+          <Animated.Text
+            key={k}
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: sp.side * (figW / 2 + 5) - sp.size / 2,
+              top: -headRise * 0.75,
+              fontSize: sp.size,
+              color: GOLD,
+              opacity: spark.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 1, 0], extrapolate: 'clamp' }),
+              transform: [
+                { translateY: spark.interpolate({ inputRange: [0, 1], outputRange: [0, -sp.rise] }) },
+                { scale: spark.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0.3, 1.2, 0.6], extrapolate: 'clamp' }) },
+              ],
+            }}
+          >
+            ✦
+          </Animated.Text>
+        ))}
+
+      {shown && (
+        <Animated.View
+          pointerEvents="none"
+          onLayout={(e) => setBubbleH(e.nativeEvent.layout.height)}
+          style={[styles.bubbleWrap, { left: bx, bottom: headRise + 8 }, bubbleStyle]}
+        >
+          <View style={styles.bubble}>
+            <Text style={styles.bubbleQuote}>
+              {'\u201C'}{quote}{'\u201D'}
+            </Text>
+            <Text style={styles.bubbleAuthor} numberOfLines={1}>
+              {'\u2014'} {name}
+            </Text>
+          </View>
+          <View style={[styles.bubbleTail, { marginLeft: tailCenter - 5 }]} />
+        </Animated.View>
+      )}
+    </View>
+  );
+}
 
 export default function IntroScreen() {
   const router = useRouter();
@@ -349,47 +581,26 @@ export default function IntroScreen() {
   const hikers = SPOTS.map((spot, i) => {
     const name = MEMBERS[i];
     if (!name) return null;
-    const px = spot.x * scale;
-    const py = ridgeY(RIDGES[spot.layer], spot.x) * scale;
     const figH = FIG_BASE * spot.s * figureScale;
-    const figW = (figH * VB_W) / VB_H;
-    const headRise = (figH * (FEET_Y - POSE_TOP[spot.pose])) / VB_H;
     const isOpen = selected === i;
 
     return (
-      <View
+      <HikerSpot
         key={name + i}
-        style={[styles.anchor, { left: px, top: py, zIndex: isOpen ? 999 : Math.round(py) }]}
-      >
-        <Pressable
-          onPress={() => setSelected(isOpen ? null : i)}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel={isOpen ? `Hide name` : `Show name of member ${i + 1}`}
-          style={{
-            position: 'absolute',
-            left: -figW / 2 - 6,
-            top: -(figH * FEET_Y) / VB_H - 6,
-            width: figW + 12,
-            height: figH + 12,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Hiker pose={spot.pose} height={figH} flip={spot.flip} />
-        </Pressable>
-
-        {isOpen && (
-          <View pointerEvents="none" style={[styles.bubbleWrap, { left: -BUBBLE_W / 2, bottom: headRise + 8 }]}>
-            <View style={styles.bubble}>
-              <Text style={styles.bubbleText} numberOfLines={1}>
-                {name}
-              </Text>
-            </View>
-            <View style={styles.bubbleTail} />
-          </View>
-        )}
-      </View>
+        pose={spot.pose}
+        flip={spot.flip}
+        name={name}
+        quote={QUOTES[i] ?? ''}
+        px={spot.x * scale}
+        py={ridgeY(RIDGES[spot.layer], spot.x) * scale}
+        figH={figH}
+        figW={(figH * VB_W) / VB_H}
+        headRise={(figH * (FEET_Y - POSE_TOP[spot.pose])) / VB_H}
+        screenW={screenW}
+        isOpen={isOpen}
+        onPress={() => setSelected(isOpen ? null : i)}
+        label={isOpen ? 'Hide name' : `Show name of member ${i + 1}`}
+      />
     );
   });
 
@@ -596,28 +807,41 @@ const styles = StyleSheet.create({
   bubbleWrap: {
     position: 'absolute',
     width: BUBBLE_W,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   bubble: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    backgroundColor: 'rgba(8, 13, 20, 0.94)',
+    width: BUBBLE_W,
+    paddingHorizontal: 9,
+    paddingTop: 6,
+    paddingBottom: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(8, 13, 20, 0.96)',
     borderWidth: 1,
     borderColor: 'rgba(201, 169, 110, 0.6)',
+    alignItems: 'center',
   },
-  bubbleText: {
+  bubbleQuote: {
     color: '#F2E8D5',
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.4,
+    fontFamily: SERIF,
+    fontStyle: 'italic',
+    fontSize: 10.5,
+    lineHeight: 13,
+    textAlign: 'center',
+  },
+  bubbleAuthor: {
+    marginTop: 3,
+    color: GOLD,
+    fontSize: 8.5,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   bubbleTail: {
     width: 0,
     height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderTopWidth: 5,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 6,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: 'rgba(201, 169, 110, 0.6)',
