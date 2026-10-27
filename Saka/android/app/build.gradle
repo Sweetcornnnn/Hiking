@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.Saka'
+    namespace 'com.Sweetcorn.saka'
     defaultConfig {
-        applicationId 'com.anonymous.Saka'
+        applicationId 'com.Sweetcorn.saka'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
