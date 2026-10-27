@@ -66,16 +66,48 @@ const FALLBACK_IMAGE: ImageSourcePropType = require('../../assets/images/SakaLog
 
 // ── Mt. Madja-as viewpoint image map ───────────────────────────────────────
 const IMAGE_MAP: Record<string, ImageSourcePropType> = {
-  v1:  require('../../assets/Viewpoints/mt-madjaas/v1-barangay-flores-trailhead/TrailHead.jpg'),
-  v2:  require('../../assets/Viewpoints/mt-madjaas/v2-first-water-source/Waterfalss.jpg'),
-  v3:  require('../../assets/Viewpoints/mt-madjaas/v3-camp-1-mamay-camp/Camp1.png'),
-  v4:  require('../../assets/Viewpoints/mt-madjaas/v4-ridge-trail-section/CrownShines.png'),
-  v5:  require('../../assets/Viewpoints/mt-madjaas/v5-lake-viewpoint/Waterfalss.jpg'),
-  v6:  require('../../assets/Viewpoints/mt-madjaas/v6-camp-2-upper-camp/Camp1.jpg'),
-  v7:  require('../../assets/Viewpoints/mt-madjaas/v7-hidden-spring/Waterfalss.jpg'),
-  v8:  require('../../assets/Viewpoints/mt-madjaas/v8-grassy-meadow/MossyForest.jpg'),
-  v9:  require('../../assets/Viewpoints/mt-madjaas/v9-mt-madjaas-summit/Summit.png'),
-  v10: require('../../assets/Viewpoints/mt-madjaas/v10-summit-ridge/SummitRidge.jpg'),
+  'v1-1': require('../../assets/Viewpoints/mt-madjaas/v1-barangay-flores-trailhead/Screenshot 2026-10-27 104622.png'),
+  'v1-2': require('../../assets/Viewpoints/mt-madjaas/v1-barangay-flores-trailhead/Screenshot 2026-10-27 104721.png'),
+  'v1-3': require('../../assets/Viewpoints/mt-madjaas/v1-barangay-flores-trailhead/Screenshot 2026-10-27 104747.png'),
+  'v1-4': require('../../assets/Viewpoints/mt-madjaas/v1-barangay-flores-trailhead/Screenshot 2026-10-27 104933.png'),
+  'v2-1': require('../../assets/Viewpoints/mt-madjaas/v2-first-water-source (Manugbuyo)/water source 1.jpg'),
+  'v2-2': require('../../assets/Viewpoints/mt-madjaas/v2-first-water-source (Manugbuyo)/water source 2.jpg'),
+  'v2-3': require('../../assets/Viewpoints/mt-madjaas/v2-first-water-source (Manugbuyo)/water source 3.jpg'),
+  'v2-4': require('../../assets/Viewpoints/mt-madjaas/v2-first-water-source (Manugbuyo)/water source.webp'),
+  'v3-1': require('../../assets/Viewpoints/mt-madjaas/v3-bantang-camp1/bantang camp 1.jpg'),
+  'v3-2': require('../../assets/Viewpoints/mt-madjaas/v3-bantang-camp1/Screenshot 2026-10-27 105842.png'),
+  'v3-3': require('../../assets/Viewpoints/mt-madjaas/v3-bantang-camp1/Screenshot 2026-10-27 110154.png'),
+  'v4-1': require('../../assets/Viewpoints/mt-madjaas/v4-madjaas-viewdeck 1/CrownShines.png'),
+  'v4-2': require('../../assets/Viewpoints/mt-madjaas/v4-madjaas-viewdeck 1/madjaas vd 1.jpg'),
+  'v4-3': require('../../assets/Viewpoints/mt-madjaas/v4-madjaas-viewdeck 1/madjaas vd 2.jpg'),
+  'v4-4': require('../../assets/Viewpoints/mt-madjaas/v4-madjaas-viewdeck 1/madjaas vd 3.jpg'),
+  'v4-5': require('../../assets/Viewpoints/mt-madjaas/v4-madjaas-viewdeck 1/madjaas vd 4.jpg'),
+  'v4-6': require('../../assets/Viewpoints/mt-madjaas/v4-madjaas-viewdeck 1/madjaas vd 5.jpg'),
+  'v4-7': require('../../assets/Viewpoints/mt-madjaas/v4-madjaas-viewdeck 1/madjaas vd 6.jpg'),
+  'v5-1': require('../../assets/Viewpoints/mt-madjaas/v5-libog-falls/libog falls.jpg'),
+  'v5-2': require('../../assets/Viewpoints/mt-madjaas/v5-libog-falls/libog falls 1.jpg'),
+  'v5-3': require('../../assets/Viewpoints/mt-madjaas/v5-libog-falls/libog falls 3.jpg'),
+  'v5-4': require('../../assets/Viewpoints/mt-madjaas/v5-libog-falls/Screenshot 2026-10-27 111404.png'),
+  'v5-5': require('../../assets/Viewpoints/mt-madjaas/v5-libog-falls/Screenshot 2026-10-27 111440.png'),
+  'v5-6': require('../../assets/Viewpoints/mt-madjaas/v5-libog-falls/Screenshot 2026-10-27 111504.png'),
+  'v6-1': require('../../assets/Viewpoints/mt-madjaas/v6-camp 2 (upper Camp)/camp 2.jpg'),
+  'v6-2': require('../../assets/Viewpoints/mt-madjaas/v6-camp 2 (upper Camp)/camp 2-1.jpg'),
+  'v6-3': require('../../assets/Viewpoints/mt-madjaas/v6-camp 2 (upper Camp)/camp 2-2.jpg'),
+  'v7-1': require('../../assets/Viewpoints/mt-madjaas/v7-ridge-trail-section (Madjaas Viewdeck 2)/Screenshot 2026-10-27 120306.png'),
+  'v7-2': require('../../assets/Viewpoints/mt-madjaas/v7-ridge-trail-section (Madjaas Viewdeck 2)/Screenshot 2026-10-27 120333.png'),
+  'v7-3': require('../../assets/Viewpoints/mt-madjaas/v7-ridge-trail-section (Madjaas Viewdeck 2)/Screenshot 2026-10-27 120353.png'),
+  'v7-4': require('../../assets/Viewpoints/mt-madjaas/v7-ridge-trail-section (Madjaas Viewdeck 2)/Screenshot 2026-10-27 120409.png'),
+  'v7-5': require('../../assets/Viewpoints/mt-madjaas/v7-ridge-trail-section (Madjaas Viewdeck 2)/Screenshot 2026-10-27 120428.png'),
+  'v8-1': require('../../assets/Viewpoints/mt-madjaas/v8-summit-ridge (Knife Edge)/summit rdige 1.jpg'),
+  'v8-2': require('../../assets/Viewpoints/mt-madjaas/v8-summit-ridge (Knife Edge)/summit ridge.jpg'),
+  'v8-3': require('../../assets/Viewpoints/mt-madjaas/v8-summit-ridge (Knife Edge)/Summit.png'),
+  'v9-1': require('../../assets/Viewpoints/mt-madjaas/v9-mount-madjaas-summit/madjaas summit.jpg'),
+  'v9-2': require('../../assets/Viewpoints/mt-madjaas/v9-mount-madjaas-summit/madjaas summit 1.jpg'),
+  'v9-3': require('../../assets/Viewpoints/mt-madjaas/v9-mount-madjaas-summit/madjaas summit 2.jpg'),
+  'v9-4': require('../../assets/Viewpoints/mt-madjaas/v9-mount-madjaas-summit/madjaas summit 3.jpg'),
+  'v9-5': require('../../assets/Viewpoints/mt-madjaas/v9-mount-madjaas-summit/madjaas summit 4.jpg'),
+  'v9-6': require('../../assets/Viewpoints/mt-madjaas/v9-mount-madjaas-summit/madjaas summit 5.jpg'),
+  'v9-7': require('../../assets/Viewpoints/mt-madjaas/v9-mount-madjaas-summit/SummitRidge.jpg'),
   'mb1-1': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 1.jpg'),
   'mb1-2': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 2.jpg'),
   'mb1-3': require('../../assets/Viewpoints/mt-balinsayaw/v6-barangay-mabusao-trailhead/mabusao trailhead 3.jpg'),
@@ -146,6 +178,25 @@ interface MediaItem {
   key?: string;
   uri?: string;
 }
+
+const MADJAAS_GALLERIES: Record<string, MediaItem[]> = {
+  v1: [1, 2, 3, 4].map((index) => ({ type: 'image', key: `v1-${index}` })),
+  v2: [1, 2, 3, 4].map((index) => ({ type: 'image', key: `v2-${index}` })),
+  'madjaas-flores-first-water-source-manugbuyo': [1, 2, 3, 4].map((index) => ({ type: 'image', key: `v2-${index}` })),
+  v3: [1, 2, 3].map((index) => ({ type: 'image', key: `v3-${index}` })),
+  'madjaas-flores-03': [1, 2, 3].map((index) => ({ type: 'image', key: `v3-${index}` })),
+  v4: [1, 2, 3, 4, 5, 6, 7].map((index) => ({ type: 'image', key: `v4-${index}` })),
+  'madjaas-flores-04': [1, 2, 3, 4, 5, 6, 7].map((index) => ({ type: 'image', key: `v4-${index}` })),
+  v5: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `v5-${index}` })),
+  'madjaas-flores-05': [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `v5-${index}` })),
+  v6: [1, 2, 3].map((index) => ({ type: 'image', key: `v6-${index}` })),
+  'madjaas-flores-06': [1, 2, 3].map((index) => ({ type: 'image', key: `v6-${index}` })),
+  v7: [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `v7-${index}` })),
+  'madjaas-flores-ridge-trail-section-madja-as-viewdeck-2': [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `v7-${index}` })),
+  v8: [1, 2, 3].map((index) => ({ type: 'image', key: `v8-${index}` })),
+  'madjaas-flores-summit-ridge-knife-edge-madja-as-viewdeck-4': [1, 2, 3].map((index) => ({ type: 'image', key: `v8-${index}` })),
+  v9: [1, 2, 3, 4, 5, 6, 7].map((index) => ({ type: 'image', key: `v9-${index}` })),
+};
 
 const BALINSAYAW_GALLERIES: Record<string, MediaItem[]> = {
   mb1: [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `mb1-${index}` })),
@@ -219,6 +270,10 @@ export default function ViewpointScreen() {
   }, [viewpointId]);
 
   const mediaList: MediaItem[] = React.useMemo(() => {
+    const madjaasGallery = MADJAAS_GALLERIES[data?.id ?? viewpointId ?? ''];
+    if (madjaasGallery) {
+      return madjaasGallery;
+    }
     if (data?.media && Array.isArray(data.media) && data.media.length > 0) {
       return data.media as MediaItem[];
     }
@@ -232,7 +287,7 @@ export default function ViewpointScreen() {
       return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.id }));
     }
     return [];
-  }, [data]);
+  }, [data, viewpointId]);
   const firstMedia = mediaList[0];
   const waitsForFirstImage = Boolean(
     firstMedia?.type === 'image' &&

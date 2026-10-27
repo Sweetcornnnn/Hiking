@@ -76,7 +76,6 @@ export default function MountainTopScreen() {
   }, [cachedMountain, mountainId]);
 
   const mapInfo = getMountainMap(mountainId, mountain?.name);
-
   // ─── Load viewpoints from Supabase ─────────────────────────────────────
   useEffect(() => {
     if (!mountainId) {

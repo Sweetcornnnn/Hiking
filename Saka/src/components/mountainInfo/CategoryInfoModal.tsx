@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 24,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'transparent',
   },
   panel: {
     width: '100%',
