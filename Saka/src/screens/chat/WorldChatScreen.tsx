@@ -403,8 +403,8 @@ export default function WorldChatScreen({
                 isMe={isMe}
                 deliveryStatus={item.sync_status}
                 showReadReceipt={false}
-                showAvatar={true}
-                showSenderHeader={false}
+                showAvatar={false}
+                showSenderHeader={true}
                 senderName={senderName}
                 senderColorSeed={item.user_id}
                 senderAvatarUrl={senderAvatar}
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     flexGrow: 1,
   },
-  messageItem: { marginVertical: 8 },
+  messageItem: { marginVertical: 3 },
 
   inputWrapper: {
     paddingHorizontal: 12,
