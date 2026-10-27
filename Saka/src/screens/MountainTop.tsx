@@ -255,9 +255,17 @@ export default function MountainTopScreen() {
               onImagePress={PLACEMENT_MODE ? handleImagePress : undefined}
               onPointPress={p => {
                 if (PLACEMENT_MODE || !mountainId) return;
+                const viewpointNumber = viewpointList.findIndex(
+                  (viewpoint) => viewpoint.id === p.id
+                ) + 1;
                 router.push({
                   pathname: '/Viewpoint',
-                  params: { viewpointId: p.id, mountainId },
+                  params: {
+                    viewpointId: p.id,
+                    mountainId,
+                    mountainName: mountain.name,
+                    viewpointNumber: String(viewpointNumber),
+                  },
                 });
               }}
             />
