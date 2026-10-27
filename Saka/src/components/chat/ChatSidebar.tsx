@@ -102,7 +102,7 @@ export default function ChatSidebar({
 
 const styles = StyleSheet.create({
   container: {
-    width: 156,
+    width: 150,
     height: '100%',
     backgroundColor: CHAT_PANEL,
     borderRightWidth: 1,

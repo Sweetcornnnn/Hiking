@@ -58,7 +58,8 @@ export type MessageBubbleProps = {
   avatarLabel?: string;
   avatarColorSeed?: string;
   showAvatar?: boolean;
-  disableAvatarLift?: boolean; // <-- NEW
+  avatarOffsetY?: number;
+  disableAvatarLift?: boolean; // kept for API compatibility, no longer used
 
   senderName?: string;
   senderColorSeed?: string;
@@ -88,18 +89,21 @@ function MessageBubbleBase({
   avatarLabel = '?',
   avatarColorSeed = '',
   showAvatar = true,
-  disableAvatarLift = false, // <-- NEW
+  avatarOffsetY = 0,
+  // disableAvatarLift is accepted but unused — avatar sits at bubble bottom
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  disableAvatarLift: _disableAvatarLift = false,
   senderName = '',
   senderColorSeed = '',
   showSenderHeader = false,
-  senderAvatarUrl,
+  senderAvatarUrl: _senderAvatarUrl,
   onPressSender,
   onPressBubble,
   onLongPressBubble,
 }: MessageBubbleProps) {
   const { width } = useWindowDimensions();
 
-  const reserved = isMe ? 24 : showAvatar ? 58 : 24;
+  const reserved = isMe ? 24 : showAvatar ? 40 : 24;
   const rowAvailableWidth = width - reserved;
   const bubbleMaxWidth = Math.max(
     0,
@@ -113,17 +117,18 @@ function MessageBubbleBase({
 
   return (
     <View style={[styles.row, isMe ? styles.rowMe : styles.rowOther]}>
+      {/* Avatar — left column, bottom aligned with bubble */}
       {!isMe && showAvatar && (
         <TouchableOpacity
           disabled={!onPressSender}
           onPress={onPressSender}
           activeOpacity={0.7}
+          style={[styles.avatarColumn, { transform: [{ translateY: avatarOffsetY }] }]}
         >
           <View
             style={[
               styles.avatar,
               { backgroundColor: getAvatarColor(avatarColorSeed) },
-              !disableAvatarLift && styles.avatarLift,
             ]}
           >
             {avatarUri ? (
@@ -135,6 +140,7 @@ function MessageBubbleBase({
         </TouchableOpacity>
       )}
 
+      {/* Message stack: name on top, bubble below */}
       <View
         style={[
           styles.stack,
@@ -142,6 +148,7 @@ function MessageBubbleBase({
           { maxWidth: bubbleMaxWidth },
         ]}
       >
+        {/* Sender name — top of bubble, text only (no mini avatar) */}
         {showSenderHeader && !isMe && senderName ? (
           <TouchableOpacity
             style={styles.senderRow}
@@ -149,24 +156,6 @@ function MessageBubbleBase({
             disabled={!onPressSender}
             activeOpacity={0.7}
           >
-            <View
-              style={[
-                styles.smallAvatar,
-                {
-                  backgroundColor: getAvatarColor(
-                    senderColorSeed || senderName
-                  ),
-                },
-              ]}
-            >
-              {senderAvatarUrl ? (
-                <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImage} />
-              ) : (
-                <Text style={styles.smallAvatarText}>
-                  {getInitials(senderName)}
-                </Text>
-              )}
-            </View>
             <Text style={styles.senderName} numberOfLines={1}>
               {senderName}
             </Text>
@@ -293,53 +282,47 @@ export const MessageBubble = memo(MessageBubbleBase);
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
+    alignItems: 'flex-end', // avatar sits at the bottom
+    gap: 8,
     alignSelf: 'stretch',
   },
   rowMe: { justifyContent: 'flex-end' },
   rowOther: { justifyContent: 'flex-start' },
 
+  // Avatar column — bottom aligned with the bubble, not the footer
+  avatarColumn: {
+    alignSelf: 'flex-end',
+    marginBottom: 16, // offset so avatar bottom aligns with bubble bottom (footer is ~20px)
+  },
+
   avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 25,
+    height: 25,
+    borderRadius: 15,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarLift: {
-    transform: [{ translateY: -20 }],
-  },
   avatarImage: { width: '100%', height: '100%' },
-  avatarText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  avatarText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
   stack: { flexShrink: 1, minWidth: 0 },
   stackMe: { alignItems: 'flex-end' },
   stackOther: { alignItems: 'flex-start', flexGrow: 1 },
 
+  // Sender name — top of bubble, no mini avatar
   senderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    marginBottom: 4,
     marginLeft: 2,
   },
-  smallAvatar: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  smallAvatarText: { color: '#fff', fontSize: 8.5, fontWeight: '700' },
   senderName: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
-    color: TEXT_MUTED,
-    letterSpacing: 0.3,
-    maxWidth: 180,
+    color: TEXT_PRIMARY,
+    letterSpacing: 0.1,
+    maxWidth: 220,
   },
 
   replyCaptionRow: {
