@@ -404,13 +404,14 @@ export default function WorldChatScreen({
                 deliveryStatus={item.sync_status}
                 showReadReceipt={false}
                 showAvatar={true}
-                showSenderHeader={false}
+                avatarOffsetY={4}
+                showSenderHeader={true}
                 senderName={senderName}
                 senderColorSeed={item.user_id}
                 senderAvatarUrl={senderAvatar}
                 avatarUri={senderAvatar}
                 avatarLabel={senderName}
-                disableAvatarLift={true}
+                disableAvatarLift={false}
                 onPressSender={
                   canOpenProfile ? () => openProfile(item.user_id) : undefined
                 }
@@ -461,7 +462,6 @@ export default function WorldChatScreen({
     return (
       <View style={{ flex: 1, flexDirection: 'row' }}>
         <View style={{ flex: 1 }}>{chatContent}</View>
-        {/* Removed onSelectUser prop entirely */}
         <OnlineUsersList />
       </View>
     );
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     flexGrow: 1,
   },
-  messageItem: { marginVertical: 8 },
+  messageItem: { marginVertical: 4 },
 
   inputWrapper: {
     paddingHorizontal: 12,

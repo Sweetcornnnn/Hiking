@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import { mountainService, type Mountain } from '../../services/mountainService';
 import { useJournalStore } from '../../store/journalStore';
 import { useProfileCardStore } from '../../store/profileCardStore';
 import type { JournalEntry, JournalImage } from '../../types/journal';
-import { ACCENT_GOLD, BG_CARD, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_GOLD, BORDER_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
+import { ACCENT_GOLD, BG_CARD, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_GOLD, BORDER_SUBTLE, CHAT_BG, CHAT_BORDER, CHAT_DANGER, CHAT_PANEL, CHAT_RADIUS_BTN, CHAT_RADIUS_MODAL, CHAT_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
 
 type Mode = 'feed' | 'form';
 
@@ -47,6 +47,8 @@ export default function JournalScreen() {
   const [selectedMountainId, setSelectedMountainId] = useState<string | null>(preselectedMountainId);
   const [mountainsLoading, setMountainsLoading] = useState(true);
   const [mountainsError, setMountainsError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<JournalEntry | null>(null);
   const saveInProgress = useRef(false);
 
   const goBackToProfile = () => {
@@ -99,21 +101,7 @@ export default function JournalScreen() {
   }, [clearError, fetchEntries]);
 
   const confirmDelete = (entry: JournalEntry) => {
-    Alert.alert(
-      'Delete journal entry?',
-      'This also removes its photos from your profile showcase.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const result = await deleteEntry(entry);
-            if (result.error) Alert.alert('Delete failed', result.error);
-          },
-        },
-      ],
-    );
+    setPendingDelete(entry);
   };
 
   const handleEditPhoto = (entry: JournalEntry, index: number, uri: string) => {
@@ -205,13 +193,12 @@ export default function JournalScreen() {
       setSelectedMountainId(preselectedMountainId);
       setMode('feed');
 
-      Alert.alert(
-        result.pendingSync ? 'Saved on this device' : 'Journal saved',
-        result.pendingSync
+      setNotice({
+        title: result.pendingSync ? 'Saved on this device' : 'Journal saved',
+        message: result.pendingSync
           ? 'Your entry and photos are saved locally and will sync automatically when the internet is available.'
           : 'Your photos are now part of your profile showcase.',
-        [{ text: 'OK' }],
-      );
+      });
     } finally {
       saveInProgress.current = false;
     }
@@ -349,6 +336,63 @@ export default function JournalScreen() {
         onClose={() => setEditingPhoto(null)}
         onSave={handleSaveEditedPhoto}
       />
+      <Modal
+        visible={pendingDelete !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingDelete(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>Delete journal entry?</Text>
+            <Text style={styles.noticeText}>
+              This also removes its photos from your profile showcase.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.cancelNoticeButton}
+                onPress={() => setPendingDelete(null)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.cancelNoticeButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.destructiveNoticeButton}
+                onPress={async () => {
+                  if (!pendingDelete) return;
+                  const entry = pendingDelete;
+                  setPendingDelete(null);
+                  const result = await deleteEntry(entry);
+                  if (result.error) Alert.alert('Delete failed', result.error);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.destructiveNoticeButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={notice !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotice(null)}
+      >
+        <View style={styles.noticeBackdrop}>
+          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
+            <Text style={styles.noticeTitle}>{notice?.title}</Text>
+            <Text style={styles.noticeText}>{notice?.message}</Text>
+            <TouchableOpacity
+              style={styles.noticeButton}
+              onPress={() => setNotice(null)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.noticeButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -387,4 +431,53 @@ const styles = StyleSheet.create({
   saveButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: ACCENT_GOLD, borderRadius: RADIUS_CARD, paddingVertical: 14, marginTop: 28 },
   saveText: { color: BG_PANEL, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.55 },
+  noticeBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  noticeCard: {
+    width: '100%',
+    maxWidth: 340,
+    padding: 20,
+    borderRadius: CHAT_RADIUS_MODAL,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_PANEL,
+  },
+  noticeTitle: { color: TEXT_PRIMARY, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  noticeText: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 },
+  noticeButton: {
+    alignItems: 'center',
+    marginTop: 18,
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: ACCENT_GOLD,
+  },
+  noticeButtonText: { color: CHAT_BG, fontSize: 12, fontWeight: '800' },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  cancelNoticeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    borderWidth: 1,
+    borderColor: CHAT_BORDER,
+    backgroundColor: CHAT_SUBTLE,
+  },
+  cancelNoticeButtonText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
+  destructiveNoticeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: CHAT_DANGER,
+  },
+  destructiveNoticeButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 });

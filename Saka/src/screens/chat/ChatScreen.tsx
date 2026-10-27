@@ -63,12 +63,6 @@ export default function ChatScreen() {
     setShowCreateGroup(true);
   }, []);
 
-  const handleSettings = useCallback(() => {
-    try {
-      router.push('/settings' as any);
-    } catch {}
-  }, [router]);
-
   const handleOnlineUserPress = useCallback(
     (userId: string) => {
       setActive('private');
@@ -95,7 +89,6 @@ export default function ChatScreen() {
               setActiveConversation(null);
             }}
             onCreateGroup={handleCreateGroup}
-            onSettings={handleSettings}
             onBack={handleBack}
           />
 

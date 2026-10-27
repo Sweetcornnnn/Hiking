@@ -1,20 +1,30 @@
-import { useEffect } from 'react';
+// components/chat/GlobalChatNotifier.tsx
+import { useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
-
-type ChatNotification = {
-  type: 'private' | 'group';
-  id: string;
-  senderName: string;
-  content: string;
-};
+import { useChatNotifications } from './ChatNotificationContext';
+import type { ChatNotificationPayload } from './AnimatedMessageIcon';
 
 type GlobalChatNotifierProps = {
-  onNotify: (payload: ChatNotification) => void;
+  onNotify?: (payload: ChatNotificationPayload) => void;
+  trackUnread?: boolean;
 };
 
-export default function GlobalChatNotifier({ onNotify }: GlobalChatNotifierProps) {
+function useRefProp<T>(value: T) {
+  const ref = useRef(value);
+  ref.current = value;
+  return ref;
+}
+
+export default function GlobalChatNotifier({
+  onNotify,
+  trackUnread = true,
+}: GlobalChatNotifierProps) {
   const user = useAuthStore((state) => state.user);
+  const { emit, incrementUnread } = useChatNotifications();
+
+  const onNotifyRef = useRefProp(onNotify);
+  const trackUnreadRef = useRefProp(trackUnread);
 
   useEffect(() => {
     if (!user) return;
@@ -30,14 +40,19 @@ export default function GlobalChatNotifier({ onNotify }: GlobalChatNotifierProps
         .is('hidden_at', null);
 
       if (membershipsError) {
-        console.error('[chat-notifier] Failed to load group memberships:', membershipsError);
+        console.error(
+          '[chat-notifier] Failed to load group memberships:',
+          membershipsError
+        );
       }
       if (!isMounted) return;
 
-      const groupIds = new Set((memberships || []).map((member) => String(member.group_id)));
+      const groupIds = new Set(
+        (memberships || []).map((member) => String(member.group_id))
+      );
 
       const notify = async (
-        type: ChatNotification['type'],
+        type: ChatNotificationPayload['type'],
         id: string,
         senderId: string,
         content: string
@@ -49,16 +64,23 @@ export default function GlobalChatNotifier({ onNotify }: GlobalChatNotifierProps
           .maybeSingle();
 
         if (profileError) {
-          console.error('[chat-notifier] Failed to load sender profile:', profileError);
+          console.error(
+            '[chat-notifier] Failed to load sender profile:',
+            profileError
+          );
         }
         if (!isMounted) return;
 
-        onNotify({
+        const payload: ChatNotificationPayload = {
           type,
           id,
           senderName: profile?.full_name || profile?.username || 'Someone',
           content,
-        });
+        };
+
+        emit(payload);
+        if (trackUnreadRef.current) incrementUnread();
+        onNotifyRef.current?.(payload);
       };
 
       channel = supabase
@@ -115,7 +137,10 @@ export default function GlobalChatNotifier({ onNotify }: GlobalChatNotifierProps
         )
         .subscribe((status, error) => {
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.error('[chat-notifier] Realtime subscription failed:', error || status);
+            console.error(
+              '[chat-notifier] Realtime subscription failed:',
+              error || status
+            );
           }
         });
     };
@@ -126,7 +151,7 @@ export default function GlobalChatNotifier({ onNotify }: GlobalChatNotifierProps
       isMounted = false;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [user, onNotify]);
+  }, [user, emit, incrementUnread]);
 
   return null;
 }

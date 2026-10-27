@@ -24,6 +24,48 @@ export interface Mountain {
   viewpoints: Viewpoint[] | null;  // <-- add this
 }
 
+// ─────────────────────────────────────────────────────────────
+// Canonical mountain ordering
+//
+// The order the Home carousel should always render in. Keys are
+// matched against a normalized form of the mountain name (lowercased,
+// alphanumeric only). Unknown mountains fall to the end, alphabetical.
+//
+// NOTE: 'mtm' will match any name whose normalized form *starts with*
+// "mtm" (e.g. "Mt. M..."). If you later add a second mountain that
+// also starts with "M", tighten this to the full normalized name.
+// ─────────────────────────────────────────────────────────────
+const MOUNTAIN_ORDER = [
+  'mtmadjaas',
+  'mtnangtud',
+  'mtm',
+  'mtbalinsayaw',
+  'pandanhills',
+] as const;
+
+const normalizeMountainName = (name: string): string =>
+  (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const getMountainRank = (name: string): number => {
+  const normalized = normalizeMountainName(name);
+  // Exact match first (safer once you have multiple "Mt. M..." mountains)
+  const exactIndex = (MOUNTAIN_ORDER as readonly string[]).indexOf(normalized);
+  if (exactIndex !== -1) return exactIndex;
+  // Then prefix match (lets "Mt. Madjaas" match key "mtmadjaas" style entries)
+  for (let i = 0; i < MOUNTAIN_ORDER.length; i++) {
+    if (normalized.startsWith(MOUNTAIN_ORDER[i])) return i;
+  }
+  return MOUNTAIN_ORDER.length; // unknown → after known
+};
+
+export const sortMountains = (list: Mountain[]): Mountain[] => {
+  return [...list].sort((a, b) => {
+    const rankDiff = getMountainRank(a.name) - getMountainRank(b.name);
+    if (rankDiff !== 0) return rankDiff;
+    return a.name.localeCompare(b.name);
+  });
+};
+
 /**
  * Safely format an elevation value. Supabase can return `null` for
  * `elevation`, and calling `.toLocaleString()` on `null` throws
@@ -55,7 +97,7 @@ export const mountainService = {
   },
 
   setCachedMountains(mountains: Mountain[]) {
-    cachedMountains = mountains;
+    cachedMountains = sortMountains(mountains);   // <-- enforce order at the single source of truth
     mountainsLastUpdatedAt = new Date().toISOString();
     for (const listener of mountainCacheListeners) {
       try {
@@ -65,7 +107,7 @@ export const mountainService = {
       }
     }
     void Promise.all([
-      AsyncStorage.setItem(MOUNTAINS_CACHE_KEY, JSON.stringify(mountains)),
+      AsyncStorage.setItem(MOUNTAINS_CACHE_KEY, JSON.stringify(cachedMountains)),
       AsyncStorage.setItem(MOUNTAINS_CACHE_UPDATED_KEY, mountainsLastUpdatedAt),
     ]).catch((error) => {
       console.warn('[MountainService] Failed to persist mountain cache:', error);
@@ -73,7 +115,7 @@ export const mountainService = {
   },
 
   getCachedMountains(): Mountain[] {
-    return cachedMountains;
+    return cachedMountains;   // already sorted — cachedMountains is only assigned via sortMountains
   },
 
   getCachedMountainById(id: string): Mountain | null {
@@ -94,7 +136,9 @@ export const mountainService = {
       if (cachedJson) {
         const persistedMountains = JSON.parse(cachedJson) as Mountain[];
         if (Array.isArray(persistedMountains) && persistedMountains.length > 0) {
-          cachedMountains = persistedMountains;
+          // Sort persisted data too, so old caches written before this
+          // fix still come out in the canonical order.
+          cachedMountains = sortMountains(persistedMountains);
           mountainsLastUpdatedAt = await AsyncStorage.getItem(MOUNTAINS_CACHE_UPDATED_KEY);
           for (const listener of mountainCacheListeners) {
             try {
@@ -114,8 +158,9 @@ export const mountainService = {
 
     const { data, error } = await supabase
       .from('mountains')
-      .select('*')
-      .order('elevation', { ascending: false });
+      .select('*');
+      // Note: DB-side ordering is now irrelevant — sortMountains() decides the order.
+      // You can keep `.order(...)` here if you like; it just won't be what the UI sees.
 
     if (error) {
       console.error('Error fetching mountains:', error);
@@ -144,8 +189,8 @@ export const mountainService = {
       };
     });
 
-    this.setCachedMountains(mountains);
-    return mountains;
+    this.setCachedMountains(mountains);   // sorts + emits + persists
+    return sortMountains(mountains);      // return sorted copy to caller too
   },
 
   async fetchMountainById(id: string): Promise<Mountain | null> {
@@ -162,7 +207,7 @@ export const mountainService = {
       if (cachedJson) {
         const persistedMountains = JSON.parse(cachedJson) as Mountain[];
         if (Array.isArray(persistedMountains)) {
-          cachedMountains = persistedMountains;
+          cachedMountains = sortMountains(persistedMountains);
           mountainsLastUpdatedAt = await AsyncStorage.getItem(MOUNTAINS_CACHE_UPDATED_KEY);
           const persistedMountain = this.getCachedMountainById(id);
           if (persistedMountain) {
@@ -209,6 +254,7 @@ export const mountainService = {
       elevationDisplay: formatElevation(data.elevation),
       viewpoints: data.viewpoints || null,  // <-- add this
     };
+    // setCachedMountains() re-sorts, so merging here doesn't disturb order.
     this.setCachedMountains([
       ...cachedMountains.filter((item) => item.id !== mountain.id),
       mountain,
