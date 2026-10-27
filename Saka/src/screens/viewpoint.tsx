@@ -133,6 +133,43 @@ const IMAGE_MAP: Record<string, ImageSourcePropType> = {
   'ph5-4': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 3.jpg'),
   'ph5-5': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 4.jpg'),
   'ph5-6': require('../../assets/Viewpoints/pandan-hills/v5-pandan-hills-summit/pd summit 5.jpg'),
+  'ng1-1': require('../../assets/maps/nangtud.png'),
+  'ng2-1': require('../../assets/Viewpoints/mt-nangtud/ng2/Screenshot 2026-10-27 100031.png'),
+  'ng2-2': require('../../assets/Viewpoints/mt-nangtud/ng2/Screenshot 2026-10-27 100558.png'),
+  'ng2-3': require('../../assets/Viewpoints/mt-nangtud/ng2/Screenshot 2026-10-27 102936.png'),
+  'ng2-4': require('../../assets/Viewpoints/mt-nangtud/ng2/Screenshot 2026-10-27 102952.png'),
+  'ng2-5': require('../../assets/Viewpoints/mt-nangtud/ng2/Screenshot 2026-10-27 103054.png'),
+  'ng3-1': require('../../assets/Viewpoints/mt-nangtud/ng3/Screenshot 2026-10-27 102830.png'),
+  'ng3-2': require('../../assets/Viewpoints/mt-nangtud/ng3/Screenshot 2026-10-27 105348.png'),
+  'ng3-3': require('../../assets/Viewpoints/mt-nangtud/ng3/Screenshot 2026-10-27 111001.png'),
+  'ng3-4': require('../../assets/Viewpoints/mt-nangtud/ng3/Screenshot 2026-10-27 111036.png'),
+  'ng3-5': require('../../assets/Viewpoints/mt-nangtud/ng3/Screenshot 2026-10-27 111103.png'),
+  'ng3-6': require('../../assets/Viewpoints/mt-nangtud/ng3/Screenshot 2026-10-27 111136.png'),
+  'ng4-1': require('../../assets/Viewpoints/mt-nangtud/ng4/Screenshot 2026-10-27 104937.png'),
+  'ng4-2': require('../../assets/Viewpoints/mt-nangtud/ng4/Screenshot 2026-10-27 105141.png'),
+  'ng4-3': require('../../assets/Viewpoints/mt-nangtud/ng4/Screenshot 2026-10-27 105301.png'),
+  'ng5-1': require('../../assets/Viewpoints/mt-nangtud/ng5/Screenshot 2026-10-27 103335.png'),
+  'ng5-2': require('../../assets/Viewpoints/mt-nangtud/ng5/Screenshot 2026-10-27 103352.png'),
+  'ng5-3': require('../../assets/Viewpoints/mt-nangtud/ng5/Screenshot 2026-10-27 105215.png'),
+  'ng6-1': require('../../assets/Viewpoints/mt-nangtud/ng6/Screenshot 2026-10-27 103848.png'),
+  'ng6-2': require('../../assets/Viewpoints/mt-nangtud/ng6/Screenshot 2026-10-27 104056.png'),
+  'ng6-3': require('../../assets/Viewpoints/mt-nangtud/ng6/Screenshot 2026-10-27 104838.png'),
+  'ng7-1': require('../../assets/Viewpoints/mt-nangtud/ng7/Screenshot 2026-10-27 103913.png'),
+  'ng7-2': require('../../assets/Viewpoints/mt-nangtud/ng7/Screenshot 2026-10-27 104056.png'),
+  'ng7-3': require('../../assets/Viewpoints/mt-nangtud/ng7/Screenshot 2026-10-27 104647.png'),
+  'ng7-4': require('../../assets/Viewpoints/mt-nangtud/ng7/Screenshot 2026-10-27 104712.png'),
+  'ng8-1': require('../../assets/Viewpoints/mt-nangtud/ng8/Screenshot 2026-10-27 103352.png'),
+  'ng8-2': require('../../assets/Viewpoints/mt-nangtud/ng8/Screenshot 2026-10-27 103503.png'),
+  'ng8-3': require('../../assets/Viewpoints/mt-nangtud/ng8/Screenshot 2026-10-27 103535.png'),
+  'ng8-4': require('../../assets/Viewpoints/mt-nangtud/ng8/Screenshot 2026-10-27 103818.png'),
+  'ng8-5': require('../../assets/Viewpoints/mt-nangtud/ng8/Screenshot 2026-10-27 104551.png'),
+  'ng8-6': require('../../assets/Viewpoints/mt-nangtud/ng8/Screenshot 2026-10-27 104712.png'),
+  'ng9-1': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 103535.png'),
+  'ng9-2': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 103622.png'),
+  'ng9-3': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 103647.png'),
+  'ng9-4': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 104114.png'),
+  'ng9-5': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 105011.png'),
+  'ng9-6': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 105313.png'),
 };
 
 interface StatChipProps {
@@ -169,11 +206,25 @@ const PANDAN_GALLERIES: Record<string, MediaItem[]> = {
   ph5: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ph5-${index}` })),
 };
 
+const NANGTUD_GALLERIES: Record<string, MediaItem[]> = {
+  ng1: [{ type: 'image', key: 'ng1-1' }],
+  ng2: [1, 2, 3, 4, 5].map((index) => ({ type: 'image', key: `ng2-${index}` })),
+  ng3: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ng3-${index}` })),
+  ng4: [1, 2, 3].map((index) => ({ type: 'image', key: `ng4-${index}` })),
+  ng5: [1, 2, 3].map((index) => ({ type: 'image', key: `ng5-${index}` })),
+  ng6: [1, 2, 3].map((index) => ({ type: 'image', key: `ng6-${index}` })),
+  ng7: [1, 2, 3, 4].map((index) => ({ type: 'image', key: `ng7-${index}` })),
+  ng8: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ng8-${index}` })),
+  ng9: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ng9-${index}` })),
+};
+
 export default function ViewpointScreen() {
   const router      = useRouter();
   const params      = useLocalSearchParams();
   const viewpointId = params.viewpointId as string | undefined;
   const mountainId  = params.mountainId as string | undefined;
+  const mountainName = params.mountainName as string | undefined;
+  const viewpointNumber = Number(params.viewpointNumber);
 
   const [data, setData] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
@@ -219,6 +270,21 @@ export default function ViewpointScreen() {
   }, [viewpointId]);
 
   const mediaList: MediaItem[] = React.useMemo(() => {
+    const isNangtud = /nangtud/i.test(mountainName ?? '')
+      || mountainId === 'nangtud'
+      || mountainId === 'e8dbcdf2-2120-4ed4-a677-69f9a2c7dc65';
+    const fallbackNangtudNumber = Number(
+      data?.sort_order ?? /^ng([1-9])$/i.exec(String(data?.id ?? ''))?.[1]
+    );
+    if (isNangtud) {
+      const number = Number.isInteger(viewpointNumber) && viewpointNumber >= 1 && viewpointNumber <= 9
+        ? viewpointNumber
+        : fallbackNangtudNumber;
+      const gallery = NANGTUD_GALLERIES[`ng${number}`];
+      if (gallery) {
+        return gallery;
+      }
+    }
     if (data?.media && Array.isArray(data.media) && data.media.length > 0) {
       return data.media as MediaItem[];
     }
@@ -232,7 +298,7 @@ export default function ViewpointScreen() {
       return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.id }));
     }
     return [];
-  }, [data]);
+  }, [data, mountainId, mountainName, viewpointNumber]);
   const firstMedia = mediaList[0];
   const waitsForFirstImage = Boolean(
     firstMedia?.type === 'image' &&
