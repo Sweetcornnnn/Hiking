@@ -18,8 +18,8 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need continuous location access to provide real-time safety monitoring and emergency assistance.",
         "NSLocationAlwaysUsageDescription": "We need continuous location access for background safety tracking.",
         "UIBackgroundModes": [
-           "location",
-           "remote-notification"
+          "location",
+          "remote-notification"
         ]
       }
     },
@@ -35,7 +35,7 @@
         }
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.yourname.saka"
+      "package": "com.Sweetcorn.saka"
     },
     "web": {
       "output": "static",
@@ -43,7 +43,11 @@
     },
     "extra": {
       "WEATHER_API_KEY": "8354d134719c19d5c918ac8a014dc925",
-      "API_HOST": "192.168.18.10"
+      "API_HOST": "192.168.18.10",
+      "router": {},
+      "eas": {
+        "projectId": "8a6ec809-8bee-4178-9ab4-627aea1b7445"
+      }
     },
     "plugins": [
       "expo-router",
