@@ -908,8 +908,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.18)',
-    width: 36,
-    height: 36,
   },
   chatIconWrap: {
     marginLeft: 8,
