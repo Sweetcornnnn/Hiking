@@ -417,7 +417,6 @@ class LocationService {
    */
   async retryQueuedUploads() {
     await this._loadUploadQueue();
-    console.log(`Retrying ${this.uploadQueue.length} queued location uploads...`);
     this.isOnline = true;
     await this._processUploadQueue();
   }

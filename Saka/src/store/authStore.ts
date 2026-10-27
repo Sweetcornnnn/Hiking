@@ -119,8 +119,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
 
-      console.log('[Auth] Creating user:', email);
-
       // Step 1: Create user in Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -143,8 +141,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!data.user) {
         throw new Error('User creation failed');
       }
-
-      console.log('[Auth] User created in Auth:', data.user.id);
 
       // Step 2: Create or update profile in profiles table (idempotent)
       // Use upsert so this call is safe if a DB trigger already created the profile.
@@ -182,8 +178,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         } else {
           throw new Error('Profile creation failed. Please try again.');
         }
-      } else {
-        console.log('[Auth] Profile created successfully');
       }
 
       if (data.session?.access_token) {
