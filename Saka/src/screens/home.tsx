@@ -552,7 +552,7 @@ export default function HomeScreen() {
 
         <View style={styles.headerRightButtons}>
           <OfflineStatusIndicator />
-          <TutorialHelpButton onPress={tutorial.open} style={styles.helpButton} />
+          
           {profile?.role === 'organization' && (
             <TouchableOpacity
               onPress={() => router.push('/organizations/Dashboard')}

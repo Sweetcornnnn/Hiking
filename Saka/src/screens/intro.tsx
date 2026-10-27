@@ -14,6 +14,7 @@ import {
 import Svg, { Path, Defs, RadialGradient, Stop, Circle, Line, Rect, G } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuthStore } from '../store/authStore';
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Editable content
@@ -495,8 +496,10 @@ export default function IntroScreen() {
 
   const [selected, setSelected] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
+  const [authRestored, setAuthRestored] = useState(false);
   const [brandH, setBrandH] = useState<number | null>(null);
   const navigating = useRef(false);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -560,10 +563,21 @@ export default function IntroScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+    void useAuthStore.getState().loadSession().finally(() => {
+      if (isMounted) setAuthRestored(true);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleStart = () => {
-    if (!ready || navigating.current) return;
+    if (!ready || !authRestored || navigating.current) return;
     navigating.current = true;
-    router.replace('/Login');
+    router.replace(isAuthenticated ? '/Loading' : '/Login');
   };
 
   const scale = screenW / SCENE_W;
@@ -636,7 +650,7 @@ export default function IntroScreen() {
           {/* SAKA LOGO IS NOW A PRESSABLE BUTTON */}
           <Pressable
             onPress={handleStart}
-            disabled={!ready}
+            disabled={!ready || !authRestored}
             accessibilityRole="button"
             accessibilityLabel="Start the hike"
             style={({ pressed }) => [
