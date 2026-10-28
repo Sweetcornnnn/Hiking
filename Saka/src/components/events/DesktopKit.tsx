@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 import {
   CHAT_BG,
   CHAT_ONLINE,
@@ -68,7 +69,7 @@ export const formatTime = (t: string) => {
 // ── Shell ────────────────────────────────────────────────
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <SafeAreaView style={k.screen} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={k.screen} edges={['top', 'bottom', 'left', 'right']}>
       <View style={k.shell}>{children}</View>
     </SafeAreaView>
   );
@@ -127,7 +128,7 @@ export function CenterMessage({
   onAction?: () => void;
 }) {
   return (
-    <SafeAreaView style={[k.screen, k.centered]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[k.screen, k.centered]} edges={['top', 'bottom', 'left', 'right']}>
       {loading ? <ActivityIndicator color={D.gold} /> : null}
       <Text style={k.msgText}>{message}</Text>
       {actionLabel && onAction ? (
@@ -424,13 +425,14 @@ export function PickerSheet({
   const data = [{ id: '__all__', name: allLabel }, ...items];
   return (
     <Modal
+      {...FULLSCREEN_MODAL_PROPS}
       visible={visible}
-      transparent
       animationType="fade"
       onRequestClose={onClose}
       supportedOrientations={['landscape', 'landscape-left', 'landscape-right']}
     >
       <Pressable style={k.backdrop} onPress={onClose}>
+        <ModalScrim color="rgba(0,0,0,0.6)" />
         <Pressable style={k.sheet} onPress={() => {}}>
           <View style={k.sheetHeader}>
             <Text style={k.sheetTitle}>{title}</Text>
@@ -577,7 +579,6 @@ const k = StyleSheet.create({
 
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,

@@ -11,9 +11,10 @@ import {
   Image,
   Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
 import { useWildTrackStore } from '../../store/wildtrackStore';
 import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
@@ -34,6 +35,7 @@ const H_PADDING = 10;
 
 export default function DiscoveriesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
   const { discoveries, fetchDiscoveries, selectedMountainId, removeDiscovery } =
@@ -123,8 +125,25 @@ export default function DiscoveriesScreen() {
       />
 
       {/* MODAL — landscape species profile */}
-      <Modal visible={!!selectedDiscovery} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedDiscovery(null)}>
+      <Modal
+        {...FULLSCREEN_MODAL_PROPS}
+        visible={!!selectedDiscovery}
+        animationType="fade"
+        onRequestClose={() => setSelectedDiscovery(null)}
+      >
+        <Pressable
+          style={[
+            styles.modalOverlay,
+            {
+              paddingLeft: insets.left + 20,
+              paddingRight: insets.right + 20,
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 20,
+            },
+          ]}
+          onPress={() => setSelectedDiscovery(null)}
+        >
+          <ModalScrim color="rgba(0,0,0,0.55)" />
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             {selectedDiscovery && (
               <>
@@ -280,7 +299,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
   modalCard: {
     flexDirection: 'row',

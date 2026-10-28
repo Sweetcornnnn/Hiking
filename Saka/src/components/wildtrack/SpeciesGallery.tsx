@@ -11,6 +11,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 
 interface SpeciesGalleryProps {
   images?: string[];
@@ -23,6 +25,7 @@ export const SpeciesGallery: React.FC<SpeciesGalleryProps> = ({ images = [] }) =
   const [sizeLoading, setSizeLoading] = useState(true);
 
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
 
   useEffect(() => {
@@ -64,8 +67,10 @@ export const SpeciesGallery: React.FC<SpeciesGalleryProps> = ({ images = [] }) =
     setOpen(true);
   };
 
-  const maxBoxWidth = width * (isLandscape ? 0.6 : 0.86);
-  const maxBoxHeight = height * (isLandscape ? 0.7 : 0.58);
+  const usableWidth = width - insets.left - insets.right - 24;
+  const usableHeight = height - insets.top - insets.bottom - 32;
+  const maxBoxWidth = usableWidth * (isLandscape ? 0.72 : 0.98);
+  const maxBoxHeight = usableHeight * (isLandscape ? 0.85 : 0.7);
 
   let boxWidth = maxBoxWidth;
   let boxHeight = maxBoxHeight;
@@ -123,9 +128,25 @@ export const SpeciesGallery: React.FC<SpeciesGalleryProps> = ({ images = [] }) =
           of a fixed box with "contain" leaving blank bars around it. Counter,
           close, and nav controls float on top of the image itself rather
           than sitting in their own bars, so the card doesn't stretch edge
-          to edge. No dark backdrop tint — tapping outside still closes it. */}
-      <Modal visible={open} animationType="fade" transparent statusBarTranslucent>
-        <View style={styles.modalBackdrop}>
+          to edge. Tapping outside still closes it. */}
+      <Modal
+        {...FULLSCREEN_MODAL_PROPS}
+        visible={open}
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+      >
+        <View
+          style={[
+            styles.modalBackdrop,
+            {
+              paddingLeft: insets.left + 12,
+              paddingRight: insets.right + 12,
+              paddingTop: insets.top + 16,
+              paddingBottom: insets.bottom + 16,
+            },
+          ]}
+        >
+          <ModalScrim color="rgba(0,0,0,0.82)" />
           <Pressable style={styles.backdropTap} onPress={() => setOpen(false)} />
 
           <View style={[styles.modalCard, { width: boxWidth, height: boxHeight }]}>

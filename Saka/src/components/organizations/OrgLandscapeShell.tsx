@@ -34,7 +34,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 import { CHAT_BG, CHAT_BORDER, TEXT_PRIMARY } from '../../theme/designTokens';
 
 // ── Design tokens ───────────────────────────────────────────────────────────
@@ -119,14 +120,10 @@ export function OrgLandscapeShell({
   children,
 }: ShellProps) {
   const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const top = Math.max(insets.top, 0);
-  const bottom = Math.max(insets.bottom, 0);
-  const railWidth =
-    Math.min(Math.max(Math.round(width * RAIL_WIDTH_RATIO), 188), 232) + insets.left;
+  const railWidth = Math.min(Math.max(Math.round(width * RAIL_WIDTH_RATIO), 188), 232);
 
   return (
-    <View style={s.screen}>
+    <SafeAreaView style={s.screen} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
@@ -136,9 +133,9 @@ export function OrgLandscapeShell({
           contentContainerStyle={[
             s.railContent,
             {
-              paddingLeft: insets.left + SP.md,
-              paddingTop: top + SP.md,
-              paddingBottom: railFooter ? SP.md : bottom + SP.md,
+              paddingLeft: SP.md,
+              paddingTop: SP.md,
+              paddingBottom: SP.md,
             },
           ]}
           showsVerticalScrollIndicator={false}
@@ -185,7 +182,7 @@ export function OrgLandscapeShell({
           <View
             style={[
               s.railFooter,
-              { paddingLeft: insets.left + SP.md, paddingBottom: bottom + SP.md },
+              { paddingLeft: SP.md, paddingBottom: SP.md },
             ]}
           >
             {railFooter}
@@ -203,9 +200,9 @@ export function OrgLandscapeShell({
           contentContainerStyle={[
             s.panelContent,
             {
-              paddingRight: insets.right + SP.md,
-              paddingTop: top + SP.md,
-              paddingBottom: bottom + SP.xl,
+              paddingRight: SP.md,
+              paddingTop: SP.md,
+              paddingBottom: SP.xl,
             },
           ]}
           showsVerticalScrollIndicator={false}
@@ -216,7 +213,7 @@ export function OrgLandscapeShell({
           {children}
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -752,14 +749,14 @@ export function PickerModal({
 }) {
   return (
     <Modal
-      transparent
+      {...FULLSCREEN_MODAL_PROPS}
       visible={visible}
       animationType="fade"
       onRequestClose={onClose}
-      statusBarTranslucent
       supportedOrientations={['landscape', 'landscape-left', 'landscape-right']}
     >
       <View style={s.modalOverlay}>
+        <ModalScrim color="rgba(0,0,0,0.6)" />
         <View style={s.modalCard}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{title}</Text>
@@ -1070,7 +1067,6 @@ const s = StyleSheet.create({
   // Picker modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: SP.md,

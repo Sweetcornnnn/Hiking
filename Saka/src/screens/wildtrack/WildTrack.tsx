@@ -13,6 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
 import { useWildTrackStore, Species } from '../../store/wildtrackStore';
 import { SpeciesCarousel } from '../../components/wildtrack/SpeciesCarousel';
@@ -276,15 +277,24 @@ export default function WildTrackScreen() {
 
       {/* SPECIES DETAIL — floating centered modal, tap the backdrop to close */}
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={showLockedModal}
-        transparent
         animationType="fade"
         onRequestClose={() => setShowLockedModal(false)}
       >
         <Pressable
-          style={styles.modalOverlay}
+          style={[
+            styles.modalOverlay,
+            {
+              paddingLeft: insets.left + 20,
+              paddingRight: insets.right + 20,
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 20,
+            },
+          ]}
           onPress={() => setShowLockedModal(false)}
         >
+          <ModalScrim color="rgba(0,0,0,0.55)" />
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             {selectedSpecies && (
               <>
@@ -467,7 +477,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
   modalCard: {
     flexDirection: 'row',

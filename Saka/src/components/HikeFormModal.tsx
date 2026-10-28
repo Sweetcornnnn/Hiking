@@ -19,6 +19,7 @@ import { Hike } from '../types';
 import Toast, { ToastHandle } from './Toast';
 import { isISODate } from '../utils/dateRange';
 import type { SavedHikeLike } from './HikePermitModal';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from './ModalScrim';
 import {
   DatePickerModal,
   TimePickerModal,
@@ -184,11 +185,18 @@ export default function HikeFormModal({
   const rowStyle = [styles.row, stacked && styles.rowStacked];
 
   return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+    <Modal
+      {...FULLSCREEN_MODAL_PROPS}
+      animationType="fade"
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={{ flex: 1 }}>
+        <ModalScrim color="rgba(4,8,13,0.72)" />
+        <KeyboardAvoidingView
+          style={[styles.modalOverlay, { backgroundColor: 'transparent' }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
         <View style={[styles.modalCard, { maxHeight: height - 24 }]}>
           {/* Header */}
           <View style={styles.modalHeader}>
@@ -353,11 +361,10 @@ export default function HikeFormModal({
 
         {/* Info warning popup (own Modal so it always sits in front) */}
         <Modal
-          transparent
+          {...FULLSCREEN_MODAL_PROPS}
           animationType="fade"
           visible={overlay === 'info'}
           onRequestClose={closeOverlay}
-          statusBarTranslucent
         >
           <View style={styles.popupLayer}>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeOverlay} />
@@ -406,7 +413,8 @@ export default function HikeFormModal({
         />
 
         <Toast ref={toastRef} />
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -417,7 +425,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(10,17,26,0.15)',
   },
   modalCard: {
     width: '100%',

@@ -14,6 +14,7 @@ import {
   ViewStyle,
   useWindowDimensions,
 } from 'react-native';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from './ModalScrim';
 import { formatDisplayDate, formatDisplayTime } from './PickerModals';
 
 /* ------------------------------------------------------------------ */
@@ -887,13 +888,14 @@ export function HikePermitModal({
 
   return (
     <Modal
-      transparent
+      {...FULLSCREEN_MODAL_PROPS}
       animationType="fade"
       visible={visible}
       onRequestClose={() => onDone()}
-      statusBarTranslucent
     >
-      <Pressable style={styles.overlay} onPress={() => onDone()}>
+      <View style={styles.overlay}>
+        <ModalScrim color="rgba(5,9,14,0.78)" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => onDone()}>
         <View style={styles.center}>
           {sideBySide ? (
             <View style={[styles.panels, { width: rowW }]}>
@@ -941,7 +943,8 @@ export function HikePermitModal({
             </>
           )}
         </View>
-      </Pressable>
+        </Pressable>
+      </View>
     </Modal>
   );
 }
@@ -989,7 +992,6 @@ export function useHikePermit(logoSource?: ImageSourcePropType, inkColor?: strin
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(5,9,14,0.78)',
   },
   center: {
     flex: 1,

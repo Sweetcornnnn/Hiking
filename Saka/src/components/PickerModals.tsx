@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from './ModalScrim';
 
 /* ------------------------------------------------------------------ */
 /* Shared styled pickers: DatePickerModal (calendar) + TimePickerModal */
@@ -104,13 +105,13 @@ export function DatePickerModal(props: DatePickerModalProps) {
   const { visible, onClose } = props;
   return (
     <Modal
-      transparent
+      {...FULLSCREEN_MODAL_PROPS}
       animationType="fade"
       visible={visible}
       onRequestClose={onClose}
-      statusBarTranslucent
     >
       <View style={styles.overlay}>
+        <ModalScrim color="rgba(5,9,14,0.6)" />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         {/* Mounted only while open so it always starts on the right month */}
         {visible && <CalendarCard {...props} />}
@@ -286,13 +287,13 @@ export function TimePickerModal(props: TimePickerModalProps) {
   const { visible, onClose } = props;
   return (
     <Modal
-      transparent
+      {...FULLSCREEN_MODAL_PROPS}
       animationType="fade"
       visible={visible}
       onRequestClose={onClose}
-      statusBarTranslucent
     >
       <View style={styles.overlay}>
+        <ModalScrim color="rgba(5,9,14,0.6)" />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         {visible && <TimeCard {...props} />}
       </View>
@@ -416,7 +417,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(5,9,14,0.6)',
   },
   card: {
     width: '100%',

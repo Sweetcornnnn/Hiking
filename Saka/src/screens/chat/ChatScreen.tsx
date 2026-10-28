@@ -80,7 +80,7 @@ export default function ChatScreen() {
   // ── Landscape: split layout (Sidebar + Main Content) ──
   if (isLandscape) {
     return (
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.shell}>
           <ChatSidebar
             active={active}
@@ -162,8 +162,8 @@ export default function ChatScreen() {
 
   // ── Portrait: original stacked layout with tabs ──
   return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <TouchableOpacity
             onPress={handleBack}
@@ -202,13 +202,12 @@ export default function ChatScreen() {
       {showCreateGroup && (
         <CreateGroupModal onClose={() => setShowCreateGroup(false)} />
       )}
-    </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: CHAT_BG },
-  safeArea: { flex: 1, backgroundColor: CHAT_BG },
 
   shell: {
     flex: 1,

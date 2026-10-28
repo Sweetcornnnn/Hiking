@@ -16,6 +16,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -147,14 +149,21 @@ export default function ProfileCard({
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
-  const cardWidth = Math.min(windowWidth - CARD_H_MARGIN, CARD_MAX_WIDTH);
+  const cardWidth = Math.min(
+    windowWidth - insets.left - insets.right - CARD_H_MARGIN,
+    CARD_MAX_WIDTH,
+  );
   const leftPanelWidth = Math.max(
     140,
     Math.min(190, Math.round(cardWidth * 0.38))
   );
 
-  const modalWidth = Math.min(windowWidth - 64, 380);
+  const modalWidth = Math.min(
+    windowWidth - insets.left - insets.right - 64,
+    380,
+  );
   const gridItemSize =
     (modalWidth - PANEL_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;
 
@@ -458,8 +467,23 @@ export default function ProfileCard({
   return (
     <>
       {/* ══════════ PROFILE CARD ══════════ */}
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-        <Pressable style={styles.backdrop} onPress={onClose}>
+      <Modal
+        {...FULLSCREEN_MODAL_PROPS}
+        visible={visible}
+        animationType="fade"
+        onRequestClose={onClose}
+      >
+        <Pressable
+          style={[
+            styles.backdrop,
+            {
+              paddingLeft: insets.left + CARD_H_MARGIN / 2,
+              paddingRight: insets.right + CARD_H_MARGIN / 2,
+            },
+          ]}
+          onPress={onClose}
+        >
+          <ModalScrim color="rgba(4,8,13,0.5)" />
           <Pressable
             style={[styles.card, { width: cardWidth }]}
             onPress={(e) => e.stopPropagation()}
@@ -710,16 +734,22 @@ export default function ProfileCard({
 
       {/* ══════════ SEE ALL — 3-column grid, filters by active tab ══════════ */}
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={showAllPhotos}
-        transparent
         animationType="fade"
-        statusBarTranslucent
         onRequestClose={() => setShowAllPhotos(false)}
       >
         <Pressable
-          style={styles.galleryBackdrop}
+          style={[
+            styles.galleryBackdrop,
+            {
+              paddingLeft: insets.left + 32,
+              paddingRight: insets.right + 32,
+            },
+          ]}
           onPress={() => setShowAllPhotos(false)}
         >
+          <ModalScrim color="rgba(0,0,0,0.72)" />
           <Pressable
             style={[styles.galleryModal, { width: modalWidth }]}
             onPress={(e) => e.stopPropagation()}
@@ -788,13 +818,13 @@ export default function ProfileCard({
 
       {/* ══════════ FULLSCREEN VIEWER — filters by active tab ══════════ */}
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={viewerIndex !== null}
-        transparent
         animationType="fade"
-        statusBarTranslucent
         onRequestClose={() => setViewerIndex(null)}
       >
         <View style={styles.viewerBackdrop}>
+          <ModalScrim color="rgba(0,0,0,0.94)" />
           <Animated.FlatList
             data={activePhotos}
             horizontal
@@ -814,7 +844,18 @@ export default function ProfileCard({
               setViewerIndex(Math.max(0, Math.min(idx, activePhotos.length - 1)));
             }}
             renderItem={({ item }) => (
-              <View style={[styles.viewerSlide, { width: windowWidth }]}>
+              <View
+                style={[
+                  styles.viewerSlide,
+                  {
+                    width: windowWidth,
+                    paddingLeft: insets.left + 12,
+                    paddingRight: insets.right + 12,
+                    paddingTop: insets.top + 40,
+                    paddingBottom: insets.bottom + 20,
+                  },
+                ]}
+              >
                 <Image
                   source={{ uri: item }}
                   style={styles.viewerImage}
@@ -824,7 +865,10 @@ export default function ProfileCard({
             )}
           />
 
-          <View style={styles.viewerTopRow} pointerEvents="box-none">
+          <View
+            style={[styles.viewerTopRow, { paddingTop: insets.top + 12 }]}
+            pointerEvents="box-none"
+          >
             <View style={styles.viewerCounter}>
               <Text style={styles.viewerCounterText}>
                 {(viewerIndex ?? 0) + 1}
@@ -1243,7 +1287,6 @@ const styles = StyleSheet.create({
   // ── See all modal ──
   galleryBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
@@ -1321,13 +1364,11 @@ const styles = StyleSheet.create({
   galleryGridImage: { width: '100%', height: '100%' },
 
   // ── Fullscreen viewer ──
-  viewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)' },
+  viewerBackdrop: { flex: 1 },
   viewerSlide: {
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 60,
   },
   viewerImage: { width: '100%', height: '100%' },
   viewerTopRow: {
@@ -1339,7 +1380,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
-    paddingTop: 48,
     paddingBottom: 10,
   },
   viewerCounter: {

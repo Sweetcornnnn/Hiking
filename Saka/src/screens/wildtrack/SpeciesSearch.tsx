@@ -11,9 +11,10 @@ import {
   View,
   TextInput,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
 import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
 import { TaxonomyTree } from '../../components/wildtrack/TaxonomyTree';
@@ -32,6 +33,7 @@ const H_PADDING = 10;
 
 export default function SpeciesSearchScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
   const { selectedMountainId, createDiscovery, cacheSpecies } = useWildTrackStore();
@@ -193,13 +195,23 @@ export default function SpeciesSearchScreen() {
           sized to roughly the same footprint as before but presented as an
           actual modal rather than an edge-to-edge screen. */}
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={modalOpen}
         animationType="fade"
-        transparent
-        statusBarTranslucent
         onRequestClose={handleCloseModal}
       >
-        <View style={styles.modalBackdrop}>
+        <View
+          style={[
+            styles.modalBackdrop,
+            {
+              paddingLeft: insets.left,
+              paddingRight: insets.right,
+              paddingTop: insets.top,
+              paddingBottom: insets.bottom,
+            },
+          ]}
+        >
+          <ModalScrim color="rgba(0,0,0,0.6)" />
           <Pressable style={styles.backdropTap} onPress={handleCloseModal} />
 
           <View style={styles.modalCard}>

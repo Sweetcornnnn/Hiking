@@ -12,11 +12,12 @@ import {
   Image,
   Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWildTrackStore } from '../../store/wildtrackStore';
 import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
 import {
   BG_CARD,
@@ -36,6 +37,7 @@ const H_PADDING = 10;
 
 export default function FeaturedSpeciesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
   const {
@@ -116,8 +118,25 @@ export default function FeaturedSpeciesScreen() {
       />
 
       {/* MODAL — landscape species profile */}
-      <Modal visible={!!selectedSpecies} transparent animationType="fade" statusBarTranslucent>
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedSpecies(null)}>
+      <Modal
+        {...FULLSCREEN_MODAL_PROPS}
+        visible={!!selectedSpecies}
+        animationType="fade"
+        onRequestClose={() => setSelectedSpecies(null)}
+      >
+        <Pressable
+          style={[
+            styles.modalOverlay,
+            {
+              paddingLeft: insets.left + 20,
+              paddingRight: insets.right + 20,
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 20,
+            },
+          ]}
+          onPress={() => setSelectedSpecies(null)}
+        >
+          <ModalScrim color="rgba(0,0,0,0.55)" />
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             {selectedSpecies && (
               <>
@@ -249,7 +268,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
   modalCard: {
     flexDirection: 'row',

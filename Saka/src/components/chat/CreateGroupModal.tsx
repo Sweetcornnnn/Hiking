@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
@@ -238,8 +239,14 @@ export default function CreateGroupModal({
   );
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      {...FULLSCREEN_MODAL_PROPS}
+      visible
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <View style={styles.backdrop}>
+        <ModalScrim color="rgba(5,9,14,0.7)" />
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
           activeOpacity={1}
@@ -247,13 +254,21 @@ export default function CreateGroupModal({
         />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.keyboardWrap}
+          style={[
+            styles.keyboardWrap,
+            { paddingTop: insets.top, paddingBottom: insets.bottom },
+          ]}
           pointerEvents="box-none"
         >
           <View
             style={[
               styles.card,
-              { minHeight: Math.min(520, windowHeight * 0.68) },
+              {
+                maxHeight: Math.min(
+                  520,
+                  windowHeight * 0.68 - insets.top - insets.bottom,
+                ),
+              },
             ]}
           >
             <View style={styles.header}>
@@ -280,10 +295,7 @@ export default function CreateGroupModal({
             />
 
             <View
-              style={[
-                styles.footer,
-                { paddingBottom: Math.max(insets.bottom, 12) },
-              ]}
+              style={[styles.footer, { paddingBottom: 12 }]}
             >
               <TouchableOpacity
                 onPress={onClose}
@@ -335,7 +347,6 @@ export default function CreateGroupModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
