@@ -23,18 +23,9 @@ import {
 } from '../../theme/designTokens';
 import { getAvatarColor, getInitials } from '../../utils/colors';
 import ReactionChip from './ReactionChip';
-import { ReactionSummary } from '../../utils/reactions';
-
-export type ReactionType = 'heart' | 'like' | 'haha' | 'wow' | 'sad' | 'angry';
-
-export const REACTION_EMOJI: Record<ReactionType, string> = {
-  heart: '❤️',
-  like: '👍',
-  haha: '😂',
-  wow: '😮',
-  sad: '😢',
-  angry: '😡',
-};
+import type { ReactionSummary } from '../../utils/reactions';
+import { REACTION_EMOJI } from '../../utils/reactionTypes';
+import type { ReactionType } from '../../utils/reactionTypes';
 
 export type MessageBubbleProps = {
   content: string;

@@ -18,7 +18,9 @@ import {
   TEXT_PRIMARY,
   TEXT_MUTED,
 } from '../../theme/designTokens';
-import { REACTION_EMOJI, ReactionType } from './MessageBubble';
+import { REACTION_EMOJI } from '../../utils/reactionTypes';
+import type { ReactionType } from '../../utils/reactionTypes';
+import { FULLSCREEN_MODAL_PROPS } from '../ModalScrim';
 
 // Order matches Meta's picker: heart, like, haha, wow, sad, angry.
 const REACTIONS: ReactionType[] = [
@@ -128,8 +130,8 @@ export default function MessageActionSheet({
 
   return (
     <Modal
+      {...FULLSCREEN_MODAL_PROPS}
       visible={visible}
-      transparent
       animationType="none"
       onRequestClose={onClose}
     >
@@ -282,6 +284,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingBottom: 32,
     paddingHorizontal: 24,
+    backgroundColor: 'transparent',
   },
   card: {
     width: '100%',

@@ -7,8 +7,8 @@ import {
   ACCENT_GOLD,
   TEXT_PRIMARY,
 } from '../../theme/designTokens';
-import { REACTION_EMOJI } from './MessageBubble';
-import { ReactionSummary } from '../../utils/reactions';
+import type { ReactionSummary } from '../../utils/reactions';
+import { REACTION_EMOJI } from '../../utils/reactionTypes';
 
 export default function ReactionChip({
   summaries,
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  chipMe: { right: 4 },
+  chipMe: { left: 4 },
   chipOther: { right: 4 },
   chipMine: {
     borderColor: ACCENT_GOLD,

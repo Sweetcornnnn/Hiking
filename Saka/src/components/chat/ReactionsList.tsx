@@ -17,9 +17,11 @@ import {
   TEXT_PRIMARY,
   TEXT_MUTED,
 } from '../../theme/designTokens';
-import { REACTION_EMOJI, ReactionType } from './MessageBubble';
-import { ReactionSummary } from '../../utils/reactions';
+import { REACTION_EMOJI } from '../../utils/reactionTypes';
+import type { ReactionType } from '../../utils/reactionTypes';
+import type { ReactionSummary } from '../../utils/reactions';
 import { getAvatarColor, getInitials } from '../../utils/colors';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 
 type Row = {
   key: string;
@@ -54,71 +56,73 @@ export default function ReactionsList({
 
   return (
     <Modal
+      {...FULLSCREEN_MODAL_PROPS}
       visible={visible}
-      transparent
       animationType="fade"
       onRequestClose={onClose}
-      statusBarTranslucent
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              Reactions{rows.length ? ` · ${rows.length}` : ''}
-            </Text>
-            <TouchableOpacity
-              onPress={onClose}
-              style={styles.closeBtn}
-              hitSlop={8}
-            >
-              <Ionicons name="close" size={14} color={TEXT_MUTED} />
-            </TouchableOpacity>
-          </View>
+      <View style={styles.modalRoot}>
+        <ModalScrim color="rgba(0,0,0,0.6)" />
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.header}>
+              <Text style={styles.title}>
+                Reactions{rows.length ? ` · ${rows.length}` : ''}
+              </Text>
+              <TouchableOpacity
+                onPress={onClose}
+                style={styles.closeBtn}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={14} color={TEXT_MUTED} />
+              </TouchableOpacity>
+            </View>
 
-          <FlatList
-            data={rows}
-            keyExtractor={(r) => r.key}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <Text style={styles.emptyText}>No reactions yet</Text>
-              </View>
-            }
-            renderItem={({ item }) => {
-              const isMe = item.userId === currentUserId;
-              return (
-                <View style={styles.row}>
-                  <View
-                    style={[
-                      styles.avatar,
-                      { backgroundColor: getAvatarColor(item.userId) },
-                    ]}
-                  >
-                    <Text style={styles.avatarText}>
-                      {getInitials(item.name)}
+            <FlatList
+              data={rows}
+              keyExtractor={(r) => r.key}
+              contentContainerStyle={styles.list}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <View style={styles.empty}>
+                  <Text style={styles.emptyText}>No reactions yet</Text>
+                </View>
+              }
+              renderItem={({ item }) => {
+                const isMe = item.userId === currentUserId;
+                return (
+                  <View style={styles.row}>
+                    <View
+                      style={[
+                        styles.avatar,
+                        { backgroundColor: getAvatarColor(item.userId) },
+                      ]}
+                    >
+                      <Text style={styles.avatarText}>
+                        {getInitials(item.name)}
+                      </Text>
+                    </View>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {isMe ? 'You' : item.name}
+                    </Text>
+                    <Text style={styles.emoji}>
+                      {REACTION_EMOJI[item.reaction]}
                     </Text>
                   </View>
-                  <Text style={styles.name} numberOfLines={1}>
-                    {isMe ? 'You' : item.name}
-                  </Text>
-                  <Text style={styles.emoji}>
-                    {REACTION_EMOJI[item.reaction]}
-                  </Text>
-                </View>
-              );
-            }}
-          />
+                );
+              }}
+            />
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: { flex: 1 },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,

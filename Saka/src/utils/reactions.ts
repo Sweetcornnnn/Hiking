@@ -1,5 +1,5 @@
 // utils/reactions.ts
-import { ReactionType } from '../components/chat/MessageBubble';
+import type { ReactionType } from './reactionTypes';
 
 export type ReactionRow = {
   id: number | string;
