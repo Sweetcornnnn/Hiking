@@ -10,12 +10,13 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from './ModalScrim';
 import {
   getOfflineStatusSnapshot,
   checkInternetConnection,
   type OfflineStatusSnapshot,
 } from '../services/offlineStatusService';
-import { flushJournalWriteQueue } from '../services/journalService';
+import { retryJournalWriteQueue } from '../services/journalService';
 import { flushSakagramLikeQueue } from '../services/sakagramService';
 import { flushTextMessageQueue } from '../services/offlineMessageQueue';
 import { flushProfileUpdateQueue } from '../services/offlineProfileService';
@@ -84,7 +85,7 @@ export default function OfflineStatusIndicator() {
     setRetrying(true);
     setErrorMessage(null);
     const results = await Promise.allSettled([
-      flushJournalWriteQueue(),
+      retryJournalWriteQueue(),
       flushSakagramLikeQueue(),
       flushTextMessageQueue(),
       flushProfileUpdateQueue(),
@@ -126,13 +127,15 @@ export default function OfflineStatusIndicator() {
       )}
 
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={visible}
-        transparent
         animationType="fade"
         onRequestClose={() => setVisible(false)}
       >
-        <Pressable style={styles.backdrop} onPress={() => setVisible(false)}>
-          <Pressable style={styles.panel} onPress={(event) => event.stopPropagation()}>
+        <View style={styles.backdrop}>
+          <ModalScrim color="rgba(0,0,0,0.62)" />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setVisible(false)} />
+          <View style={styles.panel}>
             <View style={styles.panelHeader}>
               <View>
                 <Text style={styles.title}>Offline status</Text>
@@ -155,17 +158,32 @@ export default function OfflineStatusIndicator() {
             </View>
 
             <ScrollView style={styles.details} showsVerticalScrollIndicator={false}>
-              <Text style={styles.sectionTitle}>Waiting to sync</Text>
-              {snapshot.queues.length === 0 ? (
-                <Text style={styles.emptyText}>Nothing is waiting to sync.</Text>
-              ) : snapshot.queues.map((queue) => (
-                <View key={queue.label} style={styles.row}>
-                  <Text style={styles.rowLabel}>{queue.label}</Text>
-                  <Text style={styles.rowValue}>
-                    {queue.count}{queue.failed > 0 ? ` · ${queue.failed} failed` : ''}
+              {pendingCount === 0 ? (
+                <View style={styles.syncedStatus}>
+                  <Ionicons
+                    name={connected ? 'checkmark-circle-outline' : 'cloud-offline-outline'}
+                    size={24}
+                    color={connected ? '#8FC9A5' : '#E6D5AE'}
+                  />
+                  <Text style={styles.syncedText}>
+                    {connected
+                      ? 'Everything is synced up.'
+                      : 'No items are currently waiting to sync.'}
                   </Text>
                 </View>
-              ))}
+              ) : (
+                <>
+                  <Text style={styles.sectionTitle}>Waiting to sync</Text>
+                  {snapshot.queues.map((queue) => (
+                    <View key={queue.label} style={styles.row}>
+                      <Text style={styles.rowLabel}>{queue.label}</Text>
+                      <Text style={styles.rowValue}>
+                        {queue.count}{queue.failed > 0 ? ` · ${queue.failed} failed` : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              )}
 
               <Text style={[styles.sectionTitle, styles.savedHeading]}>Saved trail data</Text>
               {snapshot.savedData.length === 0 ? (
@@ -203,8 +221,8 @@ export default function OfflineStatusIndicator() {
             >
               <Text style={styles.closeText}>Close</Text>
             </Pressable>
-          </Pressable>
-        </Pressable>
+            </View>
+          </View>
       </Modal>
     </>
   );
@@ -228,7 +246,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.62)',
   },
   panel: {
     width: '100%',
@@ -251,6 +268,13 @@ const styles = StyleSheet.create({
   title: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
   connection: { color: '#AAB5C3', fontSize: 12, marginTop: 4, textTransform: 'capitalize' },
   details: { marginTop: 15, flexShrink: 1 },
+  syncedStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+  },
+  syncedText: { color: '#E8EDF3', fontSize: 14, fontWeight: '600' },
   sectionTitle: { color: '#C9A96E', fontSize: 12, fontWeight: '700', marginBottom: 8 },
   savedHeading: { marginTop: 20 },
   row: {
