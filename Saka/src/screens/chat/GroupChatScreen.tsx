@@ -55,6 +55,7 @@ import {
   queueTextMessage,
   subscribeToQueuedMessages,
 } from '../../services/offlineMessageQueue';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
 type ProfileData = {
   full_name: string | null;
@@ -1551,125 +1552,131 @@ export default function GroupChatScreen({
 
       {/* Members Modal */}
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={showMembers}
-        transparent
         animationType="fade"
         onRequestClose={() => setShowMembers(false)}
       >
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowMembers(false)}>
-          <Pressable style={styles.membersModal} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                onPress={() => setShowMembers(false)}
-                style={styles.modalCloseBtn}
-              >
-                <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Members ({members.length})</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowMembers(false);
-                  setShowAddMembers(true);
-                }}
-                style={styles.modalCloseBtn}
-              >
-                <Ionicons name="person-add" size={14} color={ACCENT_GOLD} />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.modalRoot}>
+          <ModalScrim color="rgba(0,0,0,0.6)" />
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowMembers(false)}>
+            <Pressable style={styles.membersModal} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.modalHeader}>
+                <TouchableOpacity
+                  onPress={() => setShowMembers(false)}
+                  style={styles.modalCloseBtn}
+                >
+                  <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Members ({members.length})</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowMembers(false);
+                    setShowAddMembers(true);
+                  }}
+                  style={styles.modalCloseBtn}
+                >
+                  <Ionicons name="person-add" size={14} color={ACCENT_GOLD} />
+                </TouchableOpacity>
+              </View>
 
-            <FlatList
-              data={members}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={renderMember}
-              contentContainerStyle={styles.membersList}
-            />
+              <FlatList
+                data={members}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={renderMember}
+                contentContainerStyle={styles.membersList}
+              />
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </View>
       </Modal>
 
       {/* Menu Modal */}
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={showMenu}
-        transparent
         animationType="fade"
         onRequestClose={() => setShowMenu(false)}
       >
-        <TouchableOpacity
-          style={styles.menuBackdrop}
-          activeOpacity={1}
-          onPress={() => setShowMenu(false)}
-        >
-          <View style={styles.menuContainer}>
-            <View style={styles.menuHeader}>
-              <View
-                style={[
-                  styles.menuAvatar,
-                  { backgroundColor: getAvatarColor(groupId || '') },
-                ]}
+        <View style={styles.modalRoot}>
+          <ModalScrim color="rgba(0,0,0,0.6)" />
+          <TouchableOpacity
+            style={styles.menuBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowMenu(false)}
+          >
+            <View style={styles.menuContainer}>
+              <View style={styles.menuHeader}>
+                <View
+                  style={[
+                    styles.menuAvatar,
+                    { backgroundColor: getAvatarColor(groupId || '') },
+                  ]}
+                >
+                  {group?.avatar_url ? (
+                    <Image source={{ uri: group.avatar_url }} style={styles.menuAvatarImage} />
+                  ) : (
+                    <Ionicons name="people" size={18} color="#fff" />
+                  )}
+                </View>
+                <View style={styles.menuHeaderInfo}>
+                  <Text style={styles.menuTitle} numberOfLines={1}>
+                    {group?.name || 'Group Chat'}
+                  </Text>
+                  <Text style={styles.menuSubtitle}>
+                    {members.length} member{members.length !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowMembers(true);
+                }}
               >
-                {group?.avatar_url ? (
-                  <Image source={{ uri: group.avatar_url }} style={styles.menuAvatarImage} />
+                <Ionicons name="people-outline" size={16} color={TEXT_PRIMARY} />
+                <Text style={styles.menuOptionText}>View Members</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowAddMembers(true);
+                }}
+              >
+                <Ionicons name="person-add-outline" size={16} color={ACCENT_GOLD} />
+                <Text style={[styles.menuOptionText, { color: ACCENT_GOLD }]}>
+                  Add Members
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={confirmLeaveGroup}
+                disabled={leaving}
+              >
+                {leaving ? (
+                  <ActivityIndicator size="small" color={CHAT_DANGER} />
                 ) : (
-                  <Ionicons name="people" size={18} color="#fff" />
+                  <Ionicons name="exit-outline" size={16} color={CHAT_DANGER} />
                 )}
-              </View>
-              <View style={styles.menuHeaderInfo}>
-                <Text style={styles.menuTitle} numberOfLines={1}>
-                  {group?.name || 'Group Chat'}
+                <Text style={[styles.menuOptionText, { color: CHAT_DANGER }]}>
+                  Leave Group
                 </Text>
-                <Text style={styles.menuSubtitle}>
-                  {members.length} member{members.length !== 1 ? 's' : ''}
-                </Text>
-              </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.menuOption, styles.menuCancel]}
+                onPress={() => setShowMenu(false)}
+              >
+                <Text style={[styles.menuOptionText, { color: TEXT_MUTED }]}>Cancel</Text>
+              </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={styles.menuOption}
-              onPress={() => {
-                setShowMenu(false);
-                setShowMembers(true);
-              }}
-            >
-              <Ionicons name="people-outline" size={16} color={TEXT_PRIMARY} />
-              <Text style={styles.menuOptionText}>View Members</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuOption}
-              onPress={() => {
-                setShowMenu(false);
-                setShowAddMembers(true);
-              }}
-            >
-              <Ionicons name="person-add-outline" size={16} color={ACCENT_GOLD} />
-              <Text style={[styles.menuOptionText, { color: ACCENT_GOLD }]}>
-                Add Members
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuOption}
-              onPress={confirmLeaveGroup}
-              disabled={leaving}
-            >
-              {leaving ? (
-                <ActivityIndicator size="small" color={CHAT_DANGER} />
-              ) : (
-                <Ionicons name="exit-outline" size={16} color={CHAT_DANGER} />
-              )}
-              <Text style={[styles.menuOptionText, { color: CHAT_DANGER }]}>
-                Leave Group
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.menuOption, styles.menuCancel]}
-              onPress={() => setShowMenu(false)}
-            >
-              <Text style={[styles.menuOptionText, { color: TEXT_MUTED }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Add Members Modal */}
@@ -2096,11 +2103,11 @@ const styles = StyleSheet.create({
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
   },
+  modalRoot: { flex: 1 },
   membersModal: {
     width: '100%',
     maxWidth: 400,
@@ -2179,7 +2186,6 @@ const styles = StyleSheet.create({
 
   menuBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
   menuContainer: {
