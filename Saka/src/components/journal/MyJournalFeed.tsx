@@ -50,6 +50,7 @@ import {
   CHAT_BORDER_STRONG,
 } from '../../theme/designTokens';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 
 interface Props {
   entries: JournalEntry[];
@@ -79,7 +80,6 @@ const HOLE_COUNT = 4;
 const PHOTO_RADIUS = 12;
 const SERIF = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
 const OVERLAY = `${BG_CARD}CC`;
-const BACKDROP = `${BG_CARD}EB`;
 
 function JournalHeader({
   subtitle,
@@ -93,7 +93,7 @@ function JournalHeader({
   onDelete?: () => void;
 }) {
   return (
-    <SafeAreaView edges={['top', 'left', 'right']}>
+    <SafeAreaView edges={['left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -139,6 +139,117 @@ function JournalHeader({
   );
 }
 
+// Landscape: controls live in a slim left rail so the pages get the FULL screen height
+function JournalRail({
+  page,
+  total,
+  onBack,
+  onNewEntry,
+  onDelete,
+  onPrev,
+  onNext,
+}: {
+  page?: number;
+  total?: number;
+  onBack: () => void;
+  onNewEntry: () => void;
+  onDelete?: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+}) {
+  return (
+    <View style={styles.rail}>
+      <TouchableOpacity
+        style={styles.backBtn}
+        onPress={onBack}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+      >
+        <Ionicons name="chevron-back" size={18} color={TEXT_PRIMARY} />
+      </TouchableOpacity>
+
+      <View style={styles.railPager}>
+        {!!onPrev && (
+          <Pressable
+            onPress={onPrev}
+            hitSlop={8}
+            style={({ pressed }) => [styles.railArrow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Previous page"
+          >
+            <Ionicons name="chevron-up" size={17} color={TEXT_MUTED} />
+          </Pressable>
+        )}
+        {!!page && !!total && (
+          <View style={styles.railCount} accessible accessibilityLabel={`Page ${page} of ${total}`}>
+            <Text style={styles.railCountNow}>{page}</Text>
+            <View style={styles.railCountLine} />
+            <Text style={styles.railCountTotal}>{total}</Text>
+          </View>
+        )}
+        {!!onNext && (
+          <Pressable
+            onPress={onNext}
+            hitSlop={8}
+            style={({ pressed }) => [styles.railArrow, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Next page"
+          >
+            <Ionicons name="chevron-down" size={17} color={TEXT_MUTED} />
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.railActions}>
+        <TouchableOpacity
+          onPress={onNewEntry}
+          style={styles.newEntryBtn}
+          accessibilityRole="button"
+          accessibilityLabel="New journal entry"
+        >
+          <Ionicons name="add" size={18} color={TEXT_PRIMARY} />
+        </TouchableOpacity>
+        {!!onDelete && (
+          <Pressable
+            onPress={onDelete}
+            style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Delete journal entry"
+          >
+            <Ionicons name="trash-outline" size={16} color={TEXT_DANGER} />
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function EmptyState({ landscape, onNewEntry }: { landscape: boolean; onNewEntry: () => void }) {
+  return (
+    <View style={[styles.emptyState, landscape && styles.emptyStateLs]}>
+      <View style={styles.emptyIcon}>
+        <Ionicons name="book-outline" size={22} color={ACCENT_GOLD} />
+      </View>
+      <View style={[styles.emptyCopy, landscape && styles.emptyCopyLs]}>
+        <Text style={styles.emptyTitle}>Your journal is empty</Text>
+        <Text style={[styles.emptyText, landscape && styles.emptyTextLs]}>
+          Write about a hike, add photos, and make the memory part of your profile.
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={onNewEntry}
+        style={[styles.emptyButton, landscape && { marginTop: 0 }]}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+      >
+        <Ionicons name="add" size={15} color={BG_CARD} />
+        <Text style={styles.emptyButtonText}>New journal entry</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function MyJournalFeed({
   entries,
   mountains,
@@ -155,8 +266,16 @@ export default function MyJournalFeed({
     return map;
   }, [mountains]);
 
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const landscape = screenW > screenH;
+
   if (isLoading && entries.length === 0) {
-    return (
+    return landscape ? (
+      <View style={styles.lsShell}>
+        <JournalRail onBack={onBack} onNewEntry={onNewEntry} />
+        <SkeletonCard landscape />
+      </View>
+    ) : (
       <>
         <JournalHeader onBack={onBack} onNewEntry={onNewEntry} />
         <SkeletonCard />
@@ -165,27 +284,17 @@ export default function MyJournalFeed({
   }
 
   if (!isLoading && entries.length === 0) {
-    return (
+    return landscape ? (
+      <View style={styles.lsShell}>
+        <JournalRail onBack={onBack} onNewEntry={onNewEntry} />
+        <View style={styles.lsEmptyWrap}>
+          <EmptyState landscape onNewEntry={onNewEntry} />
+        </View>
+      </View>
+    ) : (
       <>
         <JournalHeader onBack={onBack} onNewEntry={onNewEntry} />
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIcon}>
-            <Ionicons name="book-outline" size={22} color={ACCENT_GOLD} />
-          </View>
-          <Text style={styles.emptyTitle}>Your journal is empty</Text>
-          <Text style={styles.emptyText}>
-            Write about a hike, add photos, and make the memory part of your profile.
-          </Text>
-          <TouchableOpacity
-            onPress={onNewEntry}
-            style={styles.emptyButton}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-          >
-            <Ionicons name="add" size={15} color={BG_CARD} />
-            <Text style={styles.emptyButtonText}>New journal entry</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState landscape={false} onNewEntry={onNewEntry} />
       </>
     );
   }
@@ -221,7 +330,8 @@ function DiaryCarousel({
   onBack: () => void;
   onNewEntry: () => void;
 }) {
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const landscape = windowWidth > windowHeight;
   const insets = useSafeAreaInsets();
   const count = entries.length;
   const loops = count > 1;
@@ -313,16 +423,28 @@ function DiaryCarousel({
     scrollRef.current?.scrollTo({ y: slot * itemHeight, animated: true });
 
   return (
-    <View style={[styles.card, styles.fill, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-      <JournalHeader
-        subtitle={count > 1 ? `Page ${activeIndex + 1} of ${count}` : 'Page 1'}
-        onBack={onBack}
-        onNewEntry={onNewEntry}
-        onDelete={() => onDelete(activeEntry)}
-      />
+    <View style={[styles.card, styles.fill, landscape ? styles.lsRoot : { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      {landscape ? (
+        <JournalRail
+          page={activeIndex + 1}
+          total={count}
+          onBack={onBack}
+          onNewEntry={onNewEntry}
+          onDelete={() => onDelete(activeEntry)}
+          onPrev={loops ? () => goTo(activeSlot - 1) : undefined}
+          onNext={loops ? () => goTo(activeSlot + 1) : undefined}
+        />
+      ) : (
+        <JournalHeader
+          subtitle={count > 1 ? `Page ${activeIndex + 1} of ${count}` : 'Page 1'}
+          onBack={onBack}
+          onNewEntry={onNewEntry}
+          onDelete={() => onDelete(activeEntry)}
+        />
+      )}
 
       <View
-        style={[styles.row, styles.fill]}
+        style={[styles.row, styles.fill, landscape && styles.lsRow]}
         onLayout={(event) => {
           const nextHeight = Math.round(event.nativeEvent.layout.height);
           setMeasuredHeight((current) =>
@@ -332,7 +454,7 @@ function DiaryCarousel({
       >
         <Animated.ScrollView
           ref={scrollRef}
-          style={styles.notesColumn}
+          style={[styles.notesColumn, landscape && styles.lsNotes]}
           contentContainerStyle={{ paddingVertical: verticalPad }}
           showsVerticalScrollIndicator={false}
           decelerationRate="fast"
@@ -381,7 +503,7 @@ function DiaryCarousel({
           })}
         </Animated.ScrollView>
 
-        <Animated.View style={[styles.photoColumn, { opacity: fade }]}>
+        <Animated.View style={[styles.photoColumn, landscape && styles.lsPhoto, { opacity: fade }]}>
           <View style={{ height: cardHeight }}>
             <View style={styles.tape} pointerEvents="none" />
             <PhotoPanel
@@ -489,7 +611,9 @@ function NotePageModal({
   onClose: () => void;
   onSave?: (entry: JournalEntry, changes: NoteChanges) => Promise<void> | void;
 }) {
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const modalInsets = useSafeAreaInsets();
+  const landscape = windowWidth > windowHeight;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
@@ -534,11 +658,28 @@ function NotePageModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleRequestClose}>
+    <Modal
+      {...FULLSCREEN_MODAL_PROPS}
+      visible={visible}
+      animationType="fade"
+      onRequestClose={handleRequestClose}
+    >
       <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Pressable style={styles.modalBackdrop} onPress={editing ? undefined : closeModal}>
+        <ModalScrim color="rgba(10,17,26,0.82)" />
+        <Pressable
+          style={[
+            styles.modalBackdrop,
+            {
+              paddingLeft: modalInsets.left + SPACING.cardPadH,
+              paddingRight: modalInsets.right + SPACING.cardPadH,
+              paddingTop: modalInsets.top + 12,
+              paddingBottom: modalInsets.bottom + 12,
+            },
+          ]}
+          onPress={editing ? undefined : closeModal}
+        >
           <Pressable
-            style={[styles.modalPage, { maxHeight: windowHeight * 0.82 }]}
+            style={[styles.modalPage, landscape && styles.modalPageLs, { maxHeight: windowHeight * (landscape ? 0.92 : 0.82) }]}
             onPress={(event) => event.stopPropagation()}
           >
             <BinderHoles />
@@ -574,7 +715,7 @@ function NotePageModal({
                     onChangeText={setDraftContent}
                     placeholder="Write your note..."
                     placeholderTextColor={TEXT_MUTED}
-                    style={styles.modalBodyInput}
+                    style={[styles.modalBodyInput, landscape && styles.modalBodyInputLs]}
                     editable={!saving}
                     multiline
                     textAlignVertical="top"
@@ -724,7 +865,7 @@ function PhotoPanel({
   );
 }
 
-function SkeletonCard() {
+function SkeletonCard({ landscape = false }: { landscape?: boolean }) {
   const [pulse] = useState(() => new Animated.Value(0.5));
   useEffect(() => {
     let loop: Animated.CompositeAnimation | null = null;
@@ -744,15 +885,17 @@ function SkeletonCard() {
   }, [pulse]);
 
   return (
-    <Animated.View style={[styles.card, { opacity: pulse }]} accessibilityLabel="Loading journal entries">
-      <View style={styles.skeletonHeader}>
-        <View style={skeletonStyles.avatar} />
-        <View style={skeletonStyles.nameBlock}>
-          <View style={[skeletonStyles.line, { width: '40%' }]} />
-          <View style={[skeletonStyles.line, { width: '22%', height: 8 }]} />
+    <Animated.View style={[styles.card, landscape && styles.lsSkeleton, { opacity: pulse }]} accessibilityLabel="Loading journal entries">
+      {!landscape && (
+        <View style={styles.skeletonHeader}>
+          <View style={skeletonStyles.avatar} />
+          <View style={skeletonStyles.nameBlock}>
+            <View style={[skeletonStyles.line, { width: '40%' }]} />
+            <View style={[skeletonStyles.line, { width: '22%', height: 8 }]} />
+          </View>
         </View>
-      </View>
-      <View style={[styles.row, { height: 280 }]}>
+      )}
+      <View style={[styles.row, landscape ? [styles.fill, styles.lsRow] : { height: 280 }]}>
         <View style={[styles.notesColumn, skeletonStyles.page]}>
           <View style={[skeletonStyles.line, { width: '35%', height: 8 }]} />
           <View style={[skeletonStyles.line, { width: '70%', height: 14 }]} />
@@ -891,6 +1034,28 @@ const styles = StyleSheet.create({
   deleteBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: OVERLAY, borderWidth: 1, borderColor: BORDER_DANGER },
   pressed: { opacity: 0.6 },
   fill: { flex: 1 },
+  // ── landscape layout ──
+  lsShell: { flex: 1, flexDirection: 'row' },
+  lsRoot: { flexDirection: 'row', paddingBottom: 0 },
+  lsRow: { gap: 10, paddingLeft: 2, paddingRight: 8 },
+  lsNotes: { flex: 1.15 },
+  lsPhoto: { flex: 1 },
+  lsSkeleton: { flex: 1, paddingBottom: 0 },
+  lsEmptyWrap: { flex: 1, justifyContent: 'center', paddingRight: 8 },
+  rail: { width: 52, alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, paddingLeft: 6, gap: 8 },
+  railPager: { alignItems: 'center', gap: 2 },
+  railArrow: { width: 32, height: 26, alignItems: 'center', justifyContent: 'center' },
+  railCount: { alignItems: 'center', gap: 3, paddingVertical: 2 },
+  railCountNow: { color: ACCENT_GOLD, fontFamily: SERIF, fontSize: 17, fontWeight: '700', lineHeight: 20 },
+  railCountLine: { width: 14, height: 1, backgroundColor: BORDER_GOLD },
+  railCountTotal: { color: TEXT_FAINT, fontSize: 11, fontWeight: '600' },
+  railActions: { alignItems: 'center', gap: 8 },
+  emptyStateLs: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 18, gap: 16 },
+  emptyCopy: { alignItems: 'center', gap: SPACING.gap },
+  emptyCopyLs: { flex: 1, alignItems: 'flex-start', gap: 2 },
+  emptyTextLs: { textAlign: 'left', maxWidth: undefined },
+  modalPageLs: { maxWidth: 720 },
+  modalBodyInputLs: { minHeight: 90 },
   skeletonHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.gap, paddingHorizontal: SPACING.cardPadH, paddingTop: SPACING.cardPadT, paddingBottom: SPACING.gapLg },
   row: { flexDirection: 'row', alignItems: 'stretch', gap: 8, paddingHorizontal: 8 },
   notesColumn: { flex: 3 },
@@ -912,7 +1077,7 @@ const styles = StyleSheet.create({
   ruled: { flex: 1, overflow: 'hidden', marginTop: 2 },
   ruleLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: BORDER_DEFAULT },
   noteBody: { color: TEXT_SECONDARY, fontFamily: SERIF, fontSize: FONT.itemSize, lineHeight: LINE_HEIGHT },
-  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.cardPadH, backgroundColor: BACKDROP },
+  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   modalPage: { width: '100%', overflow: 'hidden', borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_GOLD_SOFT, backgroundColor: BG_PANEL },
   modalContent: { paddingLeft: 40, paddingRight: 52, paddingTop: SPACING.cardPadT + 6, paddingBottom: SPACING.cardPadT + 6, gap: SPACING.gap },
   modalTitle: { color: TEXT_PRIMARY, fontFamily: SERIF, fontSize: CHAT_FS_TITLE, fontWeight: '700', lineHeight: 22 },

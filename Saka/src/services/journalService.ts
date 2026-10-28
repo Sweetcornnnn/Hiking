@@ -70,20 +70,40 @@ async function persistLocalPhotos(
     warnIfDeviceStorageLow();
   }
 
-  return Promise.all(images.map((image) => {
+  return Promise.all(images.map(async (image) => {
     if (/^(https?:|file:|content:)/i.test(image.uri) && !/^(file:|content:)/i.test(image.uri)) {
       return image;
     }
 
-    const source = new File(normalizeLocalUri(image.uri));
-    if (!source.exists) {
+    const source = getExistingLocalFile(image.uri);
+    if (!source) {
       throw new Error('A selected journal photo is no longer available on this device.');
     }
     const extension = getExtension(image.mimeType || getImageContentType(image.uri));
     const destination = new File(directory, `${createLocalId()}.${extension}`);
-    source.copy(destination);
+    await source.copy(destination);
     return { ...image, uri: destination.uri };
   }));
+}
+
+function getExistingLocalFile(uri: string): File | null {
+  const candidates = [uri];
+  let decoded = uri;
+
+  for (let index = 0; index < 2 && decoded.includes('%25'); index += 1) {
+    try {
+      decoded = decodeURIComponent(decoded);
+      if (!candidates.includes(decoded)) candidates.push(decoded);
+    } catch {
+      break;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const file = new File(candidate);
+    if (file.exists) return file;
+  }
+  return null;
 }
 
 function toLocalEntry(
@@ -128,6 +148,13 @@ async function uploadQueuedJournalImages(
 async function syncJournalWrite(
   write: QueuedJournalWrite,
 ): Promise<{ images: string[]; conflict: boolean }> {
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw new Error(`Unable to verify journal sync account: ${sessionError.message}`);
+  if (!session?.user) throw new Error('Sign in to sync journal photos.');
+  if (session.user.id !== write.userId) {
+    throw new Error('Sign in with the account that owns these journal photos to sync them.');
+  }
+
   const uploadedImages = await uploadQueuedJournalImages(
     write.userId,
     write.entryId,
@@ -255,7 +282,18 @@ export async function retryJournalWriteQueue(): Promise<number> {
     write.error = null;
   }
   await writeJournalQueue(queue);
-  return flushJournalWriteQueue();
+  const synced = await flushJournalWriteQueue();
+  const failedWrites = (await readJournalQueue())
+    .filter((write) => write.status === 'failed');
+  if (failedWrites.length > 0) {
+    const reasons = Array.from(new Set(
+      failedWrites.map((write) => write.error).filter((error): error is string => Boolean(error)),
+    ));
+    throw new Error(reasons.length > 0
+      ? reasons.join('\n')
+      : 'Some journal items could not be synced.');
+  }
+  return synced;
 }
 
 async function queueJournalWrite(
@@ -398,16 +436,20 @@ async function uploadJournalImage(
   image: JournalImage,
   stableKey = createLocalId(),
 ): Promise<string> {
-  const uri = normalizeLocalUri(image.uri);
+  const uri = image.uri;
   const contentType = image.mimeType || getImageContentType(uri);
   let arrayBuffer: ArrayBuffer;
 
   try {
-    const response = await fetch(uri);
-    if (!response.ok && response.status !== 0) {
-      throw new Error(`Local photo returned HTTP ${response.status}.`);
+    if (/^(file:|content:)/i.test(uri)) {
+      arrayBuffer = await new File(uri).arrayBuffer();
+    } else {
+      const response = await fetch(uri);
+      if (!response.ok && response.status !== 0) {
+        throw new Error(`Photo returned HTTP ${response.status}.`);
+      }
+      arrayBuffer = await response.arrayBuffer();
     }
-    arrayBuffer = await response.arrayBuffer();
 
     if (arrayBuffer.byteLength === 0) {
       throw new Error('The selected photo is empty or unavailable.');
@@ -448,13 +490,9 @@ export async function replaceJournalImage(
     const realIndex = realIndices[index];
     if (realIndex === undefined) throw new Error('Photo not found in this entry.');
 
-    const { data: auth } = await supabase.auth.getSession();
-    const userId = auth?.user?.id;
-    if (!userId) throw new Error('Not signed in.');
-
     const nextImages = [...currentImages];
     nextImages[realIndex] = localEditedUri;
-    const result = await queueJournalWrite(userId, entry.id, 'update', {
+    const result = await queueJournalWrite(entry.user_id, entry.id, 'update', {
       title: entry.title,
       content: entry.content,
       images: nextImages.map((uri) => ({ uri })),
@@ -491,20 +529,6 @@ function getExtension(contentType: string): string {
     default:
       return 'jpg';
   }
-}
-
-function normalizeLocalUri(uri: string): string {
-  let normalized = uri;
-
-  for (let index = 0; index < 2 && normalized.includes('%25'); index += 1) {
-    try {
-      normalized = decodeURIComponent(normalized);
-    } catch {
-      break;
-    }
-  }
-
-  return normalized;
 }
 
 export async function createJournalEntry(input: CreateJournalEntryInput): Promise<JournalEntry> {

@@ -7,6 +7,8 @@ import {
   Modal,
   PanResponder,
   Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,9 +16,11 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path, Polygon, Rect as SvgRect } from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
 import { Ionicons } from '@expo/vector-icons';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 import {
   ACCENT_GOLD,
   BG_CARD,
@@ -61,11 +65,16 @@ const WIDTHS = [2, 4, 6, 10, 16];
 const TEXT_SIZES = [16, 22, 28, 36];
 const MAX_HISTORY = 50;
 const MAX_EXPORT_SIDE = 2048;
-
+const PANEL_W = 236; // landscape tool panel width
+const MARGIN_X = 14; // gap between the dialog and the screen edge (portrait)
+const MARGIN_X_LS = 24; // (landscape)
+const MARGIN_Y_LS = 12;
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
   const { width: windowW, height: windowH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const landscape = windowW > windowH;
   const [imageSize, setImageSize] = useState<{ w: number; h: number } | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [tool, setTool] = useState<Tool>('pen');
@@ -105,8 +114,10 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
 
   const canvasSize = useMemo(() => {
     if (!imageSize) return { width: 0, height: 0 };
-    const maxW = windowW - 24;
-    const maxH = windowH * 0.62;
+    const cardW = windowW - insets.left - insets.right - 2 * (landscape ? MARGIN_X_LS : MARGIN_X);
+    const cardH = windowH - insets.top - insets.bottom - 2 * MARGIN_Y_LS;
+    const maxW = landscape ? cardW - PANEL_W - 26 : Math.min(cardW, 640) - 26;
+    const maxH = landscape ? cardH - 26 : windowH * 0.5;
     const ratio = imageSize.w / imageSize.h;
     let w = maxW;
     let h = w / ratio;
@@ -115,7 +126,7 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
       w = h * ratio;
     }
     return { width: Math.round(w), height: Math.round(h) };
-  }, [imageSize, windowW, windowH]);
+  }, [imageSize, windowW, windowH, landscape, insets.left, insets.right, insets.top, insets.bottom]);
 
   const live = useRef({ items, tool, color, width, canvas: canvasSize });
   live.current = { items, tool, color, width, canvas: canvasSize };
@@ -247,39 +258,105 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
   const renderedItems = draft ? [...items, draft] : items;
   const saveDisabled = isSaving || loadFailed || !imageSize;
 
+  // ── pieces shared by the portrait toolbar and the landscape side panel ──
+  const cancelBtn = (
+    <TouchableOpacity onPress={requestClose} style={styles.headerBtn} hitSlop={8}>
+      <Ionicons name="close" size={18} color={TEXT_PRIMARY} />
+      <Text style={styles.headerBtnText}>Cancel</Text>
+    </TouchableOpacity>
+  );
+
+  const saveBtn = (
+    <TouchableOpacity
+      onPress={handleSave}
+      disabled={saveDisabled}
+      style={[styles.saveHeaderBtn, saveDisabled && { opacity: 0.5 }]}
+      hitSlop={8}
+    >
+      {isSaving ? (
+        <ActivityIndicator size="small" color={BG_PANEL} />
+      ) : (
+        <>
+          <Ionicons name="checkmark" size={16} color={BG_PANEL} />
+          <Text style={styles.saveHeaderBtnText}>Save</Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+
+  const toolButtons = (compact: boolean) => (
+    <>
+      <ToolButton compact={compact} icon="pencil" label="Pen" active={tool === 'pen'} onPress={() => setTool('pen')} />
+      <ToolButton compact={compact} icon="text" label="Text" active={tool === 'text'} onPress={() => setTool('text')} />
+      <ToolButton compact={compact} icon="arrow-forward" label="Arrow" active={tool === 'arrow'} onPress={() => setTool('arrow')} />
+      <ToolButton compact={compact} icon="square-outline" label="Rect" active={tool === 'rect'} onPress={() => setTool('rect')} />
+      <ToolButton compact={compact} icon="ellipse-outline" label="Circle" active={tool === 'circle'} onPress={() => setTool('circle')} />
+      <ToolButton compact={compact} icon="backspace-outline" label="Erase" active={tool === 'erase'} onPress={() => setTool('erase')} />
+    </>
+  );
+
+  const colorSwatches = (size: number) =>
+    COLORS.map((c) => (
+      <TouchableOpacity
+        key={c}
+        onPress={() => setColor(c)}
+        style={[styles.colorSwatch, { width: size, height: size, borderRadius: size / 2, backgroundColor: c }, color === c && styles.colorSwatchActive]}
+        accessibilityRole="button"
+        accessibilityLabel={`Color ${c}`}
+      />
+    ));
+
+  const widthChips = WIDTHS.map((w) => (
+    <TouchableOpacity key={w} onPress={() => setWidth(w)} style={[styles.widthChip, width === w && styles.widthChipActive]}>
+      <View style={{ width: 18, height: w, borderRadius: w / 2, backgroundColor: width === w ? ACCENT_GOLD : TEXT_MUTED }} />
+    </TouchableOpacity>
+  ));
+
+  const historyButtons = (
+    <>
+      <TouchableOpacity onPress={undo} style={styles.miniBtn} disabled={!canUndo}>
+        <Ionicons name="arrow-undo" size={16} color={canUndo ? TEXT_PRIMARY : TEXT_FAINT} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={redo} style={styles.miniBtn} disabled={!canRedo}>
+        <Ionicons name="arrow-redo" size={16} color={canRedo ? TEXT_PRIMARY : TEXT_FAINT} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={clearAll} style={styles.miniBtn}>
+        <Ionicons name="trash-outline" size={16} color={TEXT_DANGER} />
+      </TouchableOpacity>
+    </>
+  );
+
   return (
     <Modal
+      {...FULLSCREEN_MODAL_PROPS}
       visible={visible}
-      transparent={false}
-      animationType="slide"
-      presentationStyle="fullScreen"
+      animationType="fade"
       onRequestClose={requestClose}
     >
-      <View style={styles.root}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={requestClose} style={styles.headerBtn} hitSlop={8}>
-            <Ionicons name="close" size={18} color={TEXT_PRIMARY} />
-            <Text style={styles.headerBtnText}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit photo</Text>
-          <TouchableOpacity
-            onPress={handleSave}
-            disabled={saveDisabled}
-            style={[styles.saveHeaderBtn, saveDisabled && { opacity: 0.5 }]}
-            hitSlop={8}
-          >
-            {isSaving ? (
-              <ActivityIndicator size="small" color={BG_PANEL} />
-            ) : (
-              <>
-                <Ionicons name="checkmark" size={16} color={BG_PANEL} />
-                <Text style={styles.saveHeaderBtnText}>Save</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+      <View
+        style={[
+          styles.backdrop,
+          {
+            paddingTop: insets.top + (landscape ? MARGIN_Y_LS : 16),
+            paddingBottom: insets.bottom + (landscape ? MARGIN_Y_LS : 16),
+            paddingLeft: insets.left + (landscape ? MARGIN_X_LS : MARGIN_X),
+            paddingRight: insets.right + (landscape ? MARGIN_X_LS : MARGIN_X),
+          },
+        ]}
+      >
+        <ModalScrim color="rgba(0,0,0,0.74)" />
+        {/* tap outside the dialog = close (asks before discarding edits) */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} accessible={false} />
+        <View style={[styles.card, landscape && styles.cardLs]}>
+        {!landscape && (
+          <View style={styles.header}>
+            {cancelBtn}
+            <Text style={styles.headerTitle}>Edit photo</Text>
+            {saveBtn}
+          </View>
+        )}
 
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.canvasArea}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.canvasArea, landscape && styles.canvasAreaLs]}>
           {loadFailed ? (
             <View style={styles.errorBox}>
               <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
@@ -317,81 +394,92 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
           )}
         </KeyboardAvoidingView>
 
-        <View style={styles.toolbarWrap}>
-          <View style={styles.toolRow}>
-            <ToolButton icon="pencil" label="Pen" active={tool === 'pen'} onPress={() => setTool('pen')} />
-            <ToolButton icon="text" label="Text" active={tool === 'text'} onPress={() => setTool('text')} />
-            <ToolButton icon="arrow-forward" label="Arrow" active={tool === 'arrow'} onPress={() => setTool('arrow')} />
-            <ToolButton icon="square-outline" label="Rect" active={tool === 'rect'} onPress={() => setTool('rect')} />
-            <ToolButton icon="ellipse-outline" label="Circle" active={tool === 'circle'} onPress={() => setTool('circle')} />
-            <ToolButton icon="backspace-outline" label="Erase" active={tool === 'erase'} onPress={() => setTool('erase')} />
-          </View>
-          <View style={styles.toolRow}>
-            <View style={styles.colorRow}>
-              {COLORS.map((c) => (
-                <TouchableOpacity
-                  key={c}
-                  onPress={() => setColor(c)}
-                  style={[styles.colorSwatch, { backgroundColor: c }, color === c && styles.colorSwatchActive]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Color ${c}`}
-                />
-              ))}
+        {landscape ? (
+          // LANDSCAPE: the photo gets the full height; every control lives in this side panel
+          <ScrollView
+            style={styles.panel}
+            contentContainerStyle={styles.panelContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.panelTop}>
+              {cancelBtn}
+              {saveBtn}
+            </View>
+            <View style={styles.toolGrid}>{toolButtons(true)}</View>
+            <View style={styles.panelColors}>{colorSwatches(22)}</View>
+            <View style={styles.toolRow}>{widthChips}</View>
+            <View style={styles.panelActions}>{historyButtons}</View>
+          </ScrollView>
+        ) : (
+          <View style={styles.toolbarWrap}>
+            <View style={styles.toolRow}>{toolButtons(false)}</View>
+            <View style={styles.toolRow}>
+              <View style={styles.colorRow}>{colorSwatches(26)}</View>
+            </View>
+            <View style={styles.toolRow}>
+              {widthChips}
+              <View style={{ flex: 1 }} />
+              {historyButtons}
             </View>
           </View>
-          <View style={styles.toolRow}>
-            {WIDTHS.map((w) => (
-              <TouchableOpacity key={w} onPress={() => setWidth(w)} style={[styles.widthChip, width === w && styles.widthChipActive]}>
-                <View style={{ width: 18, height: w, borderRadius: w / 2, backgroundColor: width === w ? ACCENT_GOLD : TEXT_MUTED }} />
-              </TouchableOpacity>
-            ))}
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity onPress={undo} style={styles.miniBtn} disabled={!canUndo}>
-              <Ionicons name="arrow-undo" size={16} color={canUndo ? TEXT_PRIMARY : TEXT_FAINT} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={redo} style={styles.miniBtn} disabled={!canRedo}>
-              <Ionicons name="arrow-redo" size={16} color={canRedo ? TEXT_PRIMARY : TEXT_FAINT} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={clearAll} style={styles.miniBtn}>
-              <Ionicons name="trash-outline" size={16} color={TEXT_DANGER} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        )}
 
-        <Modal visible={pendingTextPoint !== null} transparent animationType="fade" onRequestClose={() => {
-          setPendingTextPoint(null);
-          setEditingTextId(null);
-        }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.textModalRoot}>
-            <View style={styles.textModalCard}>
-              <Text style={styles.textModalLabel}>{editingTextId ? 'Edit text' : 'Add text'}</Text>
-              <TextInput
-                autoFocus
-                value={pendingTextValue}
-                onChangeText={setPendingTextValue}
-                placeholder="Summit at sunrise…"
-                placeholderTextColor={TEXT_FAINT}
-                style={styles.textModalInput}
-                multiline
-              />
-              <View style={styles.textSizeRow}>
-                {TEXT_SIZES.map((s) => (
-                  <TouchableOpacity key={s} onPress={() => setTextSize(s)} style={[styles.textSizeChip, textSize === s && styles.textSizeChipActive]}>
-                    <Text style={{ color: textSize === s ? ACCENT_GOLD : TEXT_MUTED, fontSize: Math.min(18, s), fontWeight: '700' }}>A</Text>
-                  </TouchableOpacity>
-                ))}
+        <Modal
+          {...FULLSCREEN_MODAL_PROPS}
+          visible={pendingTextPoint !== null}
+          animationType="fade"
+          onRequestClose={() => {
+            setPendingTextPoint(null);
+            setEditingTextId(null);
+          }}
+        >
+          <ModalScrim color="rgba(0,0,0,0.65)" />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={[
+              styles.textModalRoot,
+              {
+                paddingLeft: insets.left + 24,
+                paddingRight: insets.right + 24,
+                paddingTop: insets.top + 12,
+                paddingBottom: insets.bottom + 12,
+              },
+            ]}
+          >
+            <View style={[styles.textModalCard, landscape && styles.textModalCardLs]}>
+              <View style={landscape ? styles.textModalMainLs : styles.textModalMain}>
+                <Text style={styles.textModalLabel}>{editingTextId ? 'Edit text' : 'Add text'}</Text>
+                <TextInput
+                  autoFocus
+                  value={pendingTextValue}
+                  onChangeText={setPendingTextValue}
+                  placeholder="Summit at sunrise…"
+                  placeholderTextColor={TEXT_FAINT}
+                  style={styles.textModalInput}
+                  multiline
+                />
               </View>
-              <View style={styles.textModalActions}>
-                <TouchableOpacity onPress={() => { setPendingTextPoint(null); setEditingTextId(null); }} style={[styles.textModalBtn, { backgroundColor: BG_SUBTLE }]}>
-                  <Text style={styles.textModalBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={confirmTextEntry} style={[styles.textModalBtn, { backgroundColor: ACCENT_GOLD }]}>
-                  <Text style={[styles.textModalBtnText, { color: BG_PANEL }]}>{editingTextId ? 'Update' : 'Add'}</Text>
-                </TouchableOpacity>
+              <View style={landscape ? styles.textModalSideLs : styles.textModalMain}>
+                <View style={styles.textSizeRow}>
+                  {TEXT_SIZES.map((s) => (
+                    <TouchableOpacity key={s} onPress={() => setTextSize(s)} style={[styles.textSizeChip, textSize === s && styles.textSizeChipActive]}>
+                      <Text style={{ color: textSize === s ? ACCENT_GOLD : TEXT_MUTED, fontSize: Math.min(18, s), fontWeight: '700' }}>A</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.textModalActions}>
+                  <TouchableOpacity onPress={() => { setPendingTextPoint(null); setEditingTextId(null); }} style={[styles.textModalBtn, { backgroundColor: BG_SUBTLE }]}>
+                    <Text style={styles.textModalBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={confirmTextEntry} style={[styles.textModalBtn, { backgroundColor: ACCENT_GOLD }]}>
+                    <Text style={[styles.textModalBtnText, { color: BG_PANEL }]}>{editingTextId ? 'Update' : 'Add'}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </KeyboardAvoidingView>
         </Modal>
+        </View>
       </View>
     </Modal>
   );
@@ -561,46 +649,64 @@ function DraggableText({ item, interactive, maxX, maxY, onDragEnd, onTapEdit, on
   );
 }
 
-function ToolButton({ icon, label, active, onPress }: { icon: any; label: string; active: boolean; onPress: () => void }) {
+function ToolButton({ icon, label, active, onPress, compact = false }: { icon: any; label: string; active: boolean; onPress: () => void; compact?: boolean }) {
   return (
-    <TouchableOpacity onPress={onPress} style={[styles.toolBtn, active && styles.toolBtnActive]} activeOpacity={0.8}>
-      <Ionicons name={icon} size={16} color={active ? ACCENT_GOLD : TEXT_MUTED} />
-      <Text style={[styles.toolBtnLabel, active && { color: ACCENT_GOLD }]}>{label}</Text>
+    <TouchableOpacity onPress={onPress} style={[styles.toolBtn, compact && styles.toolBtnCompact, active && styles.toolBtnActive]} activeOpacity={0.8}>
+      <Ionicons name={icon} size={compact ? 14 : 16} color={active ? ACCENT_GOLD : TEXT_MUTED} />
+      <Text style={[styles.toolBtnLabel, compact && styles.toolBtnLabelCompact, active && { color: ACCENT_GOLD }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG_PANEL },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 56 : 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: BORDER_DEFAULT },
+  // the editor is a floating dialog over a dimmed backdrop, not a full screen
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  card: { width: '100%', maxWidth: 640, overflow: 'hidden', borderRadius: RADIUS_CARD + 4, borderWidth: 1, borderColor: BORDER_GOLD, backgroundColor: BG_PANEL },
+  cardLs: { flex: 1, maxWidth: 1200, flexDirection: 'row' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: BORDER_DEFAULT },
   headerBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingRight: 6 },
   headerBtnText: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '600' },
   headerTitle: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
   saveHeaderBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 7, paddingHorizontal: 12, borderRadius: 999, backgroundColor: ACCENT_GOLD },
   saveHeaderBtnText: { color: BG_PANEL, fontSize: 12, fontWeight: '800' },
-  canvasArea: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 12 },
+  canvasArea: { alignItems: 'center', justifyContent: 'center', padding: 12, minHeight: 160 },
+  canvasAreaLs: { flex: 1, minHeight: 0 },
   canvasClip: { borderRadius: RADIUS_CARD, overflow: 'hidden' },
   errorBox: { alignItems: 'center', gap: 8, padding: 24 },
   errorText: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center' },
   textOverlay: { position: 'absolute', paddingHorizontal: 4, paddingVertical: 2 },
-  toolbarWrap: { paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 28 : 14, paddingHorizontal: 12, gap: 8, borderTopWidth: 1, borderTopColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
+  toolbarWrap: { paddingTop: 10, paddingBottom: 12, paddingHorizontal: 12, gap: 8, borderTopWidth: 1, borderTopColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
   toolRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   toolBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: BORDER_SUBTLE, backgroundColor: BG_CARD },
   toolBtnActive: { borderColor: BORDER_GOLD, backgroundColor: 'rgba(201,169,110,0.12)' },
   toolBtnLabel: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700' },
+  toolBtnCompact: { flexGrow: 1, flexBasis: '30%', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 6, gap: 4 },
+  toolBtnLabelCompact: { fontSize: 10 },
+  // ── landscape side panel ──
+  panel: { width: PANEL_W, borderLeftWidth: 1, borderLeftColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
+  panelContent: { flexGrow: 1, justifyContent: 'space-between', padding: 10, gap: 8 },
+  panelTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  toolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  panelColors: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  panelActions: { flexDirection: 'row', alignItems: 'center' },
   colorRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   colorSwatch: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'rgba(255,255,255,0.15)' },
   colorSwatchActive: { borderColor: ACCENT_GOLD, borderWidth: 3 },
   widthChip: { width: 30, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 6, borderWidth: 1, borderColor: BORDER_SUBTLE },
   widthChipActive: { borderColor: BORDER_GOLD, backgroundColor: 'rgba(201,169,110,0.1)' },
   miniBtn: { width: 32, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: BORDER_SUBTLE, backgroundColor: BG_CARD, marginLeft: 4 },
-  textModalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', padding: 24 },
+  textModalRoot: { flex: 1, justifyContent: 'center' },
   textModalCard: { backgroundColor: BG_CARD, borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_SUBTLE, padding: 16, gap: 12 },
   textModalLabel: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '700' },
   textModalInput: { color: TEXT_PRIMARY, backgroundColor: BG_SUBTLE, borderRadius: RADIUS_BTN, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, minHeight: 60, textAlignVertical: 'top' },
   textSizeRow: { flexDirection: 'row', gap: 8 },
   textSizeChip: { width: 40, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: BORDER_SUBTLE },
   textSizeChipActive: { borderColor: BORDER_GOLD, backgroundColor: 'rgba(201,169,110,0.1)' },
+  textModalCardLs: { flexDirection: 'row', alignItems: 'stretch', gap: 14, width: '100%', maxWidth: 640, alignSelf: 'center' },
+  textModalMain: { gap: 12 },
+  textModalMainLs: { flex: 1, gap: 8 },
+  textModalSideLs: { width: 190, justifyContent: 'space-between', gap: 10 },
   textModalActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
   textModalBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: RADIUS_BTN },
   textModalBtnText: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '800' },
