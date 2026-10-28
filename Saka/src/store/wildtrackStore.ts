@@ -260,7 +260,7 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
           }
           
           if (!finalImageUrl) {
-            finalImageUrl = WildTrackAPI.getDefaultSilhouette(species.category);
+            finalImageUrl = species.image_url || WildTrackAPI.getDefaultSilhouette(species.category);
           }
           
           return { ...species, image_url: finalImageUrl };
@@ -309,7 +309,7 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
           }
           
           if (!finalImageUrl) {
-            finalImageUrl = WildTrackAPI.getDefaultSilhouette(species.category);
+            finalImageUrl = species.image_url || WildTrackAPI.getDefaultSilhouette(species.category);
           }
           
           return { ...species, image_url: finalImageUrl };

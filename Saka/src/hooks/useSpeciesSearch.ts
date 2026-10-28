@@ -165,8 +165,14 @@ export const useSpeciesSearch = () => {
         const merged = [...gbifItems, ...inatItems, ...plantItems];
         const unique: SpeciesSearchResult[] = [];
         const seen = new Set<string>();
+        const searchTerm = query.trim().toLowerCase();
 
         for (const item of merged) {
+          const matchesName =
+            item.common_name?.toLowerCase().includes(searchTerm) ||
+            item.scientific_name?.toLowerCase().includes(searchTerm);
+          if (!matchesName) continue;
+
           const fingerprint = `${item.scientific_name?.toLowerCase()}|${item.common_name?.toLowerCase()}`;
           if (!seen.has(fingerprint)) {
             seen.add(fingerprint);
