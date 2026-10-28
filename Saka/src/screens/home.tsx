@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
+  Pressable,
   BackHandler,
   Alert,
   AppState,
@@ -44,6 +45,7 @@ import {
   MOUNTAIN_VIDEOS,
 } from '../services/homeVideoAssets';
 import { MOUNTAIN_TIPS } from '../data/mountainTips';
+import { getUnreadMountainAlertCounts } from '../services/mountainAlertReadService';
 import {
   ACCENT_GOLD,
   BG_CARD,
@@ -220,6 +222,7 @@ const MountainSlide = memo(function MountainSlide({
   shouldMountVideo,
   isActive,
   poster,
+  alertCount,
   width,
   height,
   isPortrait,
@@ -234,6 +237,7 @@ const MountainSlide = memo(function MountainSlide({
   shouldMountVideo: boolean;
   isActive: boolean;
   poster: VideoThumbnail | undefined;
+  alertCount: number;
   width: number;
   height: number;
   isPortrait: boolean;
@@ -246,11 +250,6 @@ const MountainSlide = memo(function MountainSlide({
 }) {
   const diffColor = DIFFICULTY_COLORS[mountain.difficulty] ?? '#FFF';
   const localVideo = MOUNTAIN_VIDEOS[mountain.id];
-  const normalizedMountainName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const alertCount = MOUNTAIN_TIPS.find((tips) =>
-    tips.id === mountain.id ||
-    tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedMountainName
-  )?.alerts.length ?? 0;
 
   // Parallax: the video drifts a little slower than the page, the text a little faster
   // (and fades), so each swipe has depth. Skipped when the user prefers reduced motion.
@@ -387,6 +386,7 @@ function HomeContent() {
   const slideHeight = viewportSize.height || dimensions.height;
   const reduceMotion = useReduceMotion();
   const [eventCounts, setEventCounts] = useState<Record<string, number>>({});
+  const [alertCounts, setAlertCounts] = useState<Record<string, number>>({});
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
@@ -491,8 +491,23 @@ function HomeContent() {
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
-      return () => setFocused(false);
-    }, [])
+      let active = true;
+      if (user) {
+        void getUnreadMountainAlertCounts(user.id, MOUNTAIN_TIPS)
+          .then((counts) => {
+            if (active) setAlertCounts(counts);
+          })
+          .catch((error) => {
+            console.warn('[Home] Failed to load unread mountain alerts:', error);
+          });
+      } else {
+        setAlertCounts({});
+      }
+      return () => {
+        active = false;
+        setFocused(false);
+      };
+    }, [user])
   );
 
   // ── Paging: one scroll value drives the parallax; the active slide switches at the halfway point ──
@@ -543,11 +558,15 @@ function HomeContent() {
     }
   }, [slideWidth, mountains.length]);
 
-  // Gentle breathing glow behind the Saka logo button (the main action)
+  // Gentle breathing glow behind the Saka logo button (the main action),
+  // plus a soft ripple that radiates outward as a "tap me" cue.
   const glow = useRef(new Animated.Value(0)).current;
+  const ripple = useRef(new Animated.Value(0)).current;
+  const ctaPress = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (reduceMotion) {
       glow.setValue(0);
+      ripple.setValue(0);
       return;
     }
     const loop = Animated.loop(
@@ -556,9 +575,27 @@ function HomeContent() {
         Animated.timing(glow, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ])
     );
+    const rippleLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ripple, { toValue: 1, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.delay(900),
+        Animated.timing(ripple, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    );
     loop.start();
-    return () => loop.stop();
-  }, [reduceMotion, glow]);
+    rippleLoop.start();
+    return () => { loop.stop(); rippleLoop.stop(); };
+  }, [reduceMotion, glow, ripple]);
+
+  // Press feedback: the button sinks in on touch and springs back.
+  const animateCta = useCallback((to: number) => {
+    Animated.spring(ctaPress, {
+      toValue: to,
+      speed: 40,
+      bounciness: to ? 0 : 8,
+      useNativeDriver: true,
+    }).start();
+  }, [ctaPress]);
 
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
@@ -689,6 +726,11 @@ function HomeContent() {
           const distance = Math.abs(index - activeIndex);
           const shouldMountVideo = distance < VIDEO_WINDOW;
           const isActive = focused && index === activeIndex;
+          const normalizedMountainName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const tips = MOUNTAIN_TIPS.find((item) =>
+            item.id === mountain.id
+            || item.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedMountainName
+          );
           return (
             <MountainSlide
               key={mountain.id}
@@ -696,6 +738,7 @@ function HomeContent() {
               shouldMountVideo={shouldMountVideo}
               isActive={isActive}
               poster={videoPosters[mountain.id]}
+              alertCount={tips ? alertCounts[tips.id] ?? tips.alerts.length : 0}
               width={slideWidth}
               height={slideHeight}
               isPortrait={isPortrait}
@@ -781,31 +824,61 @@ function HomeContent() {
       />
 
       {mountains[activeIndex] && (
-        <TouchableOpacity
+        <Pressable
           style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
           onPress={() => handleCTAPress(mountains[activeIndex].id)}
-          activeOpacity={0.75}
+          onPressIn={() => animateCta(1)}
+          onPressOut={() => animateCta(0)}
           accessibilityRole="button"
           accessibilityLabel={`Explore ${mountains[activeIndex].name}`}
         >
-          <View style={styles.ctaLogoWrap}>
-            <Animated.View
-              style={[
-                styles.ctaGlowRing,
-                {
-                  opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
-                  transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.14] }) }],
-                },
-              ]}
-            />
-            <Image
-              source={require('../../assets/images/SakaLogo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-          </View>
-          <Text style={styles.logoLabel}>Tara, Saka</Text>
-        </TouchableOpacity>
+          <Animated.View
+            style={{
+              alignItems: 'center',
+              transform: [{ scale: ctaPress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.94] }) }],
+            }}
+          >
+            <View style={styles.ctaLogoWrap}>
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.ctaRippleRing,
+                  {
+                    opacity: ripple.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+                    transform: [{ scale: ripple.interpolate({ inputRange: [0, 1], outputRange: [1, 1.7] }) }],
+                  },
+                ]}
+              />
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.ctaGlowRing,
+                  {
+                    opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
+                    transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.14] }) }],
+                  },
+                ]}
+              />
+              <Image
+                source={require('../../assets/images/SakaLogo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
+            <View style={styles.logoLabelPill}>
+              <Text style={styles.logoLabel}>Tara, Saka</Text>
+              <View style={styles.logoLabelChip}>
+                <Animated.View
+                  style={{
+                    transform: [{ translateX: glow.interpolate({ inputRange: [0, 1], outputRange: [-1, 1.5] }) }],
+                  }}
+                >
+                  <Ionicons name="arrow-forward" size={11} color="#0E1520" />
+                </Animated.View>
+              </View>
+            </View>
+          </Animated.View>
+        </Pressable>
       )}
 
       <View
@@ -916,21 +989,51 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 118, height: 118, borderRadius: 59,
     backgroundColor: 'rgba(201,169,110,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.35)',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.45,
     shadowRadius: 16,
     elevation: 8,
   },
+  ctaRippleRing: {
+    position: 'absolute',
+    width: 118, height: 118, borderRadius: 59,
+    borderWidth: 1.5,
+    borderColor: 'rgba(201,169,110,0.7)',
+  },
   logoImage: { width: 168, height: 168 },
-  logoLabel: {
-    color: '#C9A96E',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    textAlign: 'center',
+  logoLabelPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
     marginTop: -40,
+    paddingLeft: 16,
+    paddingRight: 5,
+    paddingVertical: 5,
+    borderRadius: 22,
+    backgroundColor: 'rgba(10,16,26,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,169,110,0.65)',
+    shadowColor: '#C9A96E',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  logoLabel: {
+    color: '#F3E7CF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  logoLabelChip: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: ACCENT_GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   infoMetaRow: {
     flexDirection: 'row',
