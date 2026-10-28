@@ -11,7 +11,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import Svg, { Path, Defs, RadialGradient, Stop, Circle, Line, Rect, G } from 'react-native-svg';
+import Svg, { Path, Defs, RadialGradient, LinearGradient, Stop, Circle, Ellipse, Line, Rect, G } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
@@ -19,7 +19,7 @@ import { useAuthStore } from '../store/authStore';
 // ─────────────────────────────────────────────────────────────────────────
 //  Editable content
 // ─────────────────────────────────────────────────────────────────────────
-const SUBTITLE = 'Hiking Trails of Aklan';
+const SUBTITLE = 'Peaks Around Aklan: First Steps';
 const MEMBERS = ['Angel Lanorias', 'Joy Dagohoy', 'Renz Ibañez', 'Carlos Conanan', 'Jered Asuncion'];
 // One quote per member, same order as MEMBERS (keep them short so the bubble stays compact)
 const QUOTES = [
@@ -365,7 +365,7 @@ const STARS = Array.from({ length: 40 }, (_, i) => {
   const r1 = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
   const r2 = Math.abs(Math.sin(i * 78.233 + 1.7) * 12345.6789) % 1;
   const r3 = Math.abs(Math.sin(i * 39.346 + 4.1) * 98765.4321) % 1;
-  return { x: r1, y: r2, r: 0.5 + r3 * 0.9, twinkle: i % 3 === 0 };
+  return { x: r1, y: Math.pow(r2, 1.6), r: 0.5 + r3 * 0.9, group: i % 3 };
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -671,6 +671,60 @@ function HikerSpot({
   );
 }
 
+// An occasional streak across the upper sky
+type ShootingStarProps = {
+  startX: number;
+  startY: number;
+  dx: number;
+  dy: number;
+  delay: number;
+  gap: number;
+};
+function ShootingStar({ startX, startY, dx, dy, delay, gap }: ShootingStarProps) {
+  const t = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(t, { toValue: 1, duration: 950, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(t, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(gap),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  const angle = `${(Math.atan2(dy, dx) * 180) / Math.PI}deg`;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: startX,
+        top: startY,
+        width: 90,
+        height: 2,
+        opacity: t.interpolate({ inputRange: [0, 0.1, 0.7, 1], outputRange: [0, 1, 0.7, 0] }),
+        transform: [
+          { translateX: t.interpolate({ inputRange: [0, 1], outputRange: [0, dx] }) },
+          { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, dy] }) },
+          { rotate: angle },
+        ],
+      }}
+    >
+      <Svg width={90} height={2}>
+        <Defs>
+          <LinearGradient id="streak" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0} />
+            <Stop offset="1" stopColor="#FFF4DC" stopOpacity={0.95} />
+          </LinearGradient>
+        </Defs>
+        <Rect x={0} y={0} width={90} height={2} rx={1} fill="url(#streak)" />
+      </Svg>
+    </Animated.View>
+  );
+}
+
 export default function IntroScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -696,6 +750,9 @@ export default function IntroScreen() {
   const twinkle    = useRef(new Animated.Value(0)).current;
   const hintFade   = useRef(new Animated.Value(0)).current;
   const hintPulse  = useRef(new Animated.Value(0)).current;
+  const bloom      = useRef(new Animated.Value(0)).current;
+  const lineGrow   = useRef(new Animated.Value(0)).current;
+  const quoteSlide = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
     let isMounted = true;
@@ -724,6 +781,9 @@ export default function IntroScreen() {
       ),
     ]).start();
 
+    // light blooms outward from behind the logo as it appears
+    Animated.timing(bloom, { toValue: 1, duration: 2600, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+
     Animated.sequence([
       Animated.delay(200),
       Animated.parallel([
@@ -734,16 +794,20 @@ export default function IntroScreen() {
       Animated.parallel([
         Animated.timing(textFade,  { toValue: 1, duration: 900, easing: Easing.out(Easing.ease), useNativeDriver: true }),
         Animated.timing(textSlide, { toValue: 0, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(lineGrow, { toValue: 1, duration: 1200, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       ]),
       Animated.delay(500),
-      Animated.timing(quoteFade, { toValue: 1, duration: 1200, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.parallel([
+        Animated.timing(quoteFade, { toValue: 1, duration: 1400, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(quoteSlide, { toValue: 0, duration: 1400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]),
     ]).start(() => {
       if (isMounted) setReady(true);
     });
 
     return () => {
       isMounted = false;
-      [glowFade, logoFade, logoScale, textFade, textSlide, quoteFade, ridgeFade, starFade, twinkle].forEach(v => v.stopAnimation());
+      [glowFade, logoFade, logoScale, textFade, textSlide, quoteFade, ridgeFade, starFade, twinkle, bloom, lineGrow, quoteSlide].forEach(v => v.stopAnimation());
     };
   }, []);
 
@@ -788,7 +852,7 @@ export default function IntroScreen() {
   const logoSize = Math.round(
     Math.min(maxLogo, Math.max(140, (roomH - BRAND_EXTRA - 16) / (1 - LOGO_TRIM)))
   );
-  const glowSize = Math.round(logoSize * 1.6);
+  const glowSize = Math.round(logoSize * 1.7);
   const figureScale = Math.min(1.25, Math.max(0.9, screenW / 390));
 
   const hikers = SPOTS.map((spot, i) => {
@@ -820,19 +884,50 @@ export default function IntroScreen() {
   return (
     <View style={styles.root}>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {/* deep night sky, with a faint warm haze low on the horizon */}
+        <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
+          <Defs>
+            <LinearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#03060B" />
+              <Stop offset="0.5" stopColor="#09111F" />
+              <Stop offset="1" stopColor="#14223A" />
+            </LinearGradient>
+            <RadialGradient id="haze" cx="50%" cy="100%" r="70%">
+              <Stop offset="0" stopColor={GOLD} stopOpacity={0.1} />
+              <Stop offset="1" stopColor={GOLD} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect x={0} y={0} width={screenW} height={screenH} fill="url(#sky)" />
+          <Rect x={0} y={0} width={screenW} height={screenH} fill="url(#haze)" />
+        </Svg>
+
         <Animated.View style={{ flex: 1, opacity: starFade }}>
           <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
-            {STARS.filter(s => !s.twinkle).map((st, i) => (
+            {STARS.filter(s => s.group === 2).map((st, i) => (
               <Circle key={i} cx={st.x * screenW} cy={st.y * screenH} r={st.r} fill="#FFFFFF" fillOpacity={0.4} />
             ))}
           </Svg>
           <Animated.View style={[StyleSheet.absoluteFill, { opacity: twinkle }]}>
             <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
-              {STARS.filter(s => s.twinkle).map((st, i) => (
+              {STARS.filter(s => s.group === 0).map((st, i) => (
                 <Circle key={i} cx={st.x * screenW} cy={st.y * screenH} r={st.r + 0.3} fill={GOLD} fillOpacity={0.8} />
               ))}
             </Svg>
           </Animated.View>
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              { opacity: twinkle.interpolate({ inputRange: [0, 1], outputRange: [1, 0.2] }) },
+            ]}
+          >
+            <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
+              {STARS.filter(s => s.group === 1).map((st, i) => (
+                <Circle key={i} cx={st.x * screenW} cy={st.y * screenH} r={st.r} fill="#EAF1FF" fillOpacity={0.6} />
+              ))}
+            </Svg>
+          </Animated.View>
+
+          <ShootingStar startX={screenW * 0.12} startY={screenH * 0.08} dx={screenW * 0.5} dy={screenH * 0.11} delay={6000} gap={22000} />
         </Animated.View>
       </View>
 
@@ -845,7 +940,6 @@ export default function IntroScreen() {
         <View style={{ height: insets.top + 20 }} />
 
         <View style={styles.brand} onLayout={(e) => setBrandH(e.nativeEvent.layout.height)}>
-          
           {/* SAKA LOGO IS NOW A PRESSABLE BUTTON */}
           <Pressable
             onPress={handleStart}
@@ -859,7 +953,12 @@ export default function IntroScreen() {
             <Animated.View
               style={[
                 styles.logoWrap,
-                { width: logoSize, height: logoSize, opacity: logoFade, transform: [{ scale: logoScale }] },
+                {
+                  width: logoSize,
+                  height: logoSize,
+                  opacity: logoFade,
+                  transform: [{ scale: logoScale }],
+                },
               ]}
             >
               <Animated.View
@@ -871,13 +970,14 @@ export default function IntroScreen() {
                   left: (logoSize - glowSize) / 2,
                   top: (logoSize - glowSize) / 2,
                   opacity: glowFade,
+                  transform: [{ scale: bloom.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }],
                 }}
               >
                 <Svg width={glowSize} height={glowSize}>
                   <Defs>
                     <RadialGradient id="glow" cx="50%" cy="50%" r="50%">
-                      <Stop offset="0%" stopColor={GOLD} stopOpacity={0.10} />
-                      <Stop offset="55%" stopColor={GOLD} stopOpacity={0.03} />
+                      <Stop offset="0%" stopColor="#E9CD94" stopOpacity={0.2} />
+                      <Stop offset="50%" stopColor={GOLD} stopOpacity={0.06} />
                       <Stop offset="100%" stopColor={GOLD} stopOpacity={0} />
                     </RadialGradient>
                   </Defs>
@@ -908,7 +1008,7 @@ export default function IntroScreen() {
                     },
                   ]}
                 >
-                  Tap the logo!
+                  Tap Me or Scroll?!
                 </Animated.Text>
               </Animated.View>
             </Animated.View>
@@ -921,14 +1021,41 @@ export default function IntroScreen() {
             ]}
           >
             <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <View style={styles.dividerDiamond} />
-              <View style={styles.dividerLine} />
+              <Animated.View
+                style={[
+                  styles.dividerLine,
+                  {
+                    opacity: lineGrow,
+                    transform: [
+                      { translateX: lineGrow.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) },
+                      { scaleX: lineGrow },
+                    ],
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.dividerDiamond,
+                  { opacity: lineGrow, transform: [{ rotate: '45deg' }, { scale: lineGrow }] },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.dividerLine,
+                  {
+                    opacity: lineGrow,
+                    transform: [
+                      { translateX: lineGrow.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }) },
+                      { scaleX: lineGrow },
+                    ],
+                  },
+                ]}
+              />
             </View>
             <Text style={styles.appSub}>{SUBTITLE}</Text>
           </Animated.View>
 
-          <Animated.View style={[styles.quoteWrap, { opacity: quoteFade }]}>
+          <Animated.View style={[styles.quoteWrap, { opacity: quoteFade, transform: [{ translateY: quoteSlide }] }]}>
             <Text style={styles.quoteText}>
               {'\u201C'}Don{'\u2019'}t look up at the mountain in awe.{'\n'}
               Climb it until the mountain looks up at you.{'\u201D'}
