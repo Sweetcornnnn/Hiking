@@ -22,6 +22,7 @@ import weatherService, { WeatherCondition } from '../services/weatherService';
 import { useLocationTracking } from '../hooks/useLocationTracking';
 import EmergencyContactsPreview from './emergency/EmergencyContactsPreview';
 import { useJournalStore } from '../store/journalStore';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from './ModalScrim';
 import JournalShowcase from './journal/JournalShowcase';
 
 interface ProfileCardProps {
@@ -275,14 +276,13 @@ export default function ProfileCard({
 
   return (
     <Modal
-      transparent
+      {...FULLSCREEN_MODAL_PROPS}
       visible={visible || forceVisible}
       animationType="fade"
       onRequestClose={closeCard}
-      statusBarTranslucent={true}
-      presentationStyle="overFullScreen"
     >
       <View style={styles.centerContainer}>
+        <ModalScrim color="rgba(4,8,13,0.5)" />
         <View style={[styles.card, { height: cardHeight }]}>
 
           {/* Left panel */}
