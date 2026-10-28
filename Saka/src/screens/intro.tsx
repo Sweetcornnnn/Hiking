@@ -11,7 +11,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import Svg, { Path, Defs, RadialGradient, LinearGradient, Stop, Circle, Ellipse, Line, Rect, G } from 'react-native-svg';
+import Svg, { Path, Defs, RadialGradient, LinearGradient, Stop, Circle, Line, Rect, G } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
@@ -365,7 +365,7 @@ const STARS = Array.from({ length: 40 }, (_, i) => {
   const r1 = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
   const r2 = Math.abs(Math.sin(i * 78.233 + 1.7) * 12345.6789) % 1;
   const r3 = Math.abs(Math.sin(i * 39.346 + 4.1) * 98765.4321) % 1;
-  return { x: r1, y: Math.pow(r2, 1.6), r: 0.5 + r3 * 0.9, group: i % 3 };
+  return { x: r1, y: r2, r: 0.5 + r3 * 0.9, twinkle: i % 3 === 0 };
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -671,55 +671,77 @@ function HikerSpot({
   );
 }
 
-// An occasional streak across the upper sky
-type ShootingStarProps = {
-  startX: number;
-  startY: number;
-  dx: number;
-  dy: number;
-  delay: number;
-  gap: number;
-};
-function ShootingStar({ startX, startY, dx, dy, delay, gap }: ShootingStarProps) {
-  const t = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(t, { toValue: 1, duration: 950, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(t, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(gap),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, []);
-  const angle = `${(Math.atan2(dy, dx) * 180) / Math.PI}deg`;
+// ─────────────────────────────────────────────────────────────────────────
+//  Opening effects (all fade to nothing, so the resting frame is unchanged)
+// ─────────────────────────────────────────────────────────────────────────
+const RAY_COUNT = 16;
+const PARTICLES = Array.from({ length: 16 }, (_, i) => {
+  const angle = ((i * 360) / 16 + (i % 2) * 11) * (Math.PI / 180);
+  return {
+    cos: Math.cos(angle),
+    sin: Math.sin(angle),
+    dist: 0.5 + (((i * 37) % 10) / 10) * 0.55, // × half the logo size
+    size: 7 + (i % 3) * 3,
+    start: (i % 5) * 0.06,
+  };
+});
+
+// A second, offset wave of sparkles
+const SPIN2 = (11.25 * Math.PI) / 180;
+const PARTICLES2 = PARTICLES.map((pt, i) => ({
+  ...pt,
+  cos: pt.cos * Math.cos(SPIN2) - pt.sin * Math.sin(SPIN2),
+  sin: pt.sin * Math.cos(SPIN2) + pt.cos * Math.sin(SPIN2),
+  dist: pt.dist * (0.8 + (i % 4) * 0.12),
+  start: ((i + 2) % 5) * 0.06,
+}));
+
+// Five shooting stars: [start, top (fraction of screen height), degrees, direction]
+const STREAKS: { a: number; top: number; deg: number; dir: 1 | -1 }[] = [
+  { a: 0.02, top: 0.06, deg: 20, dir: 1 },
+  { a: 0.17, top: 0.16, deg: 24, dir: -1 },
+  { a: 0.33, top: 0.1, deg: 18, dir: 1 },
+  { a: 0.5, top: 0.2, deg: 22, dir: -1 },
+  { a: 0.68, top: 0.08, deg: 19, dir: 1 },
+];
+const STREAK_LEN = 120;
+
+function Streak({
+  progress, screenW, screenH, a, top, deg, dir,
+}: { progress: Animated.Value; screenW: number; screenH: number; a: number; top: number; deg: number; dir: 1 | -1 }) {
+  const travel = screenW + STREAK_LEN * 2;
+  const drop = travel * Math.tan((deg * Math.PI) / 180);
+  const x0 = dir === 1 ? -STREAK_LEN : screenW + STREAK_LEN;
+  const x1 = dir === 1 ? screenW + STREAK_LEN : -STREAK_LEN;
+  const end = a + 0.3;
   return (
     <Animated.View
-      pointerEvents="none"
       style={{
         position: 'absolute',
-        left: startX,
-        top: startY,
-        width: 90,
+        left: -STREAK_LEN / 2,
+        top: top * screenH,
+        width: STREAK_LEN,
         height: 2,
-        opacity: t.interpolate({ inputRange: [0, 0.1, 0.7, 1], outputRange: [0, 1, 0.7, 0] }),
+        opacity: progress.interpolate({
+          inputRange: [0, a, a + 0.04, end - 0.08, end, 1],
+          outputRange: [0, 0, 0.95, 0.6, 0, 0],
+          extrapolate: 'clamp',
+        }),
         transform: [
-          { translateX: t.interpolate({ inputRange: [0, 1], outputRange: [0, dx] }) },
-          { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, dy] }) },
-          { rotate: angle },
+          { translateX: progress.interpolate({ inputRange: [a, end], outputRange: [x0, x1], extrapolate: 'clamp' }) },
+          { translateY: progress.interpolate({ inputRange: [a, end], outputRange: [0, drop], extrapolate: 'clamp' }) },
+          { rotate: `${dir === 1 ? deg : 180 - deg}deg` },
         ],
       }}
     >
-      <Svg width={90} height={2}>
+      <Svg width={STREAK_LEN} height={2}>
         <Defs>
-          <LinearGradient id="streak" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0} />
-            <Stop offset="1" stopColor="#FFF4DC" stopOpacity={0.95} />
+          <LinearGradient id="tail" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#F3DDA8" stopOpacity={0} />
+            <Stop offset="1" stopColor="#FFF4D8" stopOpacity={1} />
           </LinearGradient>
         </Defs>
-        <Rect x={0} y={0} width={90} height={2} rx={1} fill="url(#streak)" />
+        <Rect x={0} y={0} width={STREAK_LEN} height={2} rx={1} fill="url(#tail)" />
       </Svg>
     </Animated.View>
   );
@@ -741,7 +763,8 @@ export default function IntroScreen() {
 
   const glowFade   = useRef(new Animated.Value(0)).current;
   const logoFade   = useRef(new Animated.Value(0)).current;
-  const logoScale  = useRef(new Animated.Value(0.85)).current;
+  const logoScale  = useRef(new Animated.Value(0.78)).current;
+  const logoRise   = useRef(new Animated.Value(26)).current;
   const textFade   = useRef(new Animated.Value(0)).current;
   const textSlide  = useRef(new Animated.Value(12)).current;
   const quoteFade  = useRef(new Animated.Value(0)).current;
@@ -750,8 +773,18 @@ export default function IntroScreen() {
   const twinkle    = useRef(new Animated.Value(0)).current;
   const hintFade   = useRef(new Animated.Value(0)).current;
   const hintPulse  = useRef(new Animated.Value(0)).current;
+  // Opening: a spark of light blooms, the logo emerges from it, then the rest draws in.
   const bloom      = useRef(new Animated.Value(0)).current;
-  const lineGrow   = useRef(new Animated.Value(0)).current;
+  const ring       = useRef(new Animated.Value(0)).current;
+  const flash      = useRef(new Animated.Value(0)).current;
+  const rays       = useRef(new Animated.Value(0)).current;
+  const burst      = useRef(new Animated.Value(0)).current;
+  const burst2     = useRef(new Animated.Value(0)).current;
+  const orbit      = useRef(new Animated.Value(0)).current;
+  const flare      = useRef(new Animated.Value(0)).current;
+  const shoot      = useRef(new Animated.Value(0)).current;
+  const diamond    = useRef(new Animated.Value(0)).current;
+  const lines      = useRef(new Animated.Value(0)).current;
   const quoteSlide = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
@@ -761,7 +794,7 @@ export default function IntroScreen() {
       scrollRef.current?.scrollTo({ y: 120, animated: false });
     }, 100);
 
-    Animated.timing(starFade, { toValue: 1, duration: 2500, useNativeDriver: true }).start();
+    Animated.timing(starFade, { toValue: 1, duration: 4000, useNativeDriver: true }).start();
     Animated.loop(
       Animated.sequence([
         Animated.timing(twinkle, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -781,33 +814,53 @@ export default function IntroScreen() {
       ),
     ]).start();
 
-    // light blooms outward from behind the logo as it appears
-    Animated.timing(bloom, { toValue: 1, duration: 2600, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    // One slow, grand timeline (ms from start). Every extra effect fades to nothing,
+    // so the resting frame is identical to the original.
+    //     0  stars rise, shooting stars streak across the sky, a spark of light blooms
+    //   700  rays of light fan out and slowly turn
+    //   800  a horizontal lens flare and a soft flash
+    //   900  logo bursts out of the light with a little overshoot
+    //  1600  first wave of sparkles scatters outward
+    //  1800  rings of light ripple one after another, a halo of stars orbits the logo
+    //  2600  second wave of sparkles
+    //  2900  divider: diamond pops with a pulse, lines draw outward with travelling sparks
+    //  3700  subtitle rises in
+    //  5000  quote drifts in
+    const tm = (
+      v: Animated.Value,
+      toValue: number,
+      duration: number,
+      delay: number,
+      easing: (t: number) => number = Easing.out(Easing.cubic),
+    ) => Animated.timing(v, { toValue, duration, delay, easing, useNativeDriver: true });
 
-    Animated.sequence([
-      Animated.delay(200),
-      Animated.parallel([
-        Animated.timing(logoFade,  { toValue: 1, duration: 1100, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-        Animated.timing(logoScale, { toValue: 1, duration: 1100, easing: Easing.out(Easing.back(1.2)), useNativeDriver: true }),
-      ]),
-      Animated.delay(400),
-      Animated.parallel([
-        Animated.timing(textFade,  { toValue: 1, duration: 900, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-        Animated.timing(textSlide, { toValue: 0, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(lineGrow, { toValue: 1, duration: 1200, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      ]),
-      Animated.delay(500),
-      Animated.parallel([
-        Animated.timing(quoteFade, { toValue: 1, duration: 1400, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-        Animated.timing(quoteSlide, { toValue: 0, duration: 1400, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      ]),
+    tm(shoot, 1, 5400, 0, Easing.linear).start();
+    tm(bloom, 1, 3200, 0, Easing.out(Easing.quad)).start();
+    tm(rays, 1, 5600, 700, Easing.out(Easing.quad)).start();
+    tm(flare, 1, 1800, 800, Easing.out(Easing.quad)).start();
+    tm(flash, 1, 1800, 800, Easing.out(Easing.quad)).start();
+    tm(burst, 1, 4000, 1600, Easing.out(Easing.cubic)).start();
+    tm(ring, 1, 4200, 1800, Easing.out(Easing.cubic)).start();
+    tm(orbit, 1, 5000, 1800, Easing.inOut(Easing.sin)).start();
+    tm(burst2, 1, 4000, 2600, Easing.out(Easing.cubic)).start();
+
+    Animated.parallel([
+      tm(logoFade, 1, 2000, 900, Easing.out(Easing.ease)),
+      tm(logoScale, 1, 2600, 900, Easing.out(Easing.back(1.4))),
+      tm(logoRise, 0, 2600, 900),
+      tm(diamond, 1, 1000, 2900, Easing.out(Easing.back(2.4))),
+      tm(lines, 1, 1200, 3200),
+      tm(textFade, 1, 1400, 3700),
+      tm(textSlide, 0, 1400, 3700),
+      tm(quoteFade, 1, 1700, 5000, Easing.out(Easing.ease)),
+      tm(quoteSlide, 0, 1700, 5000),
     ]).start(() => {
       if (isMounted) setReady(true);
     });
 
     return () => {
       isMounted = false;
-      [glowFade, logoFade, logoScale, textFade, textSlide, quoteFade, ridgeFade, starFade, twinkle, bloom, lineGrow, quoteSlide].forEach(v => v.stopAnimation());
+      [glowFade, logoFade, logoScale, logoRise, textFade, textSlide, quoteFade, quoteSlide, ridgeFade, starFade, twinkle, bloom, ring, flash, rays, burst, burst2, orbit, flare, shoot, diamond, lines].forEach(v => v.stopAnimation());
     };
   }, []);
 
@@ -852,8 +905,50 @@ export default function IntroScreen() {
   const logoSize = Math.round(
     Math.min(maxLogo, Math.max(140, (roomH - BRAND_EXTRA - 16) / (1 - LOGO_TRIM)))
   );
-  const glowSize = Math.round(logoSize * 1.7);
+  const glowSize = Math.round(logoSize * 1.6);
   const figureScale = Math.min(1.25, Math.max(0.9, screenW / 390));
+
+  const renderBurst = (v: Animated.Value, list: typeof PARTICLES, prefix: string) =>
+    list.map((pt, i) => (
+      <Animated.Text
+        key={`${prefix}${i}`}
+        style={{
+          position: 'absolute',
+          fontSize: pt.size,
+          color: i % 3 === 0 ? '#FFF4D8' : GOLD,
+          opacity: v.interpolate({
+            inputRange: [0, pt.start, pt.start + 0.12, 1],
+            outputRange: [0, 0, 1, 0],
+            extrapolate: 'clamp',
+          }),
+          transform: [
+            {
+              translateX: v.interpolate({
+                inputRange: [pt.start, 1],
+                outputRange: [pt.cos * logoSize * 0.18, pt.cos * logoSize * pt.dist],
+                extrapolate: 'clamp',
+              }),
+            },
+            {
+              translateY: v.interpolate({
+                inputRange: [pt.start, 1],
+                outputRange: [pt.sin * logoSize * 0.18, pt.sin * logoSize * pt.dist],
+                extrapolate: 'clamp',
+              }),
+            },
+            {
+              scale: v.interpolate({
+                inputRange: [pt.start, pt.start + 0.2, 1],
+                outputRange: [0.3, 1.2, 0.5],
+                extrapolate: 'clamp',
+              }),
+            },
+          ],
+        }}
+      >
+        ✦
+      </Animated.Text>
+    ));
 
   const hikers = SPOTS.map((spot, i) => {
     const name = MEMBERS[i];
@@ -884,51 +979,26 @@ export default function IntroScreen() {
   return (
     <View style={styles.root}>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {/* deep night sky, with a faint warm haze low on the horizon */}
-        <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
-          <Defs>
-            <LinearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#03060B" />
-              <Stop offset="0.5" stopColor="#09111F" />
-              <Stop offset="1" stopColor="#14223A" />
-            </LinearGradient>
-            <RadialGradient id="haze" cx="50%" cy="100%" r="70%">
-              <Stop offset="0" stopColor={GOLD} stopOpacity={0.1} />
-              <Stop offset="1" stopColor={GOLD} stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x={0} y={0} width={screenW} height={screenH} fill="url(#sky)" />
-          <Rect x={0} y={0} width={screenW} height={screenH} fill="url(#haze)" />
-        </Svg>
-
         <Animated.View style={{ flex: 1, opacity: starFade }}>
           <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
-            {STARS.filter(s => s.group === 2).map((st, i) => (
+            {STARS.filter(s => !s.twinkle).map((st, i) => (
               <Circle key={i} cx={st.x * screenW} cy={st.y * screenH} r={st.r} fill="#FFFFFF" fillOpacity={0.4} />
             ))}
           </Svg>
           <Animated.View style={[StyleSheet.absoluteFill, { opacity: twinkle }]}>
             <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
-              {STARS.filter(s => s.group === 0).map((st, i) => (
+              {STARS.filter(s => s.twinkle).map((st, i) => (
                 <Circle key={i} cx={st.x * screenW} cy={st.y * screenH} r={st.r + 0.3} fill={GOLD} fillOpacity={0.8} />
               ))}
             </Svg>
           </Animated.View>
-          <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              { opacity: twinkle.interpolate({ inputRange: [0, 1], outputRange: [1, 0.2] }) },
-            ]}
-          >
-            <Svg width={screenW} height={screenH} style={StyleSheet.absoluteFill}>
-              {STARS.filter(s => s.group === 1).map((st, i) => (
-                <Circle key={i} cx={st.x * screenW} cy={st.y * screenH} r={st.r} fill="#EAF1FF" fillOpacity={0.6} />
-              ))}
-            </Svg>
-          </Animated.View>
-
-          <ShootingStar startX={screenW * 0.12} startY={screenH * 0.08} dx={screenW * 0.5} dy={screenH * 0.11} delay={6000} gap={22000} />
         </Animated.View>
+      </View>
+
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {STREAKS.map((st, i) => (
+          <Streak key={i} progress={shoot} screenW={screenW} screenH={screenH} {...st} />
+        ))}
       </View>
 
       <ScrollView
@@ -940,6 +1010,7 @@ export default function IntroScreen() {
         <View style={{ height: insets.top + 20 }} />
 
         <View style={styles.brand} onLayout={(e) => setBrandH(e.nativeEvent.layout.height)}>
+          
           {/* SAKA LOGO IS NOW A PRESSABLE BUTTON */}
           <Pressable
             onPress={handleStart}
@@ -950,6 +1021,196 @@ export default function IntroScreen() {
               pressed && { opacity: 0.7, transform: [{ scale: 0.96 }] }
             ]}
           >
+            {/* Opening light: sits behind the logo and never blocks touches */}
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                width: logoSize,
+                height: logoSize,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {/* bloom */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: glowSize,
+                  height: glowSize,
+                  opacity: bloom.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 0], extrapolate: 'clamp' }),
+                  transform: [{ scale: bloom.interpolate({ inputRange: [0, 1], outputRange: [0.08, 1.15], extrapolate: 'clamp' }) }],
+                }}
+              >
+                <Svg width={glowSize} height={glowSize}>
+                  <Defs>
+                    <RadialGradient id="bloom" cx="50%" cy="50%" r="50%">
+                      <Stop offset="0%" stopColor="#F3DDA8" stopOpacity={0.5} />
+                      <Stop offset="45%" stopColor={GOLD} stopOpacity={0.14} />
+                      <Stop offset="100%" stopColor={GOLD} stopOpacity={0} />
+                    </RadialGradient>
+                  </Defs>
+                  <Circle cx={glowSize / 2} cy={glowSize / 2} r={glowSize / 2} fill="url(#bloom)" />
+                </Svg>
+              </Animated.View>
+
+              {/* rays of light fanning out and slowly turning */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: glowSize,
+                  height: glowSize,
+                  opacity: rays.interpolate({ inputRange: [0, 0.12, 0.5, 1], outputRange: [0, 0.9, 0.5, 0], extrapolate: 'clamp' }),
+                  transform: [
+                    { rotate: rays.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '40deg'] }) },
+                    { scale: rays.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1.2] }) },
+                  ],
+                }}
+              >
+                <Svg width={glowSize} height={glowSize}>
+                  {Array.from({ length: RAY_COUNT }, (_, i) => {
+                    const ang = (i * 2 * Math.PI) / RAY_COUNT;
+                    const c = glowSize / 2;
+                    const r1 = logoSize * 0.26;
+                    const r2 = glowSize * (i % 2 === 0 ? 0.48 : 0.36);
+                    return (
+                      <Line
+                        key={i}
+                        x1={c + Math.cos(ang) * r1}
+                        y1={c + Math.sin(ang) * r1}
+                        x2={c + Math.cos(ang) * r2}
+                        y2={c + Math.sin(ang) * r2}
+                        stroke={i % 2 === 0 ? '#F3DDA8' : GOLD}
+                        strokeOpacity={i % 2 === 0 ? 0.55 : 0.35}
+                        strokeWidth={i % 2 === 0 ? 1.4 : 0.8}
+                        strokeLinecap="round"
+                      />
+                    );
+                  })}
+                </Svg>
+              </Animated.View>
+
+              {/* flash as the logo is born */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: glowSize * 0.7,
+                  height: glowSize * 0.7,
+                  opacity: flash.interpolate({ inputRange: [0, 0.22, 1], outputRange: [0, 1, 0], extrapolate: 'clamp' }),
+                  transform: [{ scale: flash.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.6], extrapolate: 'clamp' }) }],
+                }}
+              >
+                <Svg width={glowSize * 0.7} height={glowSize * 0.7}>
+                  <Defs>
+                    <RadialGradient id="flash" cx="50%" cy="50%" r="50%">
+                      <Stop offset="0%" stopColor="#FFF6DC" stopOpacity={0.7} />
+                      <Stop offset="40%" stopColor="#F3DDA8" stopOpacity={0.2} />
+                      <Stop offset="100%" stopColor={GOLD} stopOpacity={0} />
+                    </RadialGradient>
+                  </Defs>
+                  <Circle cx={glowSize * 0.35} cy={glowSize * 0.35} r={glowSize * 0.35} fill="url(#flash)" />
+                </Svg>
+              </Animated.View>
+
+              {/* horizontal lens flare across the screen */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: screenW,
+                  height: 3,
+                  opacity: flare.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.95, 0], extrapolate: 'clamp' }),
+                  transform: [{ scaleX: flare.interpolate({ inputRange: [0, 0.6], outputRange: [0.04, 1], extrapolate: 'clamp' }) }],
+                }}
+              >
+                <Svg width={screenW} height={3}>
+                  <Defs>
+                    <LinearGradient id="flareLine" x1="0" y1="0" x2="1" y2="0">
+                      <Stop offset="0" stopColor="#F3DDA8" stopOpacity={0} />
+                      <Stop offset="0.5" stopColor="#FFF6DC" stopOpacity={1} />
+                      <Stop offset="1" stopColor="#F3DDA8" stopOpacity={0} />
+                    </LinearGradient>
+                  </Defs>
+                  <Rect x={0} y={0} width={screenW} height={3} rx={1.5} fill="url(#flareLine)" />
+                </Svg>
+              </Animated.View>
+
+              {/* the first spark */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: 7,
+                  height: 7,
+                  borderRadius: 3.5,
+                  backgroundColor: '#F3DDA8',
+                  opacity: bloom.interpolate({ inputRange: [0, 0.12, 0.45, 0.7], outputRange: [0, 1, 0.9, 0], extrapolate: 'clamp' }),
+                  transform: [{ scale: bloom.interpolate({ inputRange: [0, 0.4, 0.7], outputRange: [0.5, 1.5, 0.3], extrapolate: 'clamp' }) }],
+                }}
+              />
+
+              {/* three rings of light, one after another */}
+              {[0, 0.18, 0.36].map((from, i) => (
+                <Animated.View
+                  key={i}
+                  style={{
+                    position: 'absolute',
+                    width: logoSize * 0.8,
+                    height: logoSize * 0.8,
+                    borderRadius: logoSize * 0.4,
+                    borderWidth: i === 0 ? 1.2 : 1,
+                    borderColor: i === 1 ? '#F3DDA8' : GOLD,
+                    opacity: ring.interpolate({
+                      inputRange: [from, from + 0.1, 1],
+                      outputRange: [0, 0.5 - i * 0.1, 0],
+                      extrapolate: 'clamp',
+                    }),
+                    transform: [{
+                      scale: ring.interpolate({
+                        inputRange: [from, 1],
+                        outputRange: [0.5, 1.9 + i * 0.3],
+                        extrapolate: 'clamp',
+                      }),
+                    }],
+                  }}
+                />
+              ))}
+
+              {/* two waves of sparkles scattering outward */}
+              {renderBurst(burst, PARTICLES, 'a')}
+              {renderBurst(burst2, PARTICLES2, 'b')}
+
+              {/* a halo of tiny stars orbiting the logo */}
+              <Animated.View
+                style={{
+                  position: 'absolute',
+                  width: logoSize * 1.5,
+                  height: logoSize * 1.5,
+                  opacity: orbit.interpolate({ inputRange: [0, 0.18, 0.7, 1], outputRange: [0, 1, 0.8, 0], extrapolate: 'clamp' }),
+                  transform: [
+                    { rotate: orbit.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '280deg'] }) },
+                    { scale: orbit.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.12] }) },
+                  ],
+                }}
+              >
+                <Svg width={logoSize * 1.5} height={logoSize * 1.5}>
+                  {Array.from({ length: 10 }, (_, i) => {
+                    const ang = (i * 2 * Math.PI) / 10;
+                    const c = logoSize * 0.75;
+                    const r = logoSize * (i % 2 === 0 ? 0.64 : 0.72);
+                    return (
+                      <Circle
+                        key={i}
+                        cx={c + Math.cos(ang) * r}
+                        cy={c + Math.sin(ang) * r}
+                        r={i % 3 === 0 ? 2.2 : 1.3}
+                        fill={i % 3 === 0 ? '#FFF4D8' : GOLD}
+                        fillOpacity={i % 3 === 0 ? 0.95 : 0.7}
+                      />
+                    );
+                  })}
+                </Svg>
+              </Animated.View>
+            </View>
+
             <Animated.View
               style={[
                 styles.logoWrap,
@@ -957,7 +1218,7 @@ export default function IntroScreen() {
                   width: logoSize,
                   height: logoSize,
                   opacity: logoFade,
-                  transform: [{ scale: logoScale }],
+                  transform: [{ scale: logoScale }, { translateY: logoRise }],
                 },
               ]}
             >
@@ -970,14 +1231,13 @@ export default function IntroScreen() {
                   left: (logoSize - glowSize) / 2,
                   top: (logoSize - glowSize) / 2,
                   opacity: glowFade,
-                  transform: [{ scale: bloom.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }],
                 }}
               >
                 <Svg width={glowSize} height={glowSize}>
                   <Defs>
                     <RadialGradient id="glow" cx="50%" cy="50%" r="50%">
-                      <Stop offset="0%" stopColor="#E9CD94" stopOpacity={0.2} />
-                      <Stop offset="50%" stopColor={GOLD} stopOpacity={0.06} />
+                      <Stop offset="0%" stopColor={GOLD} stopOpacity={0.10} />
+                      <Stop offset="55%" stopColor={GOLD} stopOpacity={0.03} />
                       <Stop offset="100%" stopColor={GOLD} stopOpacity={0} />
                     </RadialGradient>
                   </Defs>
@@ -1014,21 +1274,16 @@ export default function IntroScreen() {
             </Animated.View>
           </Pressable>
 
-          <Animated.View
-            style={[
-              styles.nameWrap,
-              { marginTop: -logoSize * LOGO_TRIM, opacity: textFade, transform: [{ translateY: textSlide }] },
-            ]}
-          >
+          <View style={[styles.nameWrap, { marginTop: -logoSize * LOGO_TRIM }]}>
             <View style={styles.dividerRow}>
               <Animated.View
                 style={[
                   styles.dividerLine,
                   {
-                    opacity: lineGrow,
+                    opacity: lines,
                     transform: [
-                      { translateX: lineGrow.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) },
-                      { scaleX: lineGrow },
+                      { translateX: lines.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) },
+                      { scaleX: lines },
                     ],
                   },
                 ]}
@@ -1036,24 +1291,66 @@ export default function IntroScreen() {
               <Animated.View
                 style={[
                   styles.dividerDiamond,
-                  { opacity: lineGrow, transform: [{ rotate: '45deg' }, { scale: lineGrow }] },
+                  { opacity: diamond, transform: [{ rotate: '45deg' }, { scale: diamond }] },
                 ]}
               />
+              {/* a ripple of light as the diamond lands */}
+              <Animated.View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: 36,
+                  top: 0,
+                  width: 5,
+                  height: 5,
+                  borderWidth: 1,
+                  borderColor: GOLD,
+                  opacity: diamond.interpolate({ inputRange: [0, 0.45, 1], outputRange: [0, 0.8, 0], extrapolate: 'clamp' }),
+                  transform: [
+                    { rotate: '45deg' },
+                    { scale: diamond.interpolate({ inputRange: [0, 1], outputRange: [1, 6], extrapolate: 'clamp' }) },
+                  ],
+                }}
+              />
+              {/* two sparks travel from the diamond to the ends of the lines */}
+              {[-1, 1].map((side) => (
+                <Animated.Text
+                  key={side}
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    left: 33.5,
+                    top: -3,
+                    width: 10,
+                    textAlign: 'center',
+                    fontSize: 9,
+                    color: '#FFF4D8',
+                    opacity: lines.interpolate({ inputRange: [0, 0.15, 0.75, 1], outputRange: [0, 1, 1, 0], extrapolate: 'clamp' }),
+                    transform: [{ translateX: lines.interpolate({ inputRange: [0, 1], outputRange: [0, side * 40], extrapolate: 'clamp' }) }],
+                  }}
+                >
+                  ✦
+                </Animated.Text>
+              ))}
               <Animated.View
                 style={[
                   styles.dividerLine,
                   {
-                    opacity: lineGrow,
+                    opacity: lines,
                     transform: [
-                      { translateX: lineGrow.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }) },
-                      { scaleX: lineGrow },
+                      { translateX: lines.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }) },
+                      { scaleX: lines },
                     ],
                   },
                 ]}
               />
             </View>
-            <Text style={styles.appSub}>{SUBTITLE}</Text>
-          </Animated.View>
+            <Animated.Text
+              style={[styles.appSub, { opacity: textFade, transform: [{ translateY: textSlide }] }]}
+            >
+              {SUBTITLE}
+            </Animated.Text>
+          </View>
 
           <Animated.View style={[styles.quoteWrap, { opacity: quoteFade, transform: [{ translateY: quoteSlide }] }]}>
             <Text style={styles.quoteText}>
