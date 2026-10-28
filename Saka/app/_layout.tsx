@@ -1,6 +1,9 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from 'react-native-safe-area-context';
 import { AppState } from 'react-native';
 import { useEffect } from 'react';
 import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
@@ -89,7 +92,7 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <StatusBar hidden={true} />
       <Stack screenOptions={stackScreenOptions}>
         {/* ...unchanged screens... */}

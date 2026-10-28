@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "com.yourname.saka",
       "supportsTablet": true,
+      "requireFullScreen": true,
       "config": {
         "googleMapsApiKey": "AIzaSyAI-xnvFzV-h5lEFs9bUNn-muw-vb4HpK8"
       },

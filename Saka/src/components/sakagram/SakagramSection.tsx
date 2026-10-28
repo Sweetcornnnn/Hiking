@@ -36,9 +36,16 @@ interface Props {
   viewpointName?: string;
   mountainId?: string;
   focused?: boolean;
+  onPressAuthor?: (userId: string) => void;
 }
 
-export default function SakagramSection({ viewpointId, viewpointName, mountainId, focused = false }: Props) {
+export default function SakagramSection({
+  viewpointId,
+  viewpointName,
+  mountainId,
+  focused = false,
+  onPressAuthor,
+}: Props) {
   const router = useRouter();
   const s = useMemo(() => makeStyles(focused), [focused]);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
@@ -211,6 +218,7 @@ export default function SakagramSection({ viewpointId, viewpointName, mountainId
               key={post.id}
               post={post}
               onToggleLike={handleToggleLike}
+              onPressAuthor={onPressAuthor}
               isLikePending={pendingLikeIds.has(post.id)}
               isLikeQueued={queuedLikeIds.has(post.id)}
               locationLabel={viewpointName}

@@ -28,9 +28,12 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchViewpointDetail } from '../services/viewpointService';
 import OfflineStatusIndicator from '../components/OfflineStatusIndicator';
 import SakagramSection from '../components/sakagram/SakagramSection';
+import ProfileCard from '../components/chat/ProfileCard';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../components/ModalScrim';
 import LoadingScreen from './Loading';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
@@ -271,6 +274,7 @@ const NANGTUD_GALLERIES: Record<string, MediaItem[]> = {
 
 export default function ViewpointScreen() {
   const router      = useRouter();
+  const insets = useSafeAreaInsets();
   const params      = useLocalSearchParams();
   const viewpointId = params.viewpointId as string | undefined;
   const mountainId  = params.mountainId as string | undefined;
@@ -283,6 +287,7 @@ export default function ViewpointScreen() {
   const [activeImageReady, setActiveImageReady] = React.useState(false);
   const [imageModalVisible, setImageModalVisible] = React.useState(false);
   const [modalMedia, setModalMedia] = React.useState<MediaItem | null>(null);
+  const [profileUserId, setProfileUserId] = React.useState<string | null>(null);
   // Hook sits above the early returns; waits until the loading screen is gone
   const tutorial = useTutorial('viewpoint', { ready: loadingScreenComplete && !!data });
 
@@ -369,7 +374,18 @@ export default function ViewpointScreen() {
     setImageModalVisible(true);
   };
 
-  const modalDimensions = getModalDimensions(modalMedia);
+  const rawModalDimensions = getModalDimensions(modalMedia);
+  const availableModalWidth = SCREEN_WIDTH - insets.left - insets.right - 20;
+  const availableModalHeight = SCREEN_HEIGHT - insets.top - insets.bottom - 32;
+  const modalScale = Math.min(
+    1,
+    availableModalWidth / rawModalDimensions.width,
+    availableModalHeight / rawModalDimensions.height,
+  );
+  const modalDimensions = {
+    width: rawModalDimensions.width * modalScale,
+    height: rawModalDimensions.height * modalScale,
+  };
   const modalImageSource = modalMedia?.type === 'image'
     ? (modalMedia.key
         ? (IMAGE_MAP[modalMedia.key] ?? FALLBACK_IMAGE)
@@ -580,19 +596,31 @@ export default function ViewpointScreen() {
               viewpointId={data.id}
               viewpointName={data.name}
               mountainId={mountainId}
+              onPressAuthor={setProfileUserId}
             />
           </ScrollView>
         </View>
       </View>
 
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={imageModalVisible}
-        transparent
         animationType="fade"
         onRequestClose={() => setImageModalVisible(false)}
       >
         <TouchableWithoutFeedback onPress={() => setImageModalVisible(false)}>
-          <View style={styles.imageModalBackdrop}>
+          <View
+            style={[
+              styles.imageModalBackdrop,
+              {
+                paddingLeft: insets.left + 10,
+                paddingRight: insets.right + 10,
+                paddingTop: insets.top + 16,
+                paddingBottom: insets.bottom + 16,
+              },
+            ]}
+          >
+            <ModalScrim color="rgba(0,0,0,0.72)" />
             <TouchableWithoutFeedback>
               <View
                 style={[
@@ -625,6 +653,18 @@ export default function ViewpointScreen() {
       </Modal>
 
       {tutorial.element}
+      <ProfileCard
+        userId={profileUserId}
+        visible={profileUserId !== null}
+        onClose={() => setProfileUserId(null)}
+        onMessagePress={(id) => {
+          setProfileUserId(null);
+          router.push({
+            pathname: '/chat/Conversation',
+            params: { userId: id },
+          } as any);
+        }}
+      />
 
       {!loadingScreenComplete && (
         <View style={[StyleSheet.absoluteFill, { zIndex: 1000, elevation: 1000 }]}>
@@ -1023,7 +1063,6 @@ const styles = StyleSheet.create({
   imageModalBackdrop: {
     flex: 1, backgroundColor: 'transparent',
     justifyContent: 'center', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 16,
   },
   imageModalShadowWrap: {
     borderRadius: PC.radius,

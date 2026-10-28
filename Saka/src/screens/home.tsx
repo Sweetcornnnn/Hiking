@@ -1,9 +1,8 @@
 // screens/Home.tsx
-import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
-  Dimensions,
   Animated,
   Easing,
   StyleSheet,
@@ -12,9 +11,13 @@ import {
   BackHandler,
   Alert,
   AppState,
+  AccessibilityInfo,
+  ActivityIndicator,
+  ToastAndroid,
+  useWindowDimensions,
   type AppStateStatus,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoThumbnail } from 'expo-video';
@@ -51,8 +54,6 @@ import {
 } from '../theme/designTokens';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
-
 const DIFFICULTY_COLORS: Record<string, string> = {
   Easy: '#4CAF81',
   Moderate: '#F0A500',
@@ -60,7 +61,43 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-const VIDEO_WINDOW = 1;
+// 2 = the current slide AND its neighbours keep a (paused) player ready,
+// so a swipe reveals a loaded video instead of a bare poster.
+const VIDEO_WINDOW = 2;
+
+// Optional haptics: works if expo-haptics is installed, silently does nothing if not.
+let Haptics: { selectionAsync?: () => Promise<void> } | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  Haptics = require('expo-haptics');
+} catch {
+  Haptics = null;
+}
+const hapticTick = () => {
+  try { void Haptics?.selectionAsync?.(); } catch {}
+};
+
+// TODO: connect this to your events service and return { [mountainId]: upcomingEventCount }.
+// The Events pill shows the number as soon as it returns a count above 0.
+async function fetchUpcomingEventCounts(): Promise<Record<string, number>> {
+  return {};
+}
+
+function useReduceMotion() {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((value) => { if (mounted) setReduce(value); })
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduce);
+    return () => {
+      mounted = false;
+      sub.remove();
+    };
+  }, []);
+  return reduce;
+}
 
 function VideoPoster({ poster }: { poster?: VideoThumbnail }) {
   const [failed, setFailed] = useState(false);
@@ -94,7 +131,7 @@ function MountainVideo({
     videoPlayer.loop = true;
     videoPlayer.muted = true;
   });
-  const [firstFrameRendered, setFirstFrameRendered] = useState(false);
+  const posterOpacity = useRef(new Animated.Value(1)).current;
   const [videoErrored, setVideoErrored] = useState(false);
   const hasRetriedRef = useRef(false);
 
@@ -112,12 +149,12 @@ function MountainVideo({
       if (status === 'error') {
         if (!hasRetriedRef.current) {
           hasRetriedRef.current = true;
-          setFirstFrameRendered(false);
+          posterOpacity.setValue(1);
           void player.replaceAsync(source).catch(() => setVideoErrored(true));
           return;
         }
         setVideoErrored(true);
-        setFirstFrameRendered(false);
+        posterOpacity.setValue(1);
         return;
       }
       if (status === 'readyToPlay') {
@@ -158,10 +195,22 @@ function MountainVideo({
           nativeControls={false}
           contentFit="cover"
           surfaceType="textureView"
-          onFirstFrameRender={() => setFirstFrameRendered(true)}
+          onFirstFrameRender={() =>
+            Animated.timing(posterOpacity, {
+              toValue: 0,
+              duration: 260,
+              easing: Easing.out(Easing.quad),
+              useNativeDriver: true,
+            }).start()
+          }
         />
       </View>
-      {!firstFrameRendered ? <VideoPoster poster={poster} /> : null}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, { opacity: posterOpacity }]}
+        pointerEvents="none"
+      >
+        <VideoPoster poster={poster} />
+      </Animated.View>
     </View>
   );
 }
@@ -174,6 +223,10 @@ const MountainSlide = memo(function MountainSlide({
   width,
   height,
   isPortrait,
+  index,
+  scrollX,
+  reduceMotion,
+  eventCount,
   onOpenTips,
   onEventsPress,
 }: {
@@ -184,6 +237,10 @@ const MountainSlide = memo(function MountainSlide({
   width: number;
   height: number;
   isPortrait: boolean;
+  index: number;
+  scrollX: Animated.Value;
+  reduceMotion: boolean;
+  eventCount: number;
   onOpenTips: (mountain: Mountain) => void;
   onEventsPress: (mountainId: string) => void;
 }) {
@@ -195,9 +252,45 @@ const MountainSlide = memo(function MountainSlide({
     tips.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedMountainName
   )?.alerts.length ?? 0;
 
+  // Parallax: the video drifts a little slower than the page, the text a little faster
+  // (and fades), so each swipe has depth. Skipped when the user prefers reduced motion.
+  const w = width;
+  const videoParallax = reduceMotion
+    ? undefined
+    : {
+        transform: [
+          {
+            translateX: scrollX.interpolate({
+              inputRange: [(index - 1) * w, index * w, (index + 1) * w],
+              outputRange: [-0.05 * w, 0, 0.05 * w],
+              extrapolate: 'clamp',
+            }),
+          },
+          { scale: 1.1 },
+        ],
+      };
+  const infoParallax = reduceMotion
+    ? undefined
+    : {
+        opacity: scrollX.interpolate({
+          inputRange: [(index - 0.7) * w, index * w, (index + 0.7) * w],
+          outputRange: [0, 1, 0],
+          extrapolate: 'clamp',
+        }),
+        transform: [
+          {
+            translateX: scrollX.interpolate({
+              inputRange: [(index - 1) * w, index * w, (index + 1) * w],
+              outputRange: [0.25 * w, 0, -0.25 * w],
+              extrapolate: 'clamp',
+            }),
+          },
+        ],
+      };
+
   return (
     <View style={[styles.fullScreenContainer, { width, height }]}>
-      <View style={styles.videoWrapper}>
+      <Animated.View style={[styles.videoWrapper, videoParallax]}>
         {localVideo ? (
           shouldMountVideo ? (
             <MountainVideo source={localVideo} poster={poster} isActive={isActive} />
@@ -207,9 +300,8 @@ const MountainSlide = memo(function MountainSlide({
         ) : (
           <VideoPoster poster={poster} />
         )}
-      </View>
-      <View style={styles.fullScreenGradient} />
-      <View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait]}>
+      </Animated.View>
+      <Animated.View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait, infoParallax]}>
         {mountain.funny_warning && (
           <Text style={styles.funnyWarningText}>{mountain.funny_warning}</Text>
         )}
@@ -226,9 +318,20 @@ const MountainSlide = memo(function MountainSlide({
             style={styles.eventsPill}
             onPress={() => onEventsPress(mountain.id)}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={
+              eventCount > 0
+                ? `Events for ${mountain.name}, ${eventCount} upcoming`
+                : `Events for ${mountain.name}`
+            }
           >
             <Ionicons name="calendar-outline" size={11} color="#C9A96E" />
             <Text style={styles.eventsPillText}>Events</Text>
+            {eventCount > 0 ? (
+              <View style={styles.eventsCount}>
+                <Text style={styles.eventsCountText}>{eventCount > 9 ? '9+' : eventCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
         <View style={styles.mountainNameRow}>
@@ -262,7 +365,7 @@ const MountainSlide = memo(function MountainSlide({
         <Text style={styles.mountainDescription} numberOfLines={2}>
           {mountain.description}
         </Text>
-      </View>
+      </Animated.View>
     </View>
   );
 });
@@ -278,7 +381,12 @@ function HomeContent() {
   const { user, profile, signOut, updateProfile } = useAuthStore();
   const { setSelectedMountainId } = useWildTrackStore();
   const [activeIndex, setActiveIndex] = useState(0);
-  const [dimensions, setDimensions] = useState(Dimensions.get('screen'));
+  const dimensions = useWindowDimensions();
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const slideWidth = viewportSize.width || dimensions.width;
+  const slideHeight = viewportSize.height || dimensions.height;
+  const reduceMotion = useReduceMotion();
+  const [eventCounts, setEventCounts] = useState<Record<string, number>>({});
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
@@ -335,46 +443,122 @@ function HomeContent() {
     return unsubscribe;
   }, []);
 
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(() => mountains.length === 0);
+  const [fetchFailed, setFetchFailed] = useState(false);
   const tutorial = useTutorial('home', { ready: mountains.length > 0 && returnToProfile !== 'true' });
   const scrollViewRef = useRef<any>(null);
 
-  const isPortrait = dimensions.height > dimensions.width;
+  const isPortrait = slideHeight > slideWidth;
+
+  const loadMountains = useCallback(async () => {
+    setLoading(true);
+    setFetchFailed(false);
+    try {
+      await mountainService.fetchMountains();
+    } catch (fetchError) {
+      console.warn('[Home] Mountain feed could not be loaded:', fetchError);
+      setFetchFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const unsubscribe = mountainService.subscribeToCache((updatedMountains) => {
       setMountains(updatedMountains);
     });
-    if (mountains.length === 0) {
-      void mountainService.fetchMountains().catch((fetchError) => {
-        console.warn('[Home] Mountain feed could not be loaded:', fetchError);
-        setError('Mountain feed is unavailable. Connect to the internet to load it.');
-      });
-    }
+    if (mountains.length === 0) void loadMountains();
     return unsubscribe;
   }, []);
 
   useEffect(() => {
-    setError(mountains.length === 0
-      ? 'Mountain feed is unavailable. Connect to the internet to load it.'
-      : null);
+    if (mountains.length > 0) {
+      setFetchFailed(false);
+      setLoading(false);
+    }
   }, [mountains]);
 
   useEffect(() => {
-    const subscription = Dimensions.addEventListener('change', ({ screen }) => {
-      setDimensions(screen);
-    });
-    return () => subscription?.remove();
+    let alive = true;
+    fetchUpcomingEventCounts()
+      .then((counts) => { if (alive) setEventCounts(counts); })
+      .catch(() => {});
+    return () => { alive = false; };
   }, []);
 
+  // Pause every video while another screen (Tips, Events, MountainTop…) is on top.
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, [])
+  );
+
+  // ── Paging: one scroll value drives the parallax; the active slide switches at the halfway point ──
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const activeIndexRef = useRef(0);
+  const mountainsRef = useRef(mountains);
+  mountainsRef.current = mountains;
+  const widthRef = useRef(slideWidth);
+  widthRef.current = slideWidth;
+  const lastWidthRef = useRef(slideWidth);
+  const ignoreScrollUntil = useRef(0);
+  if (lastWidthRef.current !== slideWidth) {
+    // rotating: don't mistake the layout change for a swipe
+    lastWidthRef.current = slideWidth;
+    ignoreScrollUntil.current = Date.now() + 400;
+  }
+
+  const syncActive = useCallback((offsetX: number) => {
+    if (Date.now() < ignoreScrollUntil.current) return;
+    const list = mountainsRef.current;
+    if (list.length === 0 || widthRef.current <= 0) return;
+    const next = Math.max(0, Math.min(list.length - 1, Math.round(offsetX / widthRef.current)));
+    if (next === activeIndexRef.current) return;
+    activeIndexRef.current = next;
+    setActiveIndex(next);
+    setSelectedMountainId(list[next].id);
+    hapticTick();
+  }, [setSelectedMountainId]);
+
+  const onScroll = useMemo(
+    () => Animated.event(
+      [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+      {
+        useNativeDriver: true,
+        listener: (event: any) => syncActive(event.nativeEvent.contentOffset.x),
+      },
+    ),
+    [scrollX, syncActive],
+  );
+
+  // Only re-align on rotation / when the list size changes (NOT on every swipe, which would fight the finger).
   useEffect(() => {
     if (scrollViewRef.current && mountains.length > 0) {
       scrollViewRef.current.scrollTo({
-        x: activeIndex * dimensions.width,
+        x: activeIndexRef.current * slideWidth,
         animated: false,
       });
     }
-  }, [dimensions, activeIndex, mountains]);
+  }, [slideWidth, mountains.length]);
+
+  // Gentle breathing glow behind the Saka logo button (the main action)
+  const glow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (reduceMotion) {
+      glow.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [reduceMotion, glow]);
 
   const openProfileCard = () => setProfileCardVisible(true);
   const closeProfileCard = () => setProfileCardVisible(false);
@@ -426,30 +610,49 @@ function HomeContent() {
     router.replace('/Login');
   }, [signOut, router]);
 
+  const lastBackPress = useRef(0);
   useEffect(() => {
     const onBack = () => {
       if (profileCardVisible) { closeProfileCard(); return true; }
       if (showLogoutConfirm) { dismissLogoutConfirm(); return true; }
-      openLogoutConfirm();
+      const now = Date.now();
+      if (now - lastBackPress.current < 2000) {
+        BackHandler.exitApp();
+        return true;
+      }
+      lastBackPress.current = now;
+      ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
       return true;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [profileCardVisible, showLogoutConfirm, openLogoutConfirm, dismissLogoutConfirm]);
+  }, [profileCardVisible, showLogoutConfirm, dismissLogoutConfirm]);
 
-  if (error) {
-    return (
-      <View style={styles.immersiveContainer}>
-        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>Error: {error}</Text>
-      </View>
-    );
-  }
   if (mountains.length === 0) {
+    if (loading || !fetchFailed) {
+      return (
+        <View style={[styles.immersiveContainer, styles.statusWrap]}>
+          <ActivityIndicator color={ACCENT_GOLD} />
+          <Text style={styles.statusText}>Preparing your mountain feed...</Text>
+        </View>
+      );
+    }
     return (
-      <View style={styles.immersiveContainer}>
-        <Text style={{ color: 'white', textAlign: 'center', margin: 20 }}>
-          Preparing your mountain feed...
+      <View style={[styles.immersiveContainer, styles.statusWrap]}>
+        <Ionicons name="cloud-offline-outline" size={30} color="rgba(255,255,255,0.5)" />
+        <Text style={styles.statusText}>
+          Mountain feed is unavailable. Connect to the internet to load it.
         </Text>
+        <TouchableOpacity
+          onPress={() => void loadMountains()}
+          style={styles.retryButton}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading the mountain feed"
+        >
+          <Ionicons name="refresh" size={14} color="#0E1520" />
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -465,20 +668,27 @@ function HomeContent() {
 
       <Animated.ScrollView
         ref={scrollViewRef}
+        style={styles.mountainPager}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={(event) => {
-          const newIndex = Math.round(event.nativeEvent.contentOffset.x / dimensions.width);
-          setActiveIndex(newIndex);
-          if (mountains[newIndex]) setSelectedMountainId(mountains[newIndex].id);
+        onLayout={(event) => {
+          const { width, height } = event.nativeEvent.layout;
+          setViewportSize((current) => (
+            current.width === width && current.height === height
+              ? current
+              : { width, height }
+          ));
         }}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={(event) => syncActive(event.nativeEvent.contentOffset.x)}
         decelerationRate="fast"
       >
         {mountains.map((mountain, index) => {
           const distance = Math.abs(index - activeIndex);
           const shouldMountVideo = distance < VIDEO_WINDOW;
-          const isActive = index === activeIndex;
+          const isActive = focused && index === activeIndex;
           return (
             <MountainSlide
               key={mountain.id}
@@ -486,9 +696,13 @@ function HomeContent() {
               shouldMountVideo={shouldMountVideo}
               isActive={isActive}
               poster={videoPosters[mountain.id]}
-              width={dimensions.width}
-              height={dimensions.height}
+              width={slideWidth}
+              height={slideHeight}
               isPortrait={isPortrait}
+              index={index}
+              scrollX={scrollX}
+              reduceMotion={reduceMotion}
+              eventCount={eventCounts[mountain.id] ?? 0}
               onOpenTips={handleOpenTips}
               onEventsPress={handleEventsPress}
             />
@@ -497,7 +711,13 @@ function HomeContent() {
       </Animated.ScrollView>
 
       <View style={[styles.transparentHeader, !isPortrait && styles.transparentHeaderLandscape]}>
-        <TouchableOpacity onPress={openProfileCard} style={styles.profileButton} activeOpacity={0.8}>
+        <TouchableOpacity
+          onPress={openProfileCard}
+          style={styles.profileButton}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Open your profile"
+        >
           <View style={styles.profileAvatarOuter}>
             <View style={styles.profileAvatarRing}>
               <View style={styles.profileAvatar}>
@@ -565,9 +785,19 @@ function HomeContent() {
           style={[styles.ctaAbsolute, isPortrait && styles.ctaAbsolutePortrait]}
           onPress={() => handleCTAPress(mountains[activeIndex].id)}
           activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={`Explore ${mountains[activeIndex].name}`}
         >
           <View style={styles.ctaLogoWrap}>
-            <View style={styles.ctaGlowRing} />
+            <Animated.View
+              style={[
+                styles.ctaGlowRing,
+                {
+                  opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
+                  transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.14] }) }],
+                },
+              ]}
+            />
             <Image
               source={require('../../assets/images/SakaLogo.png')}
               style={styles.logoImage}
@@ -578,7 +808,11 @@ function HomeContent() {
         </TouchableOpacity>
       )}
 
-      <View style={styles.paginationFixed}>
+      <View
+        style={styles.paginationFixed}
+        accessible
+        accessibilityLabel={`Mountain ${activeIndex + 1} of ${mountains.length}: ${mountains[activeIndex]?.name ?? ''}`}
+      >
         <View style={styles.paginationStack}>
           {mountains.map((_, index) => (
             <View
@@ -629,6 +863,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   immersiveContainer: { flex: 1, backgroundColor: '#000' },
+  mountainPager: { flex: 1, width: '100%' },
   fullScreenContainer: {
     position: 'relative',
     overflow: 'hidden',
@@ -650,7 +885,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fullScreenGradient: { ...StyleSheet.absoluteFill, backgroundColor: 'transparent' },
   funnyWarningText: {
     color: 'rgba(255,255,220,0.7)',
     fontSize: 10,
@@ -767,6 +1001,28 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(201,169,110,0.55)',
   },
   eventsPillText: { color: '#C9A96E', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  eventsCount: {
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#C9A96E',
+  },
+  eventsCountText: { color: '#0E1520', fontSize: 9, fontWeight: '800' },
+  statusWrap: { alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 32 },
+  statusText: { color: 'rgba(255,255,255,0.75)', fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: ACCENT_GOLD,
+  },
+  retryText: { color: '#0E1520', fontSize: 12, fontWeight: '800' },
   mountainDescription: { color: 'rgba(255,255,255,0.65)', fontSize: 12, lineHeight: 17, maxWidth: '65%' },
   floatingMountainName: {
     flexShrink: 1,
