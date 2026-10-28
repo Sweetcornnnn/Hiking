@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { MountainTips } from '../../data/mountainTips';
@@ -20,6 +20,7 @@ import {
 export interface TipsAndTricksProps {
   mountainTips: MountainTips;
   onBack?: () => void;
+  onAlertsViewed?: () => void;
 }
 
 /**
@@ -28,13 +29,26 @@ export interface TipsAndTricksProps {
  *
  * The screen is full-bleed: it ignores safe-area insets and pads itself instead.
  */
-export default function TipsAndTricks({ mountainTips, onBack }: TipsAndTricksProps) {
+export default function TipsAndTricks({
+  mountainTips,
+  onBack,
+  onAlertsViewed,
+}: TipsAndTricksProps) {
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
   const columns = landscape ? 3 : 2;
 
+  // Tiles are sized from the space that is actually free, then capped, so they stay
+  // compact instead of stretching to fill the screen. Rows can never overflow.
+  const [gridHeight, setGridHeight] = useState(0);
+  const rowCount = Math.ceil(6 / columns);
+  const maxRowHeight = landscape ? 128 : 156;
+  const rowHeight = gridHeight > 0
+    ? Math.min(maxRowHeight, (gridHeight - GRID_GAP * (rowCount - 1)) / rowCount)
+    : maxRowHeight;
+
   const tiles = [
-    <AlertsSection key="alerts" alerts={mountainTips.alerts} />,
+    <AlertsSection key="alerts" alerts={mountainTips.alerts} onOpen={onAlertsViewed} />,
     <SafetySection key="safety" items={mountainTips.safety} />,
     <PreparationSection key="preparation" items={mountainTips.preparation} />,
     <TransportationSection key="transportation" items={mountainTips.transportation} />,
@@ -72,9 +86,12 @@ export default function TipsAndTricks({ mountainTips, onBack }: TipsAndTricksPro
         </View>
       </View>
 
-      <View style={styles.grid}>
+      <View
+        style={styles.grid}
+        onLayout={(e) => setGridHeight(e.nativeEvent.layout.height)}
+      >
         {rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
+          <View key={rowIndex} style={[styles.row, { height: rowHeight }]}>
             {row.map((tile, i) => (
               <View key={tile.key ?? i} style={styles.cell}>
                 {tile}
@@ -86,6 +103,8 @@ export default function TipsAndTricks({ mountainTips, onBack }: TipsAndTricksPro
     </View>
   );
 }
+
+const GRID_GAP = 10;
 
 const styles = StyleSheet.create({
   // Full-bleed on purpose: no safe-area insets, so the layout runs behind the camera
@@ -139,14 +158,14 @@ const styles = StyleSheet.create({
   },
   grid: {
     flex: 1,
-    gap: 12,
+    justifyContent: 'center',
+    gap: GRID_GAP,
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 16,
   },
   row: {
-    flex: 1,
     flexDirection: 'row',
-    gap: 12,
+    gap: GRID_GAP,
   },
   cell: {
     flex: 1,

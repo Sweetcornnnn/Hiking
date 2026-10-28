@@ -9,6 +9,7 @@ import { TEXT_MUTED } from '../../../theme/designTokens';
 
 export interface AlertsSectionProps {
   alerts: Alert[];
+  onOpen?: () => void;
 }
 
 const SEVERITY_ORDER: Record<Alert['type'], number> = { danger: 0, warning: 1, info: 2 };
@@ -22,7 +23,7 @@ const SEVERITY_COLOR: Record<Alert['type'], string> = {
  * The alerts tile. Its beacon takes the colour of the most severe active alert,
  * and turns calm and green when there are none.
  */
-export default function AlertsSection({ alerts }: AlertsSectionProps) {
+export default function AlertsSection({ alerts, onOpen }: AlertsSectionProps) {
   const sorted = useMemo(
     () => [...alerts].sort((a, b) => SEVERITY_ORDER[a.type] - SEVERITY_ORDER[b.type]),
     [alerts],
@@ -34,6 +35,7 @@ export default function AlertsSection({ alerts }: AlertsSectionProps) {
   return (
     <InfoSection
       title="Events & Alerts"
+      onOpen={onOpen}
       subtitle={calm ? 'All clear for now.' : 'Closures and hazards, most urgent first.'}
       accent={accent}
       scene={<AlertsScene accent={accent} calm={calm} />}
@@ -42,11 +44,12 @@ export default function AlertsSection({ alerts }: AlertsSectionProps) {
         calm ? (
           <Text style={styles.empty}>There are no current alerts for this mountain.</Text>
         ) : (
-          <View style={styles.list}>
-            {sorted.map((alert, index) => (
-              <AlertCard key={`${alert.type}-${alert.title}-${index}`} alert={alert} />
-            ))}
-          </View>
+          // One top-level entry per alert, so the popup can page them instead of scrolling.
+          sorted.map((alert, index) => (
+            <View key={`${alert.type}-${alert.title}-${index}`} style={styles.alertEntry}>
+              <AlertCard alert={alert} />
+            </View>
+          ))
         )
       }
     />
@@ -54,9 +57,8 @@ export default function AlertsSection({ alerts }: AlertsSectionProps) {
 }
 
 const styles = StyleSheet.create({
-  list: {
-    gap: 10,
-    paddingTop: 12,
+  alertEntry: {
+    marginTop: 12,
   },
   empty: {
     color: TEXT_MUTED,

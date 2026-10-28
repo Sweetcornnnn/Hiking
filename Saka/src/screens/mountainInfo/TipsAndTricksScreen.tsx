@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import { useAuthStore } from '../../store/authStore';
+import { markMountainAlertsRead } from '../../services/mountainAlertReadService';
 import { Text, StyleSheet, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -68,6 +70,7 @@ function EmptyState({ mountainName, onBack }: EmptyStateProps) {
 
 export default function TipsAndTricksScreen() {
   const router = useRouter();
+  const user = useAuthStore((state) => state.user);
   const { mountainId: mountainIdParam, mountainName: mountainNameParam } = useLocalSearchParams<{
     mountainId?: string | string[];
     mountainName?: string | string[];
@@ -86,12 +89,22 @@ export default function TipsAndTricksScreen() {
   }, [mountainId, mountainName]);
 
   const goBack = () => router.back();
+  const handleAlertsViewed = useCallback(() => {
+    if (!user || !mountainTips) return;
+    void markMountainAlertsRead(user.id, mountainTips).catch((error) => {
+      console.warn('[TipsAndTricks] Failed to save read alerts:', error);
+    });
+  }, [mountainTips, user]);
 
   // TipsAndTricks manages its own safe area, so it is not wrapped again here.
   if (mountainTips) {
     return (
       <View style={styles.screen}>
-        <TipsAndTricks mountainTips={mountainTips} onBack={goBack} />
+        <TipsAndTricks
+          mountainTips={mountainTips}
+          onBack={goBack}
+          onAlertsViewed={handleAlertsViewed}
+        />
       </View>
     );
   }

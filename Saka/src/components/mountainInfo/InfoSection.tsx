@@ -21,6 +21,7 @@ export interface InfoSectionProps {
   detail?: ReactNode;
   /** Short label on the tile; defaults to the tip count. */
   countLabel?: string;
+  onOpen?: () => void;
 }
 
 /**
@@ -35,6 +36,7 @@ export default function InfoSection({
   items = [],
   detail,
   countLabel,
+  onOpen,
 }: InfoSectionProps) {
   const [open, setOpen] = useState(false);
   const label = countLabel ?? `${items.length} ${items.length === 1 ? 'tip' : 'tips'}`;
@@ -42,7 +44,10 @@ export default function InfoSection({
   return (
     <>
       <Pressable
-        onPress={() => setOpen(true)}
+        onPress={() => {
+          onOpen?.();
+          setOpen(true);
+        }}
         style={({ pressed }) => [
           styles.tile,
           { borderColor: withAlpha(accent, 0.3) },
