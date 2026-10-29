@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View, Text, ScrollView } from 'react-native';
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 
 export default function AuthCallback() {
+  const linkingUrl = Linking.useLinkingURL();
   const [status, setStatus] = useState<string>('Waiting for callback...');
+  const lastProcessedUrl = useRef<string | null>(null);
+
   useEffect(() => {
     let mounted = true;
 
@@ -33,11 +36,12 @@ export default function AuthCallback() {
     const processUrl = async (rawUrl: string | null) => {
       let recoverySessionEstablished = false;
       try {
-        setStatus(`Raw URL: ${rawUrl ?? 'null'}`);
-        if (!rawUrl) return;
+        if (!rawUrl) {
+          setStatus('No callback URL received. Open the latest password-reset link again.');
+          return;
+        }
 
         let urlStr = extractInner(rawUrl);
-        setStatus(`Parsed URL: ${urlStr}`);
 
         // If a redirect_to param exists and contains an encoded URI, unwrap it
         try {
@@ -46,7 +50,6 @@ export default function AuthCallback() {
           if (redirectTo) {
             const decoded = decodeURIComponent(redirectTo);
             urlStr = decoded;
-            setStatus(`Follow redirect_to -> ${urlStr}`);
           }
         } catch (e) {
           // ignore
@@ -100,41 +103,15 @@ export default function AuthCallback() {
       }
     };
 
-    const handleInitial = async () => {
-      try {
-        const initialUrl = await Linking.getInitialURL();
-        await processUrl(initialUrl);
-      } catch (err) {
-        console.warn('[Auth] Initial URL read failed:', err);
-        setStatus(`Initial URL read failed: ${String(err)}`);
-        setTimeout(() => router.replace('/Login'), 800);
-      }
-    };
-
-    const onUrl = ({ url }: { url: string }) => {
-      processUrl(url);
-    };
-
-    // listen for incoming url events (use subscription API when available)
-    const subscription: any = (Linking as any).addEventListener
-      ? (Linking as any).addEventListener('url', onUrl)
-      : null;
-    handleInitial();
+    if (linkingUrl && lastProcessedUrl.current !== linkingUrl) {
+      lastProcessedUrl.current = linkingUrl;
+      void processUrl(linkingUrl);
+    }
 
     return () => {
       mounted = false;
-      if (subscription && typeof subscription.remove === 'function') {
-        subscription.remove();
-      } else {
-        // fallback for environments using the older add/removeEventListener API
-        try {
-          (Linking as any).removeEventListener?.('url', onUrl);
-        } catch (e) {
-          // ignore if not supported
-        }
-      }
     };
-  }, []);
+  }, [linkingUrl]);
 
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0E1520', padding: 14 }}>
