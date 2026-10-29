@@ -43,6 +43,7 @@ export default function RootLayout() {
   const bootstrap = useHikeSafetyStore((s) => s.bootstrap);
   useEffect(() => { bootstrap(); }, [bootstrap]);
   useEffect(() => {
+    void locationService.initializeTrackingState();
     void locationService.retryQueuedUploads();
     void flushJournalWriteQueue().catch((error) => {
       console.warn('[OfflineSync] Journal queue flush failed:', error);

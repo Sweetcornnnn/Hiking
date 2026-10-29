@@ -22,6 +22,12 @@ export interface TrackingStatus {
   isOnline: boolean;
 }
 
+export interface LocationUploadResult {
+  uploaded: number;
+  remaining: number;
+  error: string | null;
+}
+
 export interface UseLocationTrackingReturn {
   // State
   lastLocation: LocationData | null;
@@ -37,7 +43,7 @@ export interface UseLocationTrackingReturn {
   requestPermissions: () => Promise<boolean>;
   getSOS: () => Promise<LocationData | null>;
   getLocationHistory: () => Promise<LocationData[]>;
-  retryUploads: () => Promise<void>;
+  retryUploads: () => Promise<LocationUploadResult>;
 }
 
 /**
@@ -87,6 +93,7 @@ export function useLocationTracking(): UseLocationTrackingReturn {
    */
   const initializeTracking = useCallback(async () => {
     try {
+      await locationService.initializeTrackingState();
       // Check current permissions
       const perms = await locationService.checkPermissions();
       setPermissions(perms);
@@ -270,13 +277,20 @@ export function useLocationTracking(): UseLocationTrackingReturn {
   /**
    * Retry queued uploads
    */
-  const retryUploads = useCallback(async (): Promise<void> => {
+  const retryUploads = useCallback(async (): Promise<LocationUploadResult> => {
     try {
       setIsLoading(true);
-      await locationService.retryQueuedUploads();
+      const result = await locationService.retryQueuedUploads();
       refreshStatus();
+      return result;
     } catch (error) {
       console.error('Error retrying uploads:', error);
+      refreshStatus();
+      return {
+        uploaded: 0,
+        remaining: locationService.getTrackingStatus().queuedUploads,
+        error: error instanceof Error ? error.message : String(error),
+      };
     } finally {
       setIsLoading(false);
     }

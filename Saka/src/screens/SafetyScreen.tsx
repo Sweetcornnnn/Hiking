@@ -97,6 +97,7 @@ export default function SafetyScreen() {
   const initializeTracking = async () => {
     try {
       setIsLoading(true);
+      await locationService.initializeTrackingState();
       const permissions = await locationService.checkPermissions();
       setPermissionStatus(permissions);
 
@@ -335,9 +336,21 @@ export default function SafetyScreen() {
   const handleRetryUploads = async () => {
     try {
       setIsLoading(true);
-      await locationService.retryQueuedUploads();
+      const result = await locationService.retryQueuedUploads();
       updateTrackingStatus();
-      Alert.alert('Success', 'Queued locations uploaded successfully');
+      if (result.error) {
+        Alert.alert(
+          'Sync incomplete',
+          `${result.uploaded} location${result.uploaded === 1 ? '' : 's'} synced; ${result.remaining} still pending. Check your connection and try again.`,
+        );
+      } else if (result.uploaded === 0) {
+        Alert.alert('Nothing to sync', 'There are no pending locations to upload.');
+      } else {
+        Alert.alert(
+          'Sync complete',
+          `${result.uploaded} location${result.uploaded === 1 ? '' : 's'} synced successfully.`,
+        );
+      }
     } catch (error) {
       console.error('Error retrying uploads:', error);
       Alert.alert('Error', 'Failed to upload queued locations');

@@ -6,10 +6,12 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useLocationTracking, LocationData } from '../hooks/useLocationTracking';
+import locationService from '../services/locationService';
 
 export default function LocationScreen() {
   const router = useRouter();
@@ -44,17 +46,47 @@ export default function LocationScreen() {
   const handleToggleTracking = async () => {
     if (trackingStatus.isForegroundActive) {
       await stopTracking();
+      await locationService.stopBackgroundTracking();
     } else {
       if (!permissions.foreground) {
-        await requestPermissions();
+        const granted = await requestPermissions();
+        if (!granted) return;
       }
-      await startTracking();
+      const started = await startTracking();
+      if (started) {
+        const backgroundStarted = await locationService.startBackgroundTracking();
+        if (!backgroundStarted) {
+          Alert.alert(
+            'Background tracking unavailable',
+            'Tracking will continue while the app is open. Allow background location access to keep tracking after you leave the app.',
+          );
+        }
+      }
     }
   };
 
   const handleSOS = async () => {
     const loc = await getSOS();
     if (loc) setSosResult(loc);
+  };
+
+  const handleRetryUploads = async () => {
+    const result = await retryUploads();
+    await loadHistory();
+
+    if (result.error) {
+      Alert.alert(
+        'Sync incomplete',
+        `${result.uploaded} location${result.uploaded === 1 ? '' : 's'} synced; ${result.remaining} still pending. Check your connection and try again.`,
+      );
+    } else if (result.uploaded === 0) {
+      Alert.alert('Nothing to sync', 'There are no pending locations to upload.');
+    } else {
+      Alert.alert(
+        'Sync complete',
+        `${result.uploaded} location${result.uploaded === 1 ? '' : 's'} synced successfully.`,
+      );
+    }
   };
 
   const formatCoord = (val: number, decimals = 5) => val.toFixed(decimals);
@@ -129,10 +161,22 @@ export default function LocationScreen() {
 
           {/* Upload queue notice */}
           {trackingStatus.queuedUploads > 0 && (
-            <TouchableOpacity style={styles.queueBadge} onPress={retryUploads}>
-              <Ionicons name="cloud-upload-outline" size={10} color="#F38B5C" />
+            <TouchableOpacity
+              style={styles.queueBadge}
+              onPress={handleRetryUploads}
+              disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel={`Sync ${trackingStatus.queuedUploads} pending locations`}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#F38B5C" />
+              ) : (
+                <Ionicons name="cloud-upload-outline" size={10} color="#F38B5C" />
+              )}
               <Text style={styles.queueBadgeText}>
-                {trackingStatus.queuedUploads} pending upload{trackingStatus.queuedUploads > 1 ? 's' : ''} — tap to retry
+                {isLoading
+                  ? 'Syncing locations…'
+                  : `${trackingStatus.queuedUploads} pending upload${trackingStatus.queuedUploads > 1 ? 's' : ''} — tap to sync`}
               </Text>
             </TouchableOpacity>
           )}
@@ -157,7 +201,9 @@ export default function LocationScreen() {
               <View style={[styles.statusDot, { backgroundColor: trackingColor }]} />
               <Text style={styles.statusLabel}>
                 {trackingStatus.isForegroundActive
-                  ? 'Tracking active'
+                  ? trackingStatus.isBackgroundActive
+                    ? 'Tracking active · background enabled'
+                    : 'Tracking active'
                   : trackingStatus.isBackgroundActive
                   ? 'Background only'
                   : 'Not tracking'}

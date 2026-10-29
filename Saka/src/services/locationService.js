@@ -3,6 +3,7 @@
 
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 
@@ -27,6 +28,7 @@ class LocationService {
     this.uploadQueue = [];
     this.uploadQueueLoaded = false;
     this.uploadQueueLoad = null;
+    this.uploadQueueProcessing = null;
     this.isOnline = true;
   }
 
@@ -185,25 +187,6 @@ class LocationService {
    */
   async startBackgroundTracking() {
     try {
-      // Check if background task is already defined
-      const isRegistered = await TaskManager.isTaskRegisteredAsync(
-        BACKGROUND_LOCATION_TASK_NAME
-      );
-
-      // Define the background task (can be called multiple times safely)
-      if (!isRegistered) {
-        TaskManager.defineTask(
-          BACKGROUND_LOCATION_TASK_NAME,
-          async ({ data: { locations } }) => {
-            // This runs in the background and is battery efficient
-            if (locations && locations.length > 0) {
-              const location = locations[locations.length - 1]; // Get latest location
-              await this._handleLocationUpdate(location, null);
-            }
-          }
-        );
-      }
-
       // Request background permission
       const hasPermission = await this.requestBackgroundPermission();
       if (!hasPermission) {
@@ -211,7 +194,10 @@ class LocationService {
         return false;
       }
 
-      // Start background location updates
+      if (await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK_NAME)) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK_NAME);
+      }
+
       await Location.startLocationUpdatesAsync(
         BACKGROUND_LOCATION_TASK_NAME,
         {
@@ -219,6 +205,14 @@ class LocationService {
           timeInterval: 30000, // Update every 30 seconds in background
           distanceInterval: 50, // Or when moved 50 meters
           mayShowUserSettingsDialog: true, // Allow user to adjust settings
+          pausesUpdatesAutomatically: false,
+          showsBackgroundLocationIndicator: true,
+          foregroundService: {
+            notificationTitle: 'SAKA location tracking is active',
+            notificationBody: 'Your hike location is being recorded for safety.',
+            notificationColor: '#C9A96E',
+            killServiceOnDestroy: false,
+          },
         }
       );
 
@@ -236,11 +230,7 @@ class LocationService {
    */
   async stopBackgroundTracking() {
     try {
-      const isRegistered = await TaskManager.isTaskRegisteredAsync(
-        BACKGROUND_LOCATION_TASK_NAME
-      );
-
-      if (isRegistered) {
+      if (await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK_NAME)) {
         await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK_NAME);
       }
 
@@ -368,47 +358,87 @@ class LocationService {
    * @private
    */
   async _processUploadQueue() {
-    await this._loadUploadQueue();
-    while (this.uploadQueue.length > 0) {
-      const locationData = this.uploadQueue[0];
+    if (this.uploadQueueProcessing) return this.uploadQueueProcessing;
 
+    const processing = (async () => {
+      await this._loadUploadQueue();
+      let uploaded = 0;
+
+      if (this.uploadQueue.length === 0) {
+        return { uploaded, remaining: 0, error: null };
+      }
+
+      let session;
       try {
-        // Attempt upload to Supabase
-        const { error } = await supabase
-          .from('hiker_locations')
-          .insert({
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            accuracy: locationData.accuracy,
-            altitude: locationData.altitude,
-            heading: locationData.heading,
-            speed: locationData.speed,
-            timestamp: locationData.timestamp,
-          });
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        session = data.session;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn('[Location] Upload queue could not be synced:', message);
+        this.isOnline = false;
+        return { uploaded, remaining: this.uploadQueue.length, error: message };
+      }
+      if (!session?.user) {
+        const message = 'Sign in to sync saved locations.';
+        console.warn('[Location] Upload queue could not be synced:', message);
+        this.isOnline = false;
+        return { uploaded, remaining: this.uploadQueue.length, error: message };
+      }
 
-        if (error) {
-          if (error.code === 'PGRST116') {
-            // Table doesn't exist, log but don't retry infinitely
-            console.warn('Hiker locations table not found in Supabase');
-            this.uploadQueue.shift();
-            await this._persistUploadQueue();
-          } else {
-            throw error;
-          }
-        } else {
-          // Successfully uploaded, remove from queue
+      while (this.uploadQueue.length > 0) {
+        const locationData = this.uploadQueue[0];
+
+        try {
+          const { error } = await supabase
+            .from('hiker_locations')
+            .insert({
+              user_id: locationData.user_id || session.user.id,
+              latitude: locationData.latitude,
+              longitude: locationData.longitude,
+              accuracy: locationData.accuracy,
+              altitude: locationData.altitude,
+              heading: locationData.heading,
+              speed: locationData.speed,
+              timestamp: locationData.timestamp,
+            });
+
+          if (error) throw error;
+
           this.uploadQueue.shift();
           await this._persistUploadQueue();
-          console.log('✓ Location uploaded to Supabase');
+          uploaded += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn('[Location] Upload failed; keeping locations queued for retry:', message);
+          this.isOnline = false;
+          await this._persistUploadQueue();
+          return { uploaded, remaining: this.uploadQueue.length, error: message };
         }
-      } catch (error) {
-        // Network error or offline - stop processing queue
-        console.warn('Upload failed (will retry when online):', error.message);
-        this.isOnline = false;
-        await this._persistUploadQueue();
-        break;
       }
+
+      this.isOnline = true;
+      return { uploaded, remaining: 0, error: null };
+    })();
+
+    this.uploadQueueProcessing = processing;
+    try {
+      return await processing;
+    } finally {
+      this.uploadQueueProcessing = null;
     }
+  }
+
+  async initializeTrackingState() {
+    try {
+      this.isTrackingBackground = await Location.hasStartedLocationUpdatesAsync(
+        BACKGROUND_LOCATION_TASK_NAME
+      );
+    } catch (error) {
+      console.error('[Location] Failed to restore background tracking status:', error);
+      this.isTrackingBackground = false;
+    }
+    await this._loadUploadQueue();
   }
 
   /**
@@ -417,8 +447,7 @@ class LocationService {
    */
   async retryQueuedUploads() {
     await this._loadUploadQueue();
-    this.isOnline = true;
-    await this._processUploadQueue();
+    return this._processUploadQueue();
   }
 
   /**
@@ -487,5 +516,20 @@ class LocationService {
 
 // Export singleton instance
 export const locationService = new LocationService();
+
+TaskManager.defineTask(BACKGROUND_LOCATION_TASK_NAME, async ({ data, error }) => {
+  if (error) {
+    console.error('[Location] Background task failed:', error);
+    return;
+  }
+
+  const locations = data?.locations;
+  if (!Array.isArray(locations) || locations.length === 0) return;
+
+  // Foreground watchPositionAsync handles live UI updates while the app is open.
+  if (AppState.currentState === 'active' && locationService.isTrackingForeground) return;
+
+  await locationService._handleLocationUpdate(locations[locations.length - 1], null);
+});
 
 export default locationService;

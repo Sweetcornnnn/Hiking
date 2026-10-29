@@ -78,6 +78,17 @@
         }
       ],
       "expo-video",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow SAKA to record your location while you use the app.",
+          "locationAlwaysAndWhenInUsePermission": "Allow SAKA to keep recording your hike when the app is in the background.",
+          "locationAlwaysPermission": "Allow SAKA to keep recording your hike when the app is in the background.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
       "expo-secure-store",
       "expo-font",
       "expo-image",
