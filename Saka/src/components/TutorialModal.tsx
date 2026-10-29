@@ -76,7 +76,11 @@ export type SceneKind =
   | 'cardShared' // blue read-only card
   | 'photos' // swipe the photo stack
   | 'photoZoom' // tap the front photo
-  | 'button'; // tap Schedule Hike
+  | 'button' // tap Schedule Hike
+  | 'profileAvatar' // tap your photo on the profile card
+  | 'profileQuick' // Schedule + WildTrack tiles
+  | 'profileJournal' // Journal + Showcase
+  | 'profileMini'; // Weather, Location, Emergency
 
 export interface TutorialStep {
   scene: SceneKind;
@@ -88,7 +92,7 @@ export interface TutorialStep {
   legend?: { icon: IconName; label: string; tone?: Tone }[];
 }
 
-export type TutorialId = 'home' | 'calendar' | 'hikes' | 'viewpoint';
+export type TutorialId = 'home' | 'calendar' | 'hikes' | 'viewpoint' | 'profile';
 
 export const TUTORIAL_STEPS: Record<TutorialId, TutorialStep[]> = {
   home: [
@@ -170,6 +174,38 @@ export const TUTORIAL_STEPS: Record<TutorialId, TutorialStep[]> = {
       body: 'Tap Schedule Hike to pick a date for this mountain.',
     },
   ],
+  profile: [
+    {
+      scene: 'profileAvatar',
+      title: 'Make it yours',
+      body: 'Tap your photo to pick a new profile picture from your gallery.',
+    },
+    {
+      scene: 'profileQuick',
+      title: 'Plan and explore',
+      body: 'Schedule opens your hike calendar. WildTrack is the field guide to the trail’s plants, animals and tips.',
+    },
+    {
+      scene: 'profileJournal',
+      title: 'Keep your memories',
+      body: 'Journal is where you write about a hike. Showcase puts your best moments on display.',
+    },
+    {
+      scene: 'profileMini',
+      title: 'Quick checks',
+      body: 'See the weather and your location, or open your emergency contacts, each in a single tap.',
+    },
+    {
+      scene: 'legend',
+      title: 'Account, your way',
+      body: 'These sit at the bottom left of the card.',
+      legend: [
+        { icon: 'settings-outline', label: 'Settings and preferences' },
+        { icon: 'business-outline', label: 'Become an organizer' },
+        { icon: 'log-out-outline', label: 'Sign out of Saka', tone: 'danger' },
+      ],
+    },
+  ],
 };
 
 /** Label on the final button, so each tour ends with a nudge into the screen. */
@@ -178,6 +214,7 @@ const FINISH_LABEL: Record<TutorialId, string> = {
   calendar: 'Plan a hike',
   hikes: 'Got it',
   viewpoint: 'Enjoy the view',
+  profile: 'Got it',
 };
 
 // ── The universal help button ────────────────────────────────────────────
@@ -341,6 +378,10 @@ const LOOP_MS: Record<SceneKind, number> = {
   photos: 2600,
   photoZoom: 2800,
   button: 2400,
+  profileAvatar: 2400,
+  profileQuick: 3600,
+  profileJournal: 3600,
+  profileMini: 4800,
 };
 
 // The frame shown when the person has Reduce Motion on.
@@ -355,6 +396,10 @@ const STATIC_T: Partial<Record<SceneKind, number>> = {
   calTap: 0.62,
   photoZoom: 0.7,
   button: 0.7,
+  profileAvatar: 0.62,
+  profileQuick: 0.35,
+  profileJournal: 0.35,
+  profileMini: 0.28,
 };
 
 // ── Tiny drawing helpers ─────────────────────────────────────────────────
@@ -533,6 +578,76 @@ function Stage({ step, reduceMotion }: { step: TutorialStep; reduceMotion: boole
     </Animated.View>
   );
 
+  // A row of taps: the finger visits each target in turn, and each one presses,
+  // rings and shows its own chip. Used by the profile card scenes.
+  const seq = (n: number) => {
+    const w = 0.8 / n;
+    const s0 = (k: number) => 0.12 + k * w;
+    return {
+      press: (k: number) => map([0, s0(k), s0(k) + 0.05, s0(k) + 0.12, 1], [1, 1, 0.94, 1, 1]),
+      border: (k: number, dim: string, hot: string) =>
+        map([0, s0(k), s0(k) + 0.05, s0(k) + w - 0.04, 1], [dim, dim, hot, dim, dim]),
+      ring: (k: number, x: number, y: number, wd: number, h: number, radius: number) => (
+        <Animated.View
+          key={`ring${k}`}
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: x,
+            top: y,
+            width: wd,
+            height: h,
+            borderRadius: radius,
+            borderWidth: 1.5,
+            borderColor: rgba(tone, 0.8),
+            opacity: map([0, s0(k), s0(k) + 0.02, s0(k) + 0.2, 1], [0, 0, 0.55, 0, 0]),
+            transform: [{ scale: map([0, s0(k), s0(k) + 0.2, 1], [0.9, 0.9, 1.7, 1.7]) }],
+          }}
+        />
+      ),
+      chip: (k: number, icon: IconName, label: string, top: number) => (
+        <React.Fragment key={`chip${k}`}>
+          {chip(
+            icon,
+            label,
+            map([0, s0(k) + 0.06, s0(k) + 0.1, s0(k) + w - 0.06, s0(k) + w - 0.02, 1], [0, 0, 1, 1, 0, 0]),
+            map([0, s0(k) + 0.06, s0(k) + 0.1, 1], [8, 8, 0, 0]),
+            top
+          )}
+        </React.Fragment>
+      ),
+      finger: (pts: { x: number; y: number }[]) => {
+        const x0 = pts[0].x;
+        const sIn: number[] = [0];
+        const sOut: number[] = [1];
+        pts.forEach((_, k) => {
+          sIn.push(s0(k), s0(k) + 0.05, s0(k) + 0.12);
+          sOut.push(1, 0.8, 1);
+        });
+        sIn.push(1);
+        sOut.push(1);
+        const xIn: number[] = [0, s0(0) + 0.12];
+        const xOut: number[] = [0, 0];
+        pts.forEach((p, k) => {
+          if (k > 0) {
+            xIn.push(s0(k));
+            xOut.push(p.x - x0);
+          }
+        });
+        xIn.push(1);
+        xOut.push(pts[pts.length - 1].x - x0);
+        return finger(
+          x0,
+          pts[0].y + 4,
+          map([0, 0.1, 0.9, 1], [30, 0, 0, 30]),
+          map(xIn, xOut),
+          map(sIn, sOut),
+          map([0, 0.08, 0.92, 1], [0, 1, 1, 0])
+        );
+      },
+    };
+  };
+
   let hint: string | null = null;
   let body: React.ReactNode = null;
 
@@ -583,7 +698,7 @@ function Stage({ step, reduceMotion }: { step: TutorialStep; reduceMotion: boole
     case 'logo': {
       const D = 66;
       const x = (SCENE_W - D) / 2;
-      const y = 16;
+      const y = 14;
       body = (
         <>
           {ring(x, y, D, D, D / 2)}
@@ -592,7 +707,7 @@ function Stage({ step, reduceMotion }: { step: TutorialStep; reduceMotion: boole
           >
             <Ridge size={34} color={rgba(tone, 1)} />
           </Animated.View>
-          <Text style={styles.logoLabel}>Tara, Saka</Text>
+          {chip('arrow-forward-circle-outline', 'Opens the mountain', chipOpacity, chipY, 92)}
           {tapFinger(SCENE_W / 2, y + D / 2 + 6)}
         </>
       );
@@ -788,8 +903,8 @@ function Stage({ step, reduceMotion }: { step: TutorialStep; reduceMotion: boole
             variant={CARD_VARIANT}
             canEdit={canEdit}
             hikeId="demo-4f2a"
-            timePrimary={isShared ? '6:00A' : '4:30A'}
-            timeSecondary={isShared ? 'until 2:00P' : 'until 9:00A'}
+            timePrimary={isShared ? '6:00 AM' : '4:30 AM'}
+            timeSecondary={isShared ? 'until 2:00 PM' : 'until 9:00 AM'}
             dateText="Nov 21"
             group={isShared ? 8 : 6}
             weather={DEMO_WEATHER}
@@ -871,6 +986,168 @@ function Stage({ step, reduceMotion }: { step: TutorialStep; reduceMotion: boole
                   map([0, 0.1, 0.16, 0.9, 1], [1, 1, 0.8, 0.8, 1])
                 )
             : tapFinger(cx - 14, cy + 12)}
+        </>
+      );
+      break;
+    }
+
+    // ── Profile card: tap your photo ───────────────────────────────────
+    case 'profileAvatar': {
+      const D = 58;
+      const x = (SCENE_W - D) / 2;
+      const y = 8;
+      body = (
+        <>
+          {ring(x, y, D, D, D / 2)}
+          <Animated.View
+            style={[styles.logoCircle, { left: x, top: y, width: D, height: D, borderRadius: D / 2, borderColor: pressBorder, transform: [{ scale: pressScale }] }]}
+          >
+            <Ionicons name="person-outline" size={26} color={rgba(tone, 1)} />
+          </Animated.View>
+          <View style={[styles.camBadge, { left: x + D - 18, top: y + D - 18 }]}>
+            <Ionicons name="camera" size={10} color={C.ink} />
+          </View>
+          <Text style={styles.pName}>Hiker</Text>
+          <View style={[styles.descBar, { top: 92, left: (SCENE_W - 90) / 2, width: 90 }]} />
+          {chip('camera-outline', 'Choose a new photo', chipOpacity, chipY, 102)}
+          {tapFinger(SCENE_W / 2, y + D / 2 + 6)}
+        </>
+      );
+      break;
+    }
+
+    // ── Profile card: Schedule + WildTrack ─────────────────────────────
+    case 'profileQuick': {
+      const sq = seq(2);
+      const TW = 100;
+      const TH = 70;
+      const top = 10;
+      const lefts = [12, 120];
+      const tiles: { icon: IconName; label: string; caption: string }[] = [
+        { icon: 'calendar-outline', label: 'Schedule', caption: 'Plan your climbs' },
+        { icon: 'leaf-outline', label: 'WildTrack', caption: 'Trail field guide' },
+      ];
+      body = (
+        <>
+          {tiles.map((tile, k) => (
+            <React.Fragment key={k}>
+              {sq.ring(k, lefts[k], top, TW, TH, 12)}
+              <Animated.View
+                style={[
+                  styles.qTile,
+                  {
+                    left: lefts[k],
+                    top,
+                    width: TW,
+                    height: TH,
+                    borderColor: sq.border(k, rgba(tone, 0.3), rgba(tone, 1)),
+                    transform: [{ scale: sq.press(k) }],
+                  },
+                ]}
+              >
+                <View style={[styles.qIcon, { borderColor: rgba(tone, 0.4) }]}>
+                  <Ionicons name={tile.icon} size={15} color={rgba(tone, 1)} />
+                </View>
+                <Text style={styles.qLabel}>{tile.label}</Text>
+                <Text style={styles.qCaption} numberOfLines={1}>{tile.caption}</Text>
+              </Animated.View>
+            </React.Fragment>
+          ))}
+          {sq.chip(0, 'calendar-outline', 'Opens your calendar', 92)}
+          {sq.chip(1, 'leaf-outline', 'Opens the trail guide', 92)}
+          {sq.finger([{ x: lefts[0] + TW / 2, y: top + TH / 2 }, { x: lefts[1] + TW / 2, y: top + TH / 2 }])}
+        </>
+      );
+      break;
+    }
+
+    // ── Profile card: Journal + Showcase ───────────────────────────────
+    case 'profileJournal': {
+      const sq = seq(2);
+      const HW = 104;
+      const HH = 54;
+      const top = 20;
+      const lefts = [12, 12 + HW];
+      const halves: { icon: IconName; label: string; caption: string }[] = [
+        { icon: 'book-outline', label: 'Journal', caption: 'Write a memory' },
+        { icon: 'images-outline', label: 'Showcase', caption: 'Your best memories' },
+      ];
+      body = (
+        <>
+          <View style={[styles.jCard, { left: 12, top, width: HW * 2, height: HH }]} />
+          <View style={[styles.jDivider, { left: 12 + HW - 0.5, top: top + 14 }]} />
+          {halves.map((h, k) => (
+            <React.Fragment key={k}>
+              {sq.ring(k, lefts[k], top, HW, HH, 14)}
+              <Animated.View
+                style={[
+                  styles.jHalf,
+                  {
+                    left: lefts[k],
+                    top,
+                    width: HW,
+                    height: HH,
+                    borderColor: sq.border(k, 'rgba(201,169,110,0)', rgba(tone, 1)),
+                    transform: [{ scale: sq.press(k) }],
+                  },
+                ]}
+              >
+                <Ionicons name={h.icon} size={18} color={rgba(tone, 1)} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.jLabel} numberOfLines={1}>{h.label}</Text>
+                  <Text style={styles.jCaption} numberOfLines={1}>{h.caption}</Text>
+                </View>
+              </Animated.View>
+            </React.Fragment>
+          ))}
+          {sq.chip(0, 'create-outline', 'Write a memory', 90)}
+          {sq.chip(1, 'images-outline', 'Your best moments', 90)}
+          {sq.finger([{ x: lefts[0] + HW / 2, y: top + HH / 2 }, { x: lefts[1] + HW / 2, y: top + HH / 2 }])}
+        </>
+      );
+      break;
+    }
+
+    // ── Profile card: Weather, Location, Emergency ─────────────────────
+    case 'profileMini': {
+      const sq = seq(3);
+      const MW = 64;
+      const MH = 50;
+      const top = 16;
+      const lefts = [14, 84, 154];
+      const minis: { icon: IconName; label: string; status: string; color: string }[] = [
+        { icon: 'cloud-outline', label: 'Weather', status: '28°C', color: 'rgba(201,169,110,0.9)' },
+        { icon: 'location-outline', label: 'Location', status: 'Tracking', color: 'rgba(201,169,110,0.9)' },
+        { icon: 'alert-circle-outline', label: 'Emergency', status: 'Contacts', color: 'rgba(224,112,112,1)' },
+      ];
+      body = (
+        <>
+          {minis.map((m, k) => (
+            <React.Fragment key={k}>
+              {sq.ring(k, lefts[k], top, MW, MH, 12)}
+              <Animated.View
+                style={[
+                  styles.miniTile,
+                  {
+                    left: lefts[k],
+                    top,
+                    width: MW,
+                    height: MH,
+                    borderColor: sq.border(k, rgba(tone, 0.25), rgba(tone, 1)),
+                    transform: [{ scale: sq.press(k) }],
+                  },
+                ]}
+              >
+                <Ionicons name={m.icon} size={16} color={m.color} />
+                <Text style={styles.miniLabel} numberOfLines={1}>{m.label}</Text>
+                <Text style={styles.miniStatus} numberOfLines={1}>{m.status}</Text>
+              </Animated.View>
+            </React.Fragment>
+          ))}
+          {sq.chip(0, 'partly-sunny-outline', 'Today’s forecast', 82)}
+          {sq.chip(1, 'navigate-outline', 'Where you are', 82)}
+          {sq.chip(2, 'call-outline', 'Who to call', 82)}
+          {sq.finger(lefts.map((l) => ({ x: l + MW / 2, y: top + MH / 2 })))}
         </>
       );
       break;
@@ -1355,17 +1632,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoLabel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 94,
-    textAlign: 'center',
-    color: C.gold,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
 
   // Home meta row
   metaPill: {
@@ -1475,6 +1741,78 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   bigButtonText: { color: C.ink, fontSize: 12, fontWeight: '800' },
+
+  // Profile card scenes
+  pName: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 70,
+    textAlign: 'center',
+    color: C.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  camBadge: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: C.gold,
+    borderWidth: 2,
+    borderColor: C.stage,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qTile: {
+    position: 'absolute',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    backgroundColor: C.tile,
+    padding: 8,
+    gap: 2,
+  },
+  qIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 3,
+  },
+  qLabel: { color: C.text, fontSize: 11, fontWeight: '800' },
+  qCaption: { color: 'rgba(255,255,255,0.5)', fontSize: 8.5, fontWeight: '600' },
+  jCard: {
+    position: 'absolute',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.faint,
+    backgroundColor: C.tile,
+  },
+  jDivider: { position: 'absolute', width: 1, height: 26, backgroundColor: C.faint },
+  jHalf: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 9,
+    borderWidth: 1.5,
+    borderRadius: 14,
+  },
+  jLabel: { color: C.text, fontSize: 10.5, fontWeight: '800' },
+  jCaption: { color: 'rgba(255,255,255,0.5)', fontSize: 8, fontWeight: '600', marginTop: 1 },
+  miniTile: {
+    position: 'absolute',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    backgroundColor: C.tile,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  miniLabel: { color: C.text, fontSize: 9, fontWeight: '800' },
+  miniStatus: { color: 'rgba(255,255,255,0.5)', fontSize: 8, fontWeight: '600' },
 
   // Copy
   copy: { paddingHorizontal: COPY_PAD, paddingTop: COPY_TOP },
