@@ -9,6 +9,8 @@ import {
   Image,
   TouchableOpacity,
   Pressable,
+  Modal,
+  Platform,
   BackHandler,
   Alert,
   AppState,
@@ -17,11 +19,12 @@ import {
   ToastAndroid,
   useWindowDimensions,
   type AppStateStatus,
+  type ImageSourcePropType,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
-import { useVideoPlayer, VideoView, type VideoThumbnail } from 'expo-video';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { useAuthStore } from '../store/authStore';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import ProfileCard from '../components/ProfileCard';
@@ -38,12 +41,7 @@ import {
 } from '../components/chat/ChatNotificationContext';
 import { mountainService, Mountain } from '../services/mountainService';
 import { persistProfileAvatarLocally } from '../services/profileAvatarService';
-import {
-  getHomeVideoPosters,
-  subscribeHomeVideoPosters,
-  preloadHomeVideoPosters,
-  MOUNTAIN_VIDEOS,
-} from '../services/homeVideoAssets';
+import { MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
 import { MOUNTAIN_TIPS } from '../data/mountainTips';
 import { getUnreadMountainAlertCounts } from '../services/mountainAlertReadService';
 import {
@@ -63,9 +61,16 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Expert: '#C0392B',
 };
 
-// 2 = the current slide AND its neighbours keep a (paused) player ready,
-// so a swipe reveals a loaded video instead of a bare poster.
-const VIDEO_WINDOW = 2;
+// Keep a player only for the selected slide; adjacent slides show fallback images.
+const VIDEO_WINDOW = 1;
+
+const MOUNTAIN_FALLBACK_IMAGES: Record<string, ImageSourcePropType> = {
+  '2cd5666c-1deb-4499-812e-eb95a992ef68': require('../../assets/HomeScreenFallbackImages/Mt. Balinsayaw.png'),
+  'd39ff04a-069b-4d90-b448-f66e6ae05772': require('../../assets/HomeScreenFallbackImages/Mount. M.png'),
+  '219d0ca0-dba5-41cd-b6cd-414c5d7e98e6': require('../../assets/HomeScreenFallbackImages/Mt. Madja-as.png'),
+  'f2173971-80bf-40dd-96e9-c6b015be194b': require('../../assets/HomeScreenFallbackImages/Pandan Hills.png'),
+  'e8dbcdf2-2120-4ed4-a677-69f9a2c7dc65': require('../../assets/HomeScreenFallbackImages/Mt. Nangtud.png'),
+};
 
 // Optional haptics: works if expo-haptics is installed, silently does nothing if not.
 let Haptics: { selectionAsync?: () => Promise<void> } | null = null;
@@ -101,15 +106,13 @@ function useReduceMotion() {
   return reduce;
 }
 
-function VideoPoster({ poster }: { poster?: VideoThumbnail }) {
-  const [failed, setFailed] = useState(false);
-  if (poster && !failed) {
+function MountainFallback({ image }: { image?: ImageSourcePropType }) {
+  if (image) {
     return (
       <ExpoImage
-        source={poster}
+        source={image}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
-        onError={() => setFailed(true)}
       />
     );
   }
@@ -122,18 +125,24 @@ function VideoPoster({ poster }: { poster?: VideoThumbnail }) {
 
 function MountainVideo({
   source,
-  poster,
+  fallbackImage,
   isActive,
 }: {
   source: number;
-  poster?: VideoThumbnail;
+  fallbackImage?: ImageSourcePropType;
   isActive: boolean;
 }) {
   const player = useVideoPlayer(source, (videoPlayer) => {
     videoPlayer.loop = true;
     videoPlayer.muted = true;
+    videoPlayer.bufferOptions = {
+      maxBufferBytes: 4_000_000,
+      preferredForwardBufferDuration: 3,
+      minBufferForPlayback: 1,
+      prioritizeTimeOverSizeThreshold: false,
+    };
   });
-  const posterOpacity = useRef(new Animated.Value(1)).current;
+  const fallbackOpacity = useRef(new Animated.Value(1)).current;
   const [videoErrored, setVideoErrored] = useState(false);
   const hasRetriedRef = useRef(false);
 
@@ -151,12 +160,12 @@ function MountainVideo({
       if (status === 'error') {
         if (!hasRetriedRef.current) {
           hasRetriedRef.current = true;
-          posterOpacity.setValue(1);
+          fallbackOpacity.setValue(1);
           void player.replaceAsync(source).catch(() => setVideoErrored(true));
           return;
         }
         setVideoErrored(true);
-        posterOpacity.setValue(1);
+        fallbackOpacity.setValue(1);
         return;
       }
       if (status === 'readyToPlay') {
@@ -179,17 +188,19 @@ function MountainVideo({
       if (state === 'active' && isActive && !videoErrored) {
         try { player.loop = true; player.muted = true; } catch {}
         try { player.play(); } catch {}
+      } else if (state === 'background' || state === 'inactive') {
+        try { player.pause(); } catch {}
       }
     };
     const sub = AppState.addEventListener('change', onChange);
     return () => sub.remove();
   }, [isActive, player, videoErrored]);
 
-  if (videoErrored) return <VideoPoster poster={poster} />;
+  if (videoErrored) return <MountainFallback image={fallbackImage} />;
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      <VideoPoster poster={poster} />
+      <MountainFallback image={fallbackImage} />
       <View style={styles.videoOverlay} pointerEvents="none">
         <VideoView
           style={StyleSheet.absoluteFill}
@@ -198,7 +209,7 @@ function MountainVideo({
           contentFit="cover"
           surfaceType="textureView"
           onFirstFrameRender={() =>
-            Animated.timing(posterOpacity, {
+            Animated.timing(fallbackOpacity, {
               toValue: 0,
               duration: 260,
               easing: Easing.out(Easing.quad),
@@ -208,10 +219,10 @@ function MountainVideo({
         />
       </View>
       <Animated.View
-        style={[StyleSheet.absoluteFill, { opacity: posterOpacity }]}
+        style={[StyleSheet.absoluteFill, { opacity: fallbackOpacity }]}
         pointerEvents="none"
       >
-        <VideoPoster poster={poster} />
+        <MountainFallback image={fallbackImage} />
       </Animated.View>
     </View>
   );
@@ -221,7 +232,7 @@ const MountainSlide = memo(function MountainSlide({
   mountain,
   shouldMountVideo,
   isActive,
-  poster,
+  fallbackImage,
   alertCount,
   width,
   height,
@@ -236,7 +247,7 @@ const MountainSlide = memo(function MountainSlide({
   mountain: Mountain;
   shouldMountVideo: boolean;
   isActive: boolean;
-  poster: VideoThumbnail | undefined;
+  fallbackImage?: ImageSourcePropType;
   alertCount: number;
   width: number;
   height: number;
@@ -292,12 +303,16 @@ const MountainSlide = memo(function MountainSlide({
       <Animated.View style={[styles.videoWrapper, videoParallax]}>
         {localVideo ? (
           shouldMountVideo ? (
-            <MountainVideo source={localVideo} poster={poster} isActive={isActive} />
+            <MountainVideo
+              source={localVideo}
+              fallbackImage={fallbackImage}
+              isActive={isActive}
+            />
           ) : (
-            <VideoPoster poster={poster} />
+            <MountainFallback image={fallbackImage} />
           )
         ) : (
-          <VideoPoster poster={poster} />
+          <MountainFallback image={fallbackImage} />
         )}
       </Animated.View>
       <Animated.View style={[styles.floatingInfoContainer, isPortrait && styles.floatingInfoContainerPortrait, infoParallax]}>
@@ -432,16 +447,6 @@ function HomeContent() {
       Alert.alert('Profile photo not saved', message);
     }
   };
-
-  const [videoPosters, setVideoPosters] = useState<Record<string, VideoThumbnail>>(
-    () => getHomeVideoPosters()
-  );
-  useEffect(() => {
-    setVideoPosters(getHomeVideoPosters());
-    const unsubscribe = subscribeHomeVideoPosters(setVideoPosters);
-    void preloadHomeVideoPosters();
-    return unsubscribe;
-  }, []);
 
   const [loading, setLoading] = useState(() => mountains.length === 0);
   const [fetchFailed, setFetchFailed] = useState(false);
@@ -621,25 +626,26 @@ function HomeContent() {
   );
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const logoutToastOpacity = useRef(new Animated.Value(0)).current;
-  const logoutToastY = useRef(new Animated.Value(-6)).current;
+  const logoutEnter = useRef(new Animated.Value(0)).current;
 
   const openLogoutConfirm = useCallback(() => {
     setShowLogoutConfirm(true);
-    logoutToastOpacity.setValue(0);
-    logoutToastY.setValue(-6);
-    Animated.parallel([
-      Animated.timing(logoutToastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-    ]).start();
-  }, [logoutToastOpacity, logoutToastY]);
+    logoutEnter.setValue(0);
+    if (reduceMotion) {
+      Animated.timing(logoutEnter, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+    } else {
+      Animated.spring(logoutEnter, { toValue: 1, friction: 8, tension: 80, useNativeDriver: true }).start();
+    }
+  }, [logoutEnter, reduceMotion]);
 
   const dismissLogoutConfirm = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(logoutToastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY, { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-    ]).start(() => setShowLogoutConfirm(false));
-  }, [logoutToastOpacity, logoutToastY]);
+    Animated.timing(logoutEnter, {
+      toValue: 0,
+      duration: 170,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => setShowLogoutConfirm(false));
+  }, [logoutEnter]);
 
   const confirmLogout = useCallback(async () => {
     setShowLogoutConfirm(false);
@@ -724,7 +730,7 @@ function HomeContent() {
       >
         {mountains.map((mountain, index) => {
           const distance = Math.abs(index - activeIndex);
-          const shouldMountVideo = distance < VIDEO_WINDOW;
+          const shouldMountVideo = focused && distance < VIDEO_WINDOW;
           const isActive = focused && index === activeIndex;
           const normalizedMountainName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           const tips = MOUNTAIN_TIPS.find((item) =>
@@ -737,7 +743,7 @@ function HomeContent() {
               mountain={mountain}
               shouldMountVideo={shouldMountVideo}
               isActive={isActive}
-              poster={videoPosters[mountain.id]}
+              fallbackImage={MOUNTAIN_FALLBACK_IMAGES[mountain.id]}
               alertCount={tips ? alertCounts[tips.id] ?? tips.alerts.length : 0}
               width={slideWidth}
               height={slideHeight}
@@ -789,6 +795,18 @@ function HomeContent() {
 
         <View style={styles.headerRightButtons}>
           <OfflineStatusIndicator />
+
+          {profile?.is_admin && (
+            <TouchableOpacity
+              onPress={() => router.push('/admin/Admin')}
+              style={styles.chatButton}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Back to admin dashboard"
+            >
+              <Ionicons name="grid-outline" size={20} color="#C9A96E" />
+            </TouchableOpacity>
+          )}
 
           {profile?.role === 'organization' && (
             <TouchableOpacity
@@ -865,18 +883,6 @@ function HomeContent() {
                 resizeMode="contain"
               />
             </View>
-            <View style={styles.logoLabelPill}>
-              <Text style={styles.logoLabel}>Tara, Saka</Text>
-              <View style={styles.logoLabelChip}>
-                <Animated.View
-                  style={{
-                    transform: [{ translateX: glow.interpolate({ inputRange: [0, 1], outputRange: [-1, 1.5] }) }],
-                  }}
-                >
-                  <Ionicons name="arrow-forward" size={11} color="#0E1520" />
-                </Animated.View>
-              </View>
-            </View>
           </Animated.View>
         </Pressable>
       )}
@@ -900,26 +906,95 @@ function HomeContent() {
       </View>
 
       {showLogoutConfirm && (
-        <Animated.View
-          style={[
-            styles.logoutToast,
-            { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] },
-          ]}
+        // A real Modal so it always sits above the video; tapping outside cancels.
+        <Modal
+          transparent
+          visible
+          animationType="none"
+          statusBarTranslucent
+          navigationBarTranslucent
+          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+          onRequestClose={dismissLogoutConfirm}
         >
-          <View style={styles.logoutToastBar} />
-          <View style={styles.logoutToastInner}>
-            <Text style={styles.logoutToastTitle}>Sign out?</Text>
-            <Text style={styles.logoutToastMsg}>You'll be returned to the login screen.</Text>
-            <View style={styles.logoutToastActions}>
-              <TouchableOpacity style={styles.logoutToastCancel} onPress={dismissLogoutConfirm}>
-                <Text style={styles.logoutToastCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.logoutToastConfirm} onPress={confirmLogout}>
-                <Text style={styles.logoutToastConfirmText}>Sign out</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.logoutRoot}>
+            <Animated.View style={[StyleSheet.absoluteFill, styles.logoutScrim, { opacity: logoutEnter }]}>
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={dismissLogoutConfirm}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel sign out"
+              />
+            </Animated.View>
+
+            <Animated.View
+              accessibilityViewIsModal
+              style={[
+                styles.logoutCard,
+                {
+                  width: Math.min(dimensions.width - 48, 330),
+                  opacity: logoutEnter.interpolate({ inputRange: [0, 0.6], outputRange: [0, 1], extrapolate: 'clamp' }),
+                  transform: [
+                    { translateY: logoutEnter.interpolate({ inputRange: [0, 1], outputRange: [reduceMotion ? 0 : 24, 0] }) },
+                    { scale: logoutEnter.interpolate({ inputRange: [0, 1], outputRange: [reduceMotion ? 1 : 0.94, 1] }) },
+                  ],
+                },
+              ]}
+            >
+              {/* faint topographic rings behind the icon, like the tutorial stage */}
+              <View pointerEvents="none" style={styles.logoutContourAnchor}>
+                {[96, 150, 210, 280].map((w, i) => (
+                  <View
+                    key={w}
+                    style={{
+                      position: 'absolute',
+                      left: -w / 2,
+                      top: -(w * 0.62) / 2,
+                      width: w,
+                      height: w * 0.62,
+                      borderRadius: w / 2,
+                      borderWidth: 1,
+                      borderColor: `rgba(224,112,112,${0.14 - i * 0.03})`,
+                      transform: [{ rotate: `${i % 2 === 0 ? -8 : 6}deg` }],
+                    }}
+                  />
+                ))}
+              </View>
+
+              <View style={styles.logoutIconRing}>
+                <View style={styles.logoutIconCircle}>
+                  <Ionicons name="log-out-outline" size={26} color="#E07070" />
+                </View>
+              </View>
+
+              <Text style={styles.logoutTitle} accessibilityRole="header">Sign out of Saka?</Text>
+              <Text style={styles.logoutMsg}>You’ll be taken back to the login screen.</Text>
+
+              <View style={styles.logoutPerf} />
+
+              <View style={styles.logoutActions}>
+                <Pressable
+                  onPress={dismissLogoutConfirm}
+                  accessibilityRole="button"
+                  accessibilityLabel="Stay signed in"
+                  style={({ pressed }) => [styles.logoutStay, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.logoutStayText}>Stay</Text>
+                </Pressable>
+                <Pressable
+                  onPress={confirmLogout}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign out"
+                  style={({ pressed }) => [
+                    styles.logoutConfirm,
+                    pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+                  ]}
+                >
+                  <Text style={styles.logoutConfirmText}>Sign out</Text>
+                </Pressable>
+              </View>
+            </Animated.View>
           </View>
-        </Animated.View>
+        </Modal>
       )}
     </View>
   );
@@ -1004,37 +1079,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(201,169,110,0.7)',
   },
   logoImage: { width: 168, height: 168 },
-  logoLabelPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    marginTop: -40,
-    paddingLeft: 16,
-    paddingRight: 5,
-    paddingVertical: 5,
-    borderRadius: 22,
-    backgroundColor: 'rgba(10,16,26,0.78)',
-    borderWidth: 1,
-    borderColor: 'rgba(201,169,110,0.65)',
-    shadowColor: '#C9A96E',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  logoLabel: {
-    color: '#F3E7CF',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  logoLabelChip: {
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: ACCENT_GOLD,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   infoMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1224,34 +1268,98 @@ const styles = StyleSheet.create({
   paginationDot: { width: 6, height: 6, borderRadius: 3 },
   paginationDotActive: { backgroundColor: '#C9A96E', width: 26, height: 6, borderRadius: 3 },
   paginationDotInactive: { backgroundColor: 'rgba(255,255,255,0.3)' },
-  logoutToast: {
-    position: 'absolute',
-    bottom: 32, left: '10%', right: '10%',
-    flexDirection: 'row',
-    backgroundColor: '#141E2D',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.2)',
-    overflow: 'hidden',
-    zIndex: 999,
-    elevation: 20,
-  },
-  logoutToastBar: { width: 3, backgroundColor: '#BF6A6A', alignSelf: 'stretch' },
-  logoutToastInner: { flex: 1, paddingHorizontal: 14, paddingVertical: 12 },
-  logoutToastTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', marginBottom: 2 },
-  logoutToastMsg: { color: 'rgba(255,255,255,0.42)', fontSize: 11, lineHeight: 15, marginBottom: 10 },
-  logoutToastActions: { flexDirection: 'row', gap: 8 },
-  logoutToastCancel: {
-    flex: 1, alignItems: 'center',
-    paddingVertical: 7,
-    borderRadius: 8,
+  logoutRoot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  logoutScrim: { backgroundColor: 'rgba(4,8,13,0.7)' },
+  logoutCard: {
+    alignItems: 'center',
+    paddingTop: 30,
+    borderRadius: 24,
+    backgroundColor: '#0E1520',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
+    elevation: 24,
   },
-  logoutToastCancelText: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '600' },
-  logoutToastConfirm: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8, backgroundColor: '#BF6A6A' },
-  logoutToastConfirmText: { color: '#0E1520', fontSize: 12, fontWeight: '700' },
+  logoutContourAnchor: { position: 'absolute', left: '50%', top: 58, width: 0, height: 0 },
+  logoutIconRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(224,112,112,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutIconCircle: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(224,112,112,0.14)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(224,112,112,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutTitle: {
+    marginTop: 18,
+    color: '#FFFFFF',
+    fontFamily: Platform.select({ ios: 'Times New Roman', default: 'serif' }),
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  logoutMsg: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 14.5,
+    lineHeight: 21,
+    textAlign: 'center',
+    paddingHorizontal: 28,
+  },
+  logoutPerf: {
+    alignSelf: 'stretch',
+    marginHorizontal: 16,
+    marginTop: 22,
+    borderTopWidth: 1.5,
+    borderStyle: 'dotted',
+    borderColor: 'rgba(201,169,110,0.28)',
+  },
+  logoutActions: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 22,
+    paddingTop: 16,
+    paddingBottom: 22,
+  },
+  logoutStay: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutStayText: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: '700' },
+  logoutConfirm: {
+    flex: 1.15,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#E07070',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutConfirmText: { color: '#0E1520', fontSize: 15, fontWeight: '800' },
   headerRightButtons: {
     flexDirection: 'row',
     alignItems: 'center',
