@@ -1,6 +1,11 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
-import { markMountainAlertsRead } from '../../services/mountainAlertReadService';
+import {
+  getMountainAlertKey,
+  getUnreadMountainAlertKeys,
+  markMountainAlertRead,
+} from '../../services/mountainAlertReadService';
+import type { Alert } from '../../data/mountainTips';
 import { Text, StyleSheet, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -88,13 +93,46 @@ export default function TipsAndTricksScreen() {
     return MOUNTAIN_TIPS.find((tips) => normalize(tips.mountainName) === target);
   }, [mountainId, mountainName]);
 
-  const goBack = () => router.back();
-  const handleAlertsViewed = useCallback(() => {
-    if (!user || !mountainTips) return;
-    void markMountainAlertsRead(user.id, mountainTips).catch((error) => {
-      console.warn('[TipsAndTricks] Failed to save read alerts:', error);
-    });
+  const [unreadAlertKeys, setUnreadAlertKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let active = true;
+    if (!user || !mountainTips) {
+      setUnreadAlertKeys(new Set());
+      return () => {
+        active = false;
+      };
+    }
+
+    void getUnreadMountainAlertKeys(user.id, mountainTips)
+      .then((keys) => {
+        if (active) setUnreadAlertKeys(keys);
+      })
+      .catch((error) => {
+        console.warn('[TipsAndTricks] Failed to load unread alerts:', error);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [mountainTips, user]);
+
+  const goBack = () => router.back();
+  const handleAlertViewed = useCallback(async (alert: Alert) => {
+    if (!user || !mountainTips) return;
+    const key = getMountainAlertKey(mountainTips, alert);
+    if (!unreadAlertKeys.has(key)) return;
+    try {
+      await markMountainAlertRead(user.id, mountainTips, alert);
+      setUnreadAlertKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    } catch (error) {
+      console.warn('[TipsAndTricks] Failed to save read alert:', error);
+    }
+  }, [mountainTips, unreadAlertKeys, user]);
 
   // TipsAndTricks manages its own safe area, so it is not wrapped again here.
   if (mountainTips) {
@@ -102,8 +140,9 @@ export default function TipsAndTricksScreen() {
       <View style={styles.screen}>
         <TipsAndTricks
           mountainTips={mountainTips}
+          unreadAlertKeys={unreadAlertKeys}
+          onAlertViewed={handleAlertViewed}
           onBack={goBack}
-          onAlertsViewed={handleAlertsViewed}
         />
       </View>
     );

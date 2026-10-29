@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Alert } from '../../data/mountainTips';
 import {
@@ -15,6 +15,8 @@ import {
 
 export interface AlertCardProps {
   alert: Alert;
+  unread?: boolean;
+  onPress?: () => void;
 }
 
 const ALERT_STYLES = {
@@ -35,13 +37,18 @@ const ALERT_STYLES = {
   },
 };
 
-export default function AlertCard({ alert }: AlertCardProps) {
+export default function AlertCard({ alert, unread = false, onPress }: AlertCardProps) {
   const appearance = ALERT_STYLES[alert.type];
 
   return (
-    <View
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
       style={[styles.card, { backgroundColor: appearance.background, borderColor: appearance.color }]}
-      accessibilityRole="alert"
+      accessibilityRole={onPress ? 'button' : 'alert'}
+      accessibilityLabel={
+        unread ? `${alert.title}, unread. Tap to mark as read.` : alert.title
+      }
     >
       <Ionicons name={appearance.icon} size={22} color={appearance.color} style={styles.icon} />
       <View style={styles.content}>
@@ -49,7 +56,8 @@ export default function AlertCard({ alert }: AlertCardProps) {
         <Text style={styles.message}>{alert.message}</Text>
         {alert.date ? <Text style={styles.date}>{alert.date}</Text> : null}
       </View>
-    </View>
+      {unread ? <View style={styles.unreadDot} accessibilityLabel="Unread alert" /> : null}
+    </Pressable>
   );
 }
 
@@ -84,5 +92,13 @@ const styles = StyleSheet.create({
     color: TEXT_MUTED,
     fontSize: 13,
     marginTop: 8,
+  },
+  unreadDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#E05252',
+    marginLeft: 10,
+    marginTop: 5,
   },
 });

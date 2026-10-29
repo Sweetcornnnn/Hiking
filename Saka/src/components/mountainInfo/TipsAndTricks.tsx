@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { MountainTips } from '../../data/mountainTips';
+import type { Alert, MountainTips } from '../../data/mountainTips';
 import ContourMark from './ContourMark';
 import AlertsSection from './categories/AlertsSection';
+import { getMountainAlertKey } from '../../services/mountainAlertReadService';
 import SafetySection from './categories/SafetySection';
 import PreparationSection from './categories/PreparationSection';
 import TransportationSection from './categories/TransportationSection';
@@ -19,8 +20,9 @@ import {
 
 export interface TipsAndTricksProps {
   mountainTips: MountainTips;
+  unreadAlertKeys: Set<string>;
+  onAlertViewed: (alert: Alert) => void;
   onBack?: () => void;
-  onAlertsViewed?: () => void;
 }
 
 /**
@@ -31,8 +33,9 @@ export interface TipsAndTricksProps {
  */
 export default function TipsAndTricks({
   mountainTips,
+  unreadAlertKeys,
+  onAlertViewed,
   onBack,
-  onAlertsViewed,
 }: TipsAndTricksProps) {
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
@@ -48,7 +51,14 @@ export default function TipsAndTricks({
     : maxRowHeight;
 
   const tiles = [
-    <AlertsSection key="alerts" alerts={mountainTips.alerts} onOpen={onAlertsViewed} />,
+    <AlertsSection
+      key="alerts"
+      alerts={mountainTips.alerts}
+      mountain={mountainTips}
+      unreadAlertKeys={unreadAlertKeys}
+      getAlertKey={getMountainAlertKey}
+      onAlertViewed={onAlertViewed}
+    />,
     <SafetySection key="safety" items={mountainTips.safety} />,
     <PreparationSection key="preparation" items={mountainTips.preparation} />,
     <TransportationSection key="transportation" items={mountainTips.transportation} />,
