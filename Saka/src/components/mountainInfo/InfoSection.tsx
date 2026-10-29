@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import CategoryInfoModal from './CategoryInfoModal';
 import { SceneFrame, withAlpha } from './scenes/Primitives';
 import {
+  BG_CARD,
   BG_PANEL,
   TEXT_FAINT,
   TEXT_PRIMARY,
@@ -21,6 +22,16 @@ export interface InfoSectionProps {
   detail?: ReactNode;
   /** Short label on the tile; defaults to the tip count. */
   countLabel?: string;
+  /** Small scene-only tile (for the header). No title or subtitle on the tile. */
+  compact?: boolean;
+  /** Red number badge on the tile. Hidden at 0 or when left out. */
+  badge?: number;
+  /** Opens the popup in fit mode: one layout, no paging (see CategoryInfoModal). */
+  fitModal?: boolean;
+  /** Set false to open the popup without the animated scene in its header. */
+  modalScene?: boolean;
+  /** Drops the tile's own border and background, for tiles that share a card (see MergedTile). */
+  bare?: boolean;
   onOpen?: () => void;
 }
 
@@ -36,48 +47,80 @@ export default function InfoSection({
   items = [],
   detail,
   countLabel,
+  compact = false,
+  badge = 0,
+  bare = false,
+  modalScene = true,
+  fitModal = false,
   onOpen,
 }: InfoSectionProps) {
   const [open, setOpen] = useState(false);
   const label = countLabel ?? `${items.length} ${items.length === 1 ? 'tip' : 'tips'}`;
 
+  const handlePress = () => {
+    onOpen?.();
+    setOpen(true);
+  };
+
   return (
     <>
-      <Pressable
-        onPress={() => {
-          onOpen?.();
-          setOpen(true);
-        }}
-        style={({ pressed }) => [
-          styles.tile,
-          { borderColor: withAlpha(accent, 0.3) },
-          pressed && styles.pressed,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`${title}, ${label}`}
-        accessibilityHint="Opens the full list"
-      >
-        <SceneFrame accent={accent} style={styles.scene}>
-          {scene}
-        </SceneFrame>
+      {compact ? (
+        <Pressable
+          onPress={handlePress}
+          hitSlop={6}
+          style={({ pressed }) => [
+            styles.compactTile,
+            { borderColor: withAlpha(accent, 0.45) },
+            pressed && styles.pressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${title}, ${label}${badge > 0 ? `, ${badge} unread` : ''}`}
+          accessibilityHint="Opens the full list"
+        >
+          <SceneFrame accent={accent} style={styles.compactScene}>
+            {scene}
+          </SceneFrame>
+          {badge > 0 ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
+            </View>
+          ) : null}
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={handlePress}
+          style={({ pressed }) => [
+            styles.tile,
+            bare ? styles.tileBare : { borderColor: withAlpha(accent, 0.3), borderWidth: 1, backgroundColor: BG_PANEL },
+            pressed && styles.pressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${title}, ${label}`}
+          accessibilityHint="Opens the full list"
+        >
+          <SceneFrame accent={accent} style={styles.scene}>
+            {scene}
+          </SceneFrame>
 
-        <View style={styles.footer}>
-          <View style={styles.footerText}>
-            <Text style={styles.title} numberOfLines={2}>{title}</Text>
-            <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text>
+          <View style={styles.footer}>
+            <View style={styles.footerText}>
+              <Text style={styles.title} numberOfLines={2}>{title}</Text>
+              <Text style={styles.subtitle} numberOfLines={2}>{subtitle}</Text>
+            </View>
+            <View style={[styles.pill, { backgroundColor: withAlpha(accent, 0.16) }]}>
+              <Text style={[styles.pillText, { color: accent }]}>{label}</Text>
+            </View>
           </View>
-          <View style={[styles.pill, { backgroundColor: withAlpha(accent, 0.16) }]}>
-            <Text style={[styles.pillText, { color: accent }]}>{label}</Text>
-          </View>
-        </View>
-      </Pressable>
+        </Pressable>
+      )}
 
       <CategoryInfoModal
         visible={open}
         title={title}
         subtitle={subtitle}
         accent={accent}
-        scene={scene}
+        scene={modalScene ? scene : undefined}
+        fit={fitModal}
         onClose={() => setOpen(false)}
       >
         {detail ??
@@ -101,9 +144,11 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 8,
     borderRadius: 18,
-    borderWidth: 1,
-    backgroundColor: BG_PANEL,
     overflow: 'hidden',
+  },
+  tileBare: {
+    borderWidth: 0,
+    backgroundColor: 'transparent',
   },
   scene: {
     flex: 1,
@@ -141,6 +186,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+
+  // ── Compact (header) tile ──
+  compactTile: {
+    width: 88,
+    height: 57,
+    padding: 2,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: BG_PANEL,
+  },
+  compactScene: {
+    flex: 1,
+    borderRadius: 11,
+  },
+  badge: {
+    position: 'absolute',
+    top: -7,
+    right: -7,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: '#E05252',
+    borderWidth: 2,
+    borderColor: BG_CARD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+    lineHeight: 13,
+  },
+
   itemRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',

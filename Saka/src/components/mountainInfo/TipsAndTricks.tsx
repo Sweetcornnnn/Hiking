@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import type { Alert, MountainTips } from '../../data/mountainTips';
 import ContourMark from './ContourMark';
+import MergedTile from './MergedTile';
 import AlertsSection from './categories/AlertsSection';
 import { getMountainAlertKey } from '../../services/mountainAlertReadService';
 import SafetySection from './categories/SafetySection';
@@ -26,8 +27,11 @@ export interface TipsAndTricksProps {
 }
 
 /**
- * A fixed, non-scrolling dashboard. Six tiles fill the screen: three across
- * in landscape, two across in portrait. Each tile opens its full list on tap.
+ * A fixed, non-scrolling dashboard.
+ *  - Header: back button, mountain name, and the small alerts button (red badge = unread).
+ *  - Top row: Trail Tips & Navigation and Transportation Guide, sharing one wide card.
+ *  - Bottom row: Safety, Preparation & Requirements, Environmental Etiquette.
+ * Each tile opens its full guide on tap.
  *
  * The screen is full-bleed: it ignores safe-area insets and pads itself instead.
  */
@@ -39,37 +43,15 @@ export default function TipsAndTricks({
 }: TipsAndTricksProps) {
   const { width, height } = useWindowDimensions();
   const landscape = width > height;
-  const columns = landscape ? 3 : 2;
 
-  // Tiles are sized from the space that is actually free, then capped, so they stay
+  // Rows are sized from the space that is actually free, then capped, so they stay
   // compact instead of stretching to fill the screen. Rows can never overflow.
   const [gridHeight, setGridHeight] = useState(0);
-  const rowCount = Math.ceil(6 / columns);
+  const ROW_COUNT = 2;
   const maxRowHeight = landscape ? 128 : 156;
   const rowHeight = gridHeight > 0
-    ? Math.min(maxRowHeight, (gridHeight - GRID_GAP * (rowCount - 1)) / rowCount)
+    ? Math.min(maxRowHeight, (gridHeight - GRID_PAD_BOTTOM - GRID_GAP * (ROW_COUNT - 1)) / ROW_COUNT)
     : maxRowHeight;
-
-  const tiles = [
-    <AlertsSection
-      key="alerts"
-      alerts={mountainTips.alerts}
-      mountain={mountainTips}
-      unreadAlertKeys={unreadAlertKeys}
-      getAlertKey={getMountainAlertKey}
-      onAlertViewed={onAlertViewed}
-    />,
-    <SafetySection key="safety" items={mountainTips.safety} />,
-    <PreparationSection key="preparation" items={mountainTips.preparation} />,
-    <TransportationSection key="transportation" items={mountainTips.transportation} />,
-    <TrailTipsSection key="trailTips" items={mountainTips.trailTips} />,
-    <EtiquetteSection key="etiquette" items={mountainTips.etiquette} />,
-  ];
-
-  const rows: React.ReactElement[][] = [];
-  for (let i = 0; i < tiles.length; i += columns) {
-    rows.push(tiles.slice(i, i + columns));
-  }
 
   return (
     <View style={styles.screen}>
@@ -94,27 +76,53 @@ export default function TipsAndTricks({
           </Text>
           <Text style={styles.subtitle} numberOfLines={1}>Tap a tile for the full guide</Text>
         </View>
+
+        <AlertsSection
+          alerts={mountainTips.alerts}
+          mountain={mountainTips}
+          unreadAlertKeys={unreadAlertKeys}
+          getAlertKey={getMountainAlertKey}
+          onAlertViewed={onAlertViewed}
+        />
       </View>
 
       <View
         style={styles.grid}
         onLayout={(e) => setGridHeight(e.nativeEvent.layout.height)}
       >
-        {rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={[styles.row, { height: rowHeight }]}>
-            {row.map((tile, i) => (
-              <View key={tile.key ?? i} style={styles.cell}>
-                {tile}
-              </View>
-            ))}
+        {/* Top row: two tiles, one card, a line between them */}
+        <View style={[styles.row, { height: rowHeight }]}>
+          <MergedTile
+            left={<TrailTipsSection items={mountainTips.trailTips} guide={mountainTips.trailGuide} bare />}
+            right={
+              <TransportationSection
+                items={mountainTips.transportation}
+                guide={mountainTips.transportGuide}
+                bare
+              />
+            }
+          />
+        </View>
+
+        {/* Bottom row: three separate cards */}
+        <View style={[styles.row, { height: rowHeight }]}>
+          <View style={styles.cell}>
+            <SafetySection items={mountainTips.safety} guide={mountainTips.safetyGuide} />
           </View>
-        ))}
+          <View style={styles.cell}>
+            <PreparationSection items={mountainTips.preparation} guide={mountainTips.preparationGuide} />
+          </View>
+          <View style={styles.cell}>
+            <EtiquetteSection items={mountainTips.etiquette} guide={mountainTips.etiquetteGuide} />
+          </View>
+        </View>
       </View>
     </View>
   );
 }
 
 const GRID_GAP = 10;
+const GRID_PAD_BOTTOM = 16;
 
 const styles = StyleSheet.create({
   // Full-bleed on purpose: no safe-area insets, so the layout runs behind the camera
@@ -171,7 +179,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: GRID_GAP,
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: GRID_PAD_BOTTOM,
   },
   row: {
     flexDirection: 'row',

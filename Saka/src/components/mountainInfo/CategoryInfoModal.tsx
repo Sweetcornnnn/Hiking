@@ -26,20 +26,27 @@ interface CategoryInfoModalProps {
   title: string;
   subtitle: string;
   accent: string;
-  /** The same animated scene as the tile, shown small in the header. */
-  scene: ReactNode;
+  /** The same animated scene as the tile, shown small in the header. Leave out for a plain text header. */
+  scene?: ReactNode;
   onClose: () => void;
+  /**
+   * Fit mode: no measuring, paging, arrows or swiping. The children are drawn once, as a
+   * single layout that must fit by itself (the panel grows to its content, up to the screen).
+   */
+  fit?: boolean;
   /** Each top-level child is one entry; entries are paged, never scrolled. */
   children: ReactNode;
 }
 
 // Fixed chrome sizes, so the page capacity can be worked out without a second layout pass.
 const MAX_PANEL_WIDTH = 620;
+const MAX_FIT_PANEL_WIDTH = 960;
 const MAX_PANEL_HEIGHT = 460;
 const OUTER_PADDING_X = 20;
 const OUTER_PADDING_Y = 24;
 const BORDER = 1;
 const HEADER_HEIGHT = 86;
+const HEADER_HEIGHT_PLAIN = 64;
 const PAGER_HEIGHT = 50;
 const BODY_PAD_X = 18;
 const BODY_PAD_TOP = 4;
@@ -60,16 +67,20 @@ export default function CategoryInfoModal({
   accent,
   scene,
   onClose,
+  fit = false,
   children,
 }: CategoryInfoModalProps) {
   const { width: winW, height: winH } = useWindowDimensions();
   const entries = useMemo(() => Children.toArray(children), [children]);
 
-  const panelWidth = Math.min(winW - OUTER_PADDING_X * 2, MAX_PANEL_WIDTH);
+  const maxPanelWidth = fit ? MAX_FIT_PANEL_WIDTH : MAX_PANEL_WIDTH;
+  const panelWidth = Math.min(winW - OUTER_PADDING_X * 2, maxPanelWidth);
   const panelHeight = Math.min(winH - OUTER_PADDING_Y * 2, MAX_PANEL_HEIGHT);
 
+  const headerHeight = scene ? HEADER_HEIGHT : HEADER_HEIGHT_PLAIN;
+
   // Room for entries when there is no pager, and when there is one.
-  const chrome = BORDER * 2 + HEADER_HEIGHT + BODY_PAD_TOP + BODY_PAD_BOTTOM;
+  const chrome = BORDER * 2 + headerHeight + BODY_PAD_TOP + BODY_PAD_BOTTOM;
   const roomNoPager = panelHeight - chrome;
   const roomWithPager = roomNoPager - PAGER_HEIGHT;
 
@@ -130,7 +141,7 @@ export default function CategoryInfoModal({
         chrome + entries.reduce((sum, _, i) => sum + heights[i], 0),
       )
     : panelHeight;
-  const height = paged ? panelHeight : singleHeight;
+  const height = fit ? undefined : paged ? panelHeight : singleHeight;
 
   return (
     <Modal
@@ -150,13 +161,15 @@ export default function CategoryInfoModal({
         <View
           style={[
             styles.panel,
-            { width: panelWidth, height, borderColor: withAlpha(accent, 0.35) },
+            { width: panelWidth, height, maxHeight: panelHeight, borderColor: withAlpha(accent, 0.35) },
           ]}
         >
-          <View style={styles.header}>
-            <SceneFrame accent={accent} style={styles.thumb}>
-              {scene}
-            </SceneFrame>
+          <View style={[styles.header, { height: headerHeight }, !scene && styles.headerPlain]}>
+            {scene ? (
+              <SceneFrame accent={accent} style={styles.thumb}>
+                {scene}
+              </SceneFrame>
+            ) : null}
             <View style={styles.headerText}>
               <Text style={styles.title} numberOfLines={1}>{title}</Text>
               <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
@@ -173,7 +186,7 @@ export default function CategoryInfoModal({
           </View>
 
           <View
-            style={styles.body}
+            style={fit ? styles.bodyFit : styles.body}
             onTouchStart={(e) => { touchX.current = e.nativeEvent.pageX; }}
             onTouchEnd={(e) => {
               if (!paged || touchX.current == null) return;
@@ -236,6 +249,8 @@ export default function CategoryInfoModal({
             </View>
           ) : null}
 
+          {fit ? null : (
+            <>
           {/* Invisible copy of every entry, used only to read each one's height. */}
           <View style={styles.measurer} pointerEvents="none">
             {entries.map((entry, i) => (
@@ -244,6 +259,8 @@ export default function CategoryInfoModal({
               </View>
             ))}
           </View>
+            </>
+          )}
         </View>
       </View>
     </Modal>
@@ -275,6 +292,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: BORDER_DEFAULT,
   },
+  headerPlain: {
+    paddingLeft: 20,
+  },
   thumb: {
     width: 96,
     height: 62,
@@ -305,6 +325,12 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    paddingHorizontal: BODY_PAD_X,
+    paddingTop: BODY_PAD_TOP,
+    paddingBottom: BODY_PAD_BOTTOM,
+    overflow: 'hidden',
+  },
+  bodyFit: {
     paddingHorizontal: BODY_PAD_X,
     paddingTop: BODY_PAD_TOP,
     paddingBottom: BODY_PAD_BOTTOM,

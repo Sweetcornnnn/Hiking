@@ -14,6 +14,45 @@ const BACKGROUND_LOCATION_TASK_NAME = 'HIKING_SAFETY_BACKGROUND_LOCATION_TASK';
 const LAST_LOCATION_KEY = 'HIKING_LAST_LOCATION';
 const LOCATION_HISTORY_KEY = 'HIKING_LOCATION_HISTORY';
 const LOCATION_UPLOAD_QUEUE_KEY = 'HIKING_LOCATION_UPLOAD_QUEUE';
+const LOCATION_ACTIVITY_STATE_KEY = 'HIKING_LOCATION_ACTIVITY_STATE';
+const STATIONARY_RADIUS_METERS = 20;
+const STATIONARY_SAMPLE_COUNT = 3;
+const STATIONARY_DURATION_MS = 10 * 60 * 1000;
+
+function getDistanceMeters(first, second) {
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const latitudeDifference = toRadians(second.latitude - first.latitude);
+  const longitudeDifference = toRadians(second.longitude - first.longitude);
+  const firstLatitude = toRadians(first.latitude);
+  const secondLatitude = toRadians(second.latitude);
+  const haversine =
+    Math.sin(latitudeDifference / 2) ** 2 +
+    Math.cos(firstLatitude) *
+      Math.cos(secondLatitude) *
+      Math.sin(longitudeDifference / 2) ** 2;
+
+  return 2 * 6371000 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function getLocationUploadErrorMessage(error) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const fields = ['message', 'code', 'details', 'hint', 'status', 'statusCode'];
+    const details = {};
+    for (const field of fields) {
+      if (error[field] !== undefined && error[field] !== null) {
+        details[field] = error[field];
+      }
+    }
+    if (Object.keys(details).length > 0) return JSON.stringify(details);
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return 'An unknown upload error occurred.';
+    }
+  }
+  return String(error);
+}
 
 /**
  * LocationService - Manages all aspects of location tracking
@@ -25,11 +64,83 @@ class LocationService {
     this.isTrackingForeground = false;
     this.isTrackingBackground = false;
     this.trackingSubscription = null;
+    this.trackingCallback = null;
+    this.foregroundTrackingMode = null;
+    this.foregroundModeChange = null;
     this.uploadQueue = [];
     this.uploadQueueLoaded = false;
     this.uploadQueueLoad = null;
     this.uploadQueueProcessing = null;
+    this.activityState = null;
+    this.activityStateLoad = null;
     this.isOnline = true;
+  }
+
+  async _loadActivityState() {
+    if (this.activityState) return this.activityState;
+    if (!this.activityStateLoad) {
+      this.activityStateLoad = (async () => {
+        try {
+          const storedState = await AsyncStorage.getItem(LOCATION_ACTIVITY_STATE_KEY);
+          this.activityState = storedState
+            ? JSON.parse(storedState)
+            : { anchor: null, sampleCount: 0, stationarySince: null, stationary: false };
+        } catch (error) {
+          console.error('[Location] Failed to load stationary-tracking state:', error);
+          this.activityState = {
+            anchor: null,
+            sampleCount: 0,
+            stationarySince: null,
+            stationary: false,
+          };
+        } finally {
+          this.activityStateLoad = null;
+        }
+      })();
+    }
+    await this.activityStateLoad;
+    return this.activityState;
+  }
+
+  async _updateActivityState(locationData) {
+    const state = await this._loadActivityState();
+    const previousStationary = state.stationary;
+    const currentPoint = {
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+    };
+    const timestamp = Date.parse(locationData.timestamp);
+
+    if (!state.anchor || getDistanceMeters(state.anchor, currentPoint) > STATIONARY_RADIUS_METERS) {
+      this.activityState = {
+        anchor: currentPoint,
+        sampleCount: 1,
+        stationarySince: timestamp,
+        stationary: false,
+      };
+    } else {
+      state.sampleCount += 1;
+      if (state.sampleCount >= STATIONARY_SAMPLE_COUNT &&
+          timestamp - state.stationarySince >= STATIONARY_DURATION_MS) {
+        state.stationary = true;
+      }
+      this.activityState = state;
+    }
+
+    try {
+      await AsyncStorage.setItem(
+        LOCATION_ACTIVITY_STATE_KEY,
+        JSON.stringify(this.activityState)
+      );
+    } catch (error) {
+      console.error('[Location] Failed to save stationary-tracking state:', error);
+    }
+
+    return {
+      stationary: this.activityState.stationary,
+      becameStationary: !previousStationary && this.activityState.stationary,
+      resumedMovement: previousStationary && !this.activityState.stationary,
+    };
   }
 
   async _loadUploadQueue() {
@@ -143,18 +254,11 @@ class LocationService {
         this.trackingSubscription.remove();
       }
 
-      // Start watching position with high accuracy for safety
-      this.trackingSubscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 5000, // Update every 5 seconds
-          distanceInterval: 10, // Or when moved 10 meters
-        },
-        (location) => {
-          this._handleLocationUpdate(location, callback);
-        }
-      );
-
+      this.trackingCallback = callback;
+      const activityState = await this._loadActivityState();
+      const initialMode = activityState.stationary ? 'stationary' : 'active';
+      this.foregroundTrackingMode = initialMode;
+      this.trackingSubscription = await this._createForegroundSubscription(initialMode);
       this.isTrackingForeground = true;
       console.log('✓ Foreground location tracking started');
       return true;
@@ -173,6 +277,8 @@ class LocationService {
         this.trackingSubscription.remove();
         this.trackingSubscription = null;
       }
+      this.trackingCallback = null;
+      this.foregroundTrackingMode = null;
       this.isTrackingForeground = false;
       console.log('✓ Foreground location tracking stopped');
     } catch (error) {
@@ -267,6 +373,57 @@ class LocationService {
     }
   }
 
+  async _createForegroundSubscription(mode) {
+    const options = mode === 'stationary'
+      ? {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 60000,
+          distanceInterval: 25,
+        }
+      : {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 5000,
+          distanceInterval: 10,
+        };
+
+    return Location.watchPositionAsync(options, (location) => {
+      void this._handleLocationUpdate(location, this.trackingCallback);
+    });
+  }
+
+  async _setForegroundTrackingMode(mode) {
+    if (!this.isTrackingForeground || this.foregroundTrackingMode === mode) return;
+    if (this.foregroundModeChange) {
+      await this.foregroundModeChange;
+      if (!this.isTrackingForeground || this.foregroundTrackingMode === mode) return;
+    }
+
+    this.foregroundModeChange = (async () => {
+      const previousMode = this.foregroundTrackingMode || 'active';
+      this.trackingSubscription?.remove();
+      this.trackingSubscription = null;
+      try {
+        this.trackingSubscription = await this._createForegroundSubscription(mode);
+        this.foregroundTrackingMode = mode;
+      } catch (error) {
+        console.error(`[Location] Could not switch to ${mode} tracking mode:`, error);
+        try {
+          this.trackingSubscription = await this._createForegroundSubscription(previousMode);
+          this.foregroundTrackingMode = previousMode;
+        } catch (restoreError) {
+          this.isTrackingForeground = false;
+          console.error('[Location] Could not restore foreground tracking:', restoreError);
+        }
+      }
+    })();
+
+    try {
+      await this.foregroundModeChange;
+    } finally {
+      this.foregroundModeChange = null;
+    }
+  }
+
   /**
    * Internal handler for location updates
    * Saves to local storage and queues for upload to Supabase
@@ -285,24 +442,37 @@ class LocationService {
         timestamp: new Date().toISOString(),
       };
 
+      const activity = await this._updateActivityState(locationData);
+      if (activity.becameStationary) {
+        await this._setForegroundTrackingMode('stationary');
+      } else if (activity.resumedMovement) {
+        await this._setForegroundTrackingMode('active');
+      }
+
       // Save as last known location
       await AsyncStorage.setItem(
         LAST_LOCATION_KEY,
         JSON.stringify(locationData)
       );
 
-      // Add to history (keep last 100 locations for offline support)
-      await this._addToLocationHistory(locationData);
-
-      // Queue for upload to Supabase
-      await this._queueLocationUpload(locationData);
+      if (!activity.stationary) {
+        // Keep routine history and uploads focused on movement.
+        await this._addToLocationHistory(locationData);
+        await this._queueLocationUpload(locationData);
+      }
 
       // Call callback if provided (for real-time UI updates)
       if (callback) {
         callback(locationData);
       }
 
-      console.log(`📍 Location updated: ${locationData.latitude.toFixed(5)}, ${locationData.longitude.toFixed(5)}`);
+      if (activity.becameStationary) {
+        console.log('[Location] Stationary for 10 minutes; routine location history and uploads paused.');
+      } else if (activity.resumedMovement) {
+        console.log('[Location] Movement detected; routine location history and uploads resumed.');
+      } else if (!activity.stationary) {
+        console.log('📍 Location updated and saved to device.');
+      }
     } catch (error) {
       console.error('Error handling location update:', error);
     }
@@ -409,7 +579,7 @@ class LocationService {
           await this._persistUploadQueue();
           uploaded += 1;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = getLocationUploadErrorMessage(error);
           console.warn('[Location] Upload failed; keeping locations queued for retry:', message);
           this.isOnline = false;
           await this._persistUploadQueue();
