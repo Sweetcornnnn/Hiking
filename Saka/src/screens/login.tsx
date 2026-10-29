@@ -1,181 +1,61 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Animated,
-  Easing,
-  Image,
-  ImageBackground,
-} from 'react-native';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
+import { getAuthErrorMessage } from '../utils/authErrorMessage';
+import OfflineActionModal from '../components/OfflineActionModal';
+import { isConnectionError } from '../services/offlineStatusService';
+import { Pressable, StyleSheet, Text } from 'react-native';
+import {
+  AUTH,
+  AuthShell,
+  EyeToggle,
+  Field,
+  FooterLink,
+  PrimaryButton,
+  type ToastConfig,
+} from '../components/auth/AuthKit';
 
-// ─── Toast types ────────────────────────────────────────────────────────────
-type ToastType = 'error' | 'denied' | 'success';
-interface ToastConfig {
-  type: ToastType;
-  title: string;
-  message: string;
-}
+// ─── Secret admin tap pattern ───────────────────────────────────────────────
+// The logo is split into a 3 x 3 grid. Tap these cells, in order, to switch
+// between hiker and admin sign in:
+//
+//     0 | 1 | 2        (1 = top, over the peak)
+//    ---+---+---
+//     3 | 4 | 5
+//    ---+---+---
+//     6 | 7 | 8
+//
+// Default: top, left, right, bottom, centre. Change the numbers to make your own.
+const SECRET_PATTERN = [1, 3, 5, 7, 4];
+// If you pause longer than this between taps, the pattern starts over.
+const SECRET_TIMEOUT_MS = 2500;
+// TEMPORARY: shows a toast on every logo tap so you can test the pattern.
+// Set to false (or delete the debug lines) when you're done.
+const SECRET_DEBUG = false;
+// The part of the logo that counts as "the logo", as fractions of the logo box:
+// x0/x1 = left/right edge, y0/y1 = top/bottom edge. The 3 x 3 grid covers only this area,
+// and taps outside it are ignored. While SECRET_DEBUG is true the grid is drawn over the logo,
+// so move these numbers until the box hugs the artwork.
+const LOGO_GRID = { x0: 0.2, x1: 0.8, y0: 0.05, y1: 0.95, show: SECRET_DEBUG };
 
-// ─── In-theme Toast component ────────────────────────────────────────────────
-function Toast({ config, onHide }: { config: ToastConfig | null; onHide: () => void }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(-12)).current;
-
-  useEffect(() => {
-    if (!config) return;
-    opacity.setValue(0);
-    translateY.setValue(-6);
-
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 260,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 260,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    const timer = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 220,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: -4,
-          duration: 220,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start(() => onHide());
-    }, 3200);
-
-    return () => clearTimeout(timer);
-  }, [config]);
-
-  if (!config) return null;
-
-  const accentColor =
-    config.type === 'error'
-      ? '#C9A96E'
-      : config.type === 'denied'
-      ? '#BF6A6A'
-      : '#6AAE8F';
-
-  const iconName =
-    config.type === 'error'
-      ? 'alert-circle-outline'
-      : config.type === 'denied'
-      ? 'shield-outline'
-      : 'checkmark-circle-outline';
-
-  return (
-    <Animated.View
-      style={[toastStyles.wrap, { opacity, transform: [{ translateY }] }]}
-    >
-      <View style={[toastStyles.bar, { backgroundColor: accentColor }]} />
-      <View style={toastStyles.iconWrap}>
-        <Ionicons name={iconName as any} size={18} color={accentColor} />
-      </View>
-      <View style={toastStyles.textWrap}>
-        <Text style={toastStyles.title}>{config.title}</Text>
-        <Text style={toastStyles.message}>{config.message}</Text>
-      </View>
-    </Animated.View>
-  );
-}
-
-const toastStyles = StyleSheet.create({
-  wrap: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#141E2D',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
-    overflow: 'hidden',
-    zIndex: 999,
-  },
-  bar: {
-    width: 3,
-    alignSelf: 'stretch',
-  },
-  iconWrap: {
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  textWrap: {
-    flex: 1,
-    paddingVertical: 9,
-    paddingRight: 12,
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 1,
-  },
-  message: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 11,
-    lineHeight: 15,
-  },
-});
-
-// ─── Main screen ────────────────────────────────────────────────────────────
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [logoPressCount, setLogoPressCount] = useState(0);
+  const secretStep = useRef(0);
+  const secretTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isAdminLogin, setIsAdminLogin] = useState(false);
   const [toast, setToast] = useState<ToastConfig | null>(null);
+  const [offlineModalVisible, setOfflineModalVisible] = useState(false);
   const { signIn, isLoading, resetLoading } = useAuthStore();
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 480,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 480,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Reset loading state when screen mounts
+    // Reset loading state when the screen mounts and unmounts
     resetLoading();
-
     return () => {
-      // Reset loading state when screen unmounts
       resetLoading();
+      if (secretTimer.current) clearTimeout(secretTimer.current);
     };
   }, []);
 
@@ -183,17 +63,55 @@ export default function LoginScreen() {
 
   const toggleAdminMode = (nextState: boolean) => {
     setIsAdminLogin(nextState);
-    setLogoPressCount(0);
+    secretStep.current = 0;
     setEmail('');
     setPassword('');
     setToast(null);
   };
 
-  const handleLogoPress = () => {
-    const next = logoPressCount + 1;
-    if (next >= 7) toggleAdminMode(!isAdminLogin);
-    else setLogoPressCount(next);
+  // Hidden: tap specific spots on the logo, in order, to switch between hiker and admin sign in.
+  const handleLogoPress = (cell: number) => {
+    if (secretTimer.current) clearTimeout(secretTimer.current);
+    secretTimer.current = setTimeout(() => {
+      secretStep.current = 0;
+    }, SECRET_TIMEOUT_MS);
+
+    if (cell === SECRET_PATTERN[secretStep.current]) {
+      secretStep.current += 1;
+      if (secretStep.current >= SECRET_PATTERN.length) {
+        secretStep.current = 0;
+        const nextAdmin = !isAdminLogin;
+        toggleAdminMode(nextAdmin);
+        if (SECRET_DEBUG) {
+          showToast({
+            type: 'success',
+            title: 'Pattern complete',
+            message: nextAdmin ? 'Switched to admin sign in.' : 'Switched to hiker sign in.',
+          });
+        }
+      } else if (SECRET_DEBUG) {
+        showToast({
+          type: 'success',
+          title: 'Correct',
+          message: `Step ${secretStep.current} of ${SECRET_PATTERN.length}`,
+        });
+      }
+    } else {
+      // Wrong spot: start over (this tap may still be the first step).
+      secretStep.current = cell === SECRET_PATTERN[0] ? 1 : 0;
+      if (SECRET_DEBUG) {
+        showToast({
+          type: 'denied',
+          title: 'Wrong spot',
+          message:
+            secretStep.current === 1
+              ? `You tapped cell ${cell}. Restarted at step 1 of ${SECRET_PATTERN.length}.`
+              : `You tapped cell ${cell}. Pattern reset.`,
+        });
+      }
+    }
   };
+
   const handleLogin = async () => {
     // Prevent double submission
     if (isLoading) return;
@@ -210,12 +128,22 @@ export default function LoginScreen() {
     try {
       const res = await signIn(email, password);
 
-      if ((res as any).error) {
-        showToast({ type: 'error', title: 'Sign in failed', message: (res as any).error });
+      if (res.error) {
+        if (isConnectionError(res.error)) {
+          setOfflineModalVisible(true);
+        } else {
+          setOfflineModalVisible(false);
+          showToast({
+            type: 'error',
+            title: 'Sign in failed',
+            message: getAuthErrorMessage(res.error, 'Could not sign in. Please try again.'),
+          });
+        }
         resetLoading();
         return;
       }
 
+      setOfflineModalVisible(false);
       const authState = useAuthStore.getState();
       const role = authState.profile?.role ?? 'hiker';
 
@@ -248,8 +176,17 @@ export default function LoginScreen() {
 
         router.replace('/Loading');
       }
-    } catch (err: any) {
-      showToast({ type: 'error', title: 'Sign in failed', message: err?.message || String(err) });
+    } catch (err: unknown) {
+      if (isConnectionError(err)) {
+        setOfflineModalVisible(true);
+      } else {
+        setOfflineModalVisible(false);
+        showToast({
+          type: 'error',
+          title: 'Sign in failed',
+          message: getAuthErrorMessage(err, 'Could not sign in. Please try again.'),
+        });
+      }
       resetLoading();
     } finally {
       resetLoading();
@@ -257,323 +194,77 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.root}>
-      <Animated.View
-        style={[
-          styles.card,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          },
-        ]}
+    <>
+      <AuthShell
+        eyebrow={isAdminLogin ? 'ADMIN ACCESS' : 'INTO THE VERDANT SUBLIMITY'}
+        title={isAdminLogin ? 'Admin login' : 'Welcome back'}
+        subtitle={
+          isAdminLogin
+            ? 'Hidden sign in for administrators only.'
+            : 'Ready for your climb? Sign in to discover the sublime landscapes of Aklan.'
+        }
+        note={isAdminLogin ? 'Admin ka Gale?' : undefined}
+        onLogoPress={handleLogoPress}
+        logoGrid={LOGO_GRID}
+        toast={toast}
+        onHideToast={() => setToast(null)}
+        footer={
+          isAdminLogin ? null : (
+            <FooterLink muted="No account yet?" link="Create one" onPress={() => router.push('/Signup')} />
+          )
+        }
       >
-        <Toast config={toast} onHide={() => setToast(null)} />
+        <Field
+          label="EMAIL"
+          icon="mail-outline"
+          value={email}
+          onChangeText={setEmail}
+          placeholder={isAdminLogin ? 'admin@example.com' : 'you@example.com'}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
 
-        <View style={styles.face}>
-          {/* ── LEFT PANEL ── */}
-          <ImageBackground
-            source={require('../../assets/images/MountainBg.jpg')}
-            style={[styles.leftPanel, !isAdminLogin && styles.leftPanelLogoOnly]}
-            resizeMode="cover"
+        <Field
+          label="PASSWORD"
+          icon="lock-closed-outline"
+          value={password}
+          onChangeText={setPassword}
+          placeholder="••••••••"
+          secure={!showPassword}
+          right={<EyeToggle shown={showPassword} onPress={() => setShowPassword((v) => !v)} />}
+        />
+
+        {!isAdminLogin ? (
+          <Pressable
+            onPress={() => router.push('/Forgot')}
+            hitSlop={8}
+            style={styles.forgot}
+            accessibilityRole="link"
           >
-            {/* Dark overlay so the text stays readable. Change the 0.45 in styles.leftOverlay to adjust. */}
-            <View style={[styles.leftOverlay, { pointerEvents: 'none' }]} />
-            <TouchableOpacity
-              onPress={handleLogoPress}
-              activeOpacity={0.75}
-              style={[styles.logoMark, !isAdminLogin && styles.logoMarkCentered]}
-            >
-              <Image
-                source={require('../../assets/images/SakaLogo.png')}
-                style={[styles.logoImage, !isAdminLogin && styles.logoImageLarge]}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-              {!isAdminLogin && (
-                <View style={styles.loginMessage}>
-                  <Text style={styles.loginHeadline}>Ready for your climb?</Text>
-                  <Text style={styles.loginSupporting}>
-                    Sign in to discover the sublime landscapes of Aklan.
-                  </Text>
-                </View>
-              )}
-            {isAdminLogin && (
-              <>
-                <Text style={styles.brandName}>Admin Access</Text>
-                <Text style={styles.brandTagline}>
-                  Hidden sign in for{'\n'}administrators only.
-                </Text>
-                <View style={styles.dividerH} />
-                <Text style={styles.adminHint}>Admin ka Gale?</Text>
-              </>
-            )}
-          </ImageBackground>
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </Pressable>
+        ) : null}
 
-          <View style={styles.dividerV} />
+        <PrimaryButton
+          label={isAdminLogin ? 'Admin Sign In' : 'Sign In'}
+          loadingLabel="Signing in…"
+          loading={isLoading}
+          onPress={handleLogin}
+        />
+      </AuthShell>
 
-          {/* ── RIGHT PANEL (FORM) ── */}
-          <View style={styles.rightPanel}>
-            <Text style={styles.formTitle}>
-              {isAdminLogin ? 'Admin Login' : 'Welcome back'}
-            </Text>
-            <Text style={styles.formSubtitle}>
-              {isAdminLogin
-                ? 'Use admin credentials to continue.'
-                : 'Sign in to continue your journey'}
-            </Text>
-
-            <Text style={styles.fieldLabel}>EMAIL</Text>
-            <View style={styles.inputRow}>
-              <Ionicons
-                name="mail-outline"
-                size={13}
-                color="rgba(255,255,255,0.22)"
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder={isAdminLogin ? 'admin@example.com' : 'you@example.com'}
-                placeholderTextColor="rgba(255,255,255,0.18)"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-
-            <Text style={styles.fieldLabel}>PASSWORD</Text>
-            <View style={styles.inputRow}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={13}
-                color="rgba(255,255,255,0.22)"
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="••••••••"
-                placeholderTextColor="rgba(255,255,255,0.18)"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword((v) => !v)}
-                style={styles.eyeBtn}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={14}
-                  color="rgba(255,255,255,0.28)"
-                />
-              </TouchableOpacity>
-            </View>
-
-            {!isAdminLogin && (
-              <TouchableOpacity
-                onPress={() => router.push('/Forgot')}
-                style={styles.forgotWrap}
-              >
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[
-                styles.submitBtn,
-                isLoading && styles.submitBtnDisabled,
-              ]}
-              onPress={handleLogin}
-              disabled={isLoading}
-              activeOpacity={0.82}
-            >
-              <Text style={styles.submitText}>
-                {isLoading
-                  ? 'Signing in…'
-                  : isAdminLogin
-                  ? 'Admin Sign In'
-                  : 'Sign In'}
-              </Text>
-              {!isLoading && (
-                <Ionicons
-                  name="arrow-forward"
-                  size={13}
-                  color="#0E1520"
-                  style={{ marginLeft: 6 }}
-                />
-              )}
-            </TouchableOpacity>
-
-            {!isAdminLogin && (
-              <View style={styles.footerRow}>
-                <Text style={styles.footerMuted}>No account yet?</Text>
-                <TouchableOpacity onPress={() => router.push('/Signup')}>
-                  <Text style={styles.footerLink}>Create one</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </Animated.View>
-    </View>
+      <OfflineActionModal
+        visible={offlineModalVisible}
+        message="Signing in needs an internet connection. Check your connection and try again."
+        retrying={isLoading}
+        onRetry={() => void handleLogin()}
+        onDismiss={() => setOfflineModalVisible(false)}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080D14',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  card: {
-    width: '80%',
-    maxWidth: 560,
-    height: 290,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    overflow: 'hidden',
-    backgroundColor: '#0E1520',
-  },
-  face: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  leftPanel: {
-    width: 168,
-    overflow: 'hidden',
-    backgroundColor: '#111927',
-    paddingHorizontal: 18,
-    paddingTop: 20,
-    paddingBottom: 18,
-    alignItems: 'center',
-  },
-  leftPanelLogoOnly: {
-    justifyContent: 'flex-start',
-  },
-  // Darkens the mountain image. Higher number = darker image.
-  leftOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(8,13,20,0.45)',
-  },
-  logoMark: {
-    marginBottom: -10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoMarkCentered: {
-    marginBottom: 0,
-  },
-  logoImage: { width: 102, height: 102 },
-  logoImageLarge: { width: 128, height: 140 },
-  loginMessage: {
-    alignSelf: 'stretch',
-    marginTop: 7,
-    paddingHorizontal: 2,
-  },
-  loginHeadline: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 16,
-    marginBottom: 7,
-    textAlign: 'center',
-  },
-  loginSupporting: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
-    lineHeight: 14,
-    textAlign: 'center',
-  },
-  brandName: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  brandTagline: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 10,
-    lineHeight: 16,
-    marginBottom: 14,
-    textAlign: 'center',
-  },
-  dividerH: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    alignSelf: 'stretch',
-    marginBottom: 12,
-  },
-  adminHint: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 10,
-    lineHeight: 14,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  dividerV: { width: 1, backgroundColor: 'rgba(255,255,255,0.07)' },
-
-  rightPanel: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 18,
-    justifyContent: 'center',
-  },
-  formTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 3,
-  },
-  formSubtitle: {
-    color: 'rgba(255,255,255,0.28)',
-    fontSize: 10,
-    marginBottom: 16,
-  },
-  fieldLabel: {
-    color: 'rgba(255,255,255,0.25)',
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 5,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 10,
-    height: 36,
-    marginBottom: 10,
-  },
-  inputIcon: { marginRight: 7 },
-  input: { flex: 1, color: '#FFFFFF', fontSize: 12 },
-  eyeBtn: { padding: 4, marginLeft: 2 },
-  forgotWrap: { alignSelf: 'flex-end', marginBottom: 12, marginTop: -2 },
-  forgotText: { color: '#C9A96E', fontSize: 10, fontWeight: '500' },
-  submitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#C9A96E',
-    borderRadius: 8,
-    height: 36,
-    marginBottom: 12,
-  },
-  submitBtnDisabled: { opacity: 0.45 },
-  submitText: {
-    color: '#0E1520',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  footerRow: { flexDirection: 'row', justifyContent: 'center', gap: 5 },
-  footerMuted: { color: 'rgba(255,255,255,0.25)', fontSize: 11 },
-  footerLink: { color: '#C9A96E', fontSize: 11, fontWeight: '600' },
+  forgot: { alignSelf: 'flex-end', marginTop: -2, marginBottom: 10 },
+  forgotText: { color: AUTH.gold, fontSize: 11, fontWeight: '600' },
 });
