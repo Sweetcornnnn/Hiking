@@ -610,8 +610,15 @@ export default function AdminRoute() {
           {/* ── SIDEBAR (rail) ── */}
           <View style={ss.sidebar}>
             <View style={ss.sidebarHeader}>
-              <TouchableOpacity onPress={() => router.back()} style={ss.backBtn} hitSlop={8} activeOpacity={0.85}>
-                <Ionicons name="arrow-back" size={16} color={TEXT_PRIMARY} />
+              <TouchableOpacity
+                onPress={() => router.replace('/Home')}
+                style={ss.backBtn}
+                hitSlop={8}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Browse as hiker"
+              >
+                <Ionicons name="compass-outline" size={16} color={ACCENT_GOLD} />
               </TouchableOpacity>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={ss.sidebarTitle} numberOfLines={1}>Admin</Text>

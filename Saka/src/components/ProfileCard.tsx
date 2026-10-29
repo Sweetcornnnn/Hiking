@@ -24,6 +24,7 @@ import EmergencyContactsPreview from './emergency/EmergencyContactsPreview';
 import { useJournalStore } from '../store/journalStore';
 import { FULLSCREEN_MODAL_PROPS, ModalScrim } from './ModalScrim';
 import JournalShowcase from './journal/JournalShowcase';
+import { useTutorial, TutorialHelpButton } from './TutorialModal';
 
 interface ProfileCardProps {
   visible: boolean;
@@ -81,6 +82,8 @@ export default function ProfileCard({
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [forceVisible, setForceVisible] = useState(false);
+  // First-time walkthrough of this card. Opens once, then from the "?" in the header.
+  const tutorial = useTutorial('profile', { ready: visible || forceVisible });
   const {
     entries: journalEntries,
     isLoading: journalLoading,
@@ -369,13 +372,16 @@ export default function ProfileCard({
                   {TITLES[view]}
                 </Text>
               </View>
-              <TouchableOpacity
-                onPress={closeCard}
-                style={styles.closeBtn}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
-              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                {view === 'home' ? <TutorialHelpButton onPress={tutorial.open} /> : null}
+                <TouchableOpacity
+                  onPress={closeCard}
+                  style={styles.closeBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {view === 'home' && (
@@ -628,6 +634,9 @@ export default function ProfileCard({
 
           </View>
         </View>
+
+        {/* Inside this Modal on purpose, so the tutorial stacks above the card */}
+        {tutorial.element}
       </View>
     </Modal>
   );
@@ -799,6 +808,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   closeBtn: {
     width: 22,
