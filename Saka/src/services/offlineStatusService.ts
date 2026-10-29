@@ -11,6 +11,18 @@ export interface OfflineStatusSnapshot {
   savedData: Array<{ label: string; updatedAt: string | null }>;
 }
 
+export function isConnectionError(error: unknown): boolean {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : '';
+  return /network|fetch failed|failed to fetch|no internet|offline|connection (?:failed|lost)|timed? out/i
+    .test(message);
+}
+
 const QUEUE_KEYS: Array<{ key: string; label: string }> = [
   { key: 'saka.journal.writeQueue.v1', label: 'Journal entries and photos' },
   { key: 'saka.sakagram.likeQueue.v1', label: 'Sakagram likes' },

@@ -23,6 +23,8 @@ import { hikeSafetyService } from '../../services/hikeSafetyService';
 import { cancelCheck, scheduleCheck } from '../../services/hikeSafetyNotifications';
 import { supabase } from '../../lib/supabase';
 import { useRequireAuth } from '../../hooks/useRoleGuard';
+import OfflineActionModal from '../../components/OfflineActionModal';
+import { isConnectionError } from '../../services/offlineStatusService';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import {
   getCurrentWeather,
@@ -282,6 +284,7 @@ export default function HikerEventDetail() {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offlineAction, setOfflineAction] = useState<'load' | 'rsvp' | 'cancel' | null>(null);
 
   const [weatherState, setWeatherState] = useState<WeatherState>({ mode: 'hidden' });
 
@@ -311,6 +314,7 @@ export default function HikerEventDetail() {
       setEvent(evt);
       setMyRsvp(rsvp);
       setAttendees(attendeeList);
+      setOfflineAction(null);
 
       const cached = mountainService.getCachedMountainById(evt.mountain_id);
       if (cached) {
@@ -322,7 +326,13 @@ export default function HikerEventDetail() {
       const c = await eventService.getRsvpCounts([evt.id]);
       setCounts(c[evt.id] ?? { confirmed: 0, waitlist: 0, total: 0 });
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load event');
+      if (isConnectionError(e)) {
+        setOfflineAction('load');
+        setError('Connect to the internet to load hike details.');
+      } else {
+        setOfflineAction(null);
+        setError(e?.message ?? 'Failed to load event');
+      }
     } finally {
       setLoading(false);
     }
@@ -418,10 +428,16 @@ export default function HikerEventDetail() {
       const { status, error: e } = await eventService.rsvpToEvent(event.id, 1);
 
       if (e) {
-        Alert.alert('RSVP failed', e);
+        if (isConnectionError(e)) {
+          setOfflineAction('rsvp');
+        } else {
+          setOfflineAction(null);
+          Alert.alert('RSVP failed', e);
+        }
         return;
       }
 
+      setOfflineAction(null);
       const details = buildPermitForEvent(event);
       permit.show('approved', details);
 
@@ -455,7 +471,12 @@ export default function HikerEventDetail() {
 
       await fetchAll();
     } catch (err: any) {
-      Alert.alert('RSVP failed', err?.message ?? String(err));
+      if (isConnectionError(err)) {
+        setOfflineAction('rsvp');
+      } else {
+        setOfflineAction(null);
+        Alert.alert('RSVP failed', err?.message ?? String(err));
+      }
     } finally {
       setWorking(false);
     }
@@ -467,10 +488,16 @@ export default function HikerEventDetail() {
     try {
       const { error: e } = await eventService.cancelMyRsvp(myRsvp.id);
       if (e) {
-        Alert.alert('Cancel failed', e);
+        if (isConnectionError(e)) {
+          setOfflineAction('cancel');
+        } else {
+          setOfflineAction(null);
+          Alert.alert('Cancel failed', e);
+        }
         return;
       }
 
+      setOfflineAction(null);
       const details = buildPermitForEvent(event);
       permit.show('cancelled', details);
 
@@ -478,7 +505,12 @@ export default function HikerEventDetail() {
       await hikeSafetyService.deleteEventCheck(myRsvp.id);
       await fetchAll();
     } catch (err: any) {
-      Alert.alert('Cancel failed', err?.message ?? String(err));
+      if (isConnectionError(err)) {
+        setOfflineAction('cancel');
+      } else {
+        setOfflineAction(null);
+        Alert.alert('Cancel failed', err?.message ?? String(err));
+      }
     } finally {
       setWorking(false);
     }
@@ -497,11 +529,19 @@ export default function HikerEventDetail() {
   if (loading) return <CenterMessage loading message="Loading hike…" />;
   if (error || !event) {
     return (
-      <CenterMessage
-        message={error ?? 'Event not found'}
-        actionLabel="Go back"
-        onAction={() => router.back()}
-      />
+      <>
+        <CenterMessage
+          message={error ?? 'Event not found'}
+          actionLabel="Go back"
+          onAction={() => router.back()}
+        />
+        <OfflineActionModal
+          visible={offlineAction === 'load'}
+          message="Hike details need an internet connection to load. Connect and try again."
+          onRetry={() => void fetchAll()}
+          onDismiss={() => setOfflineAction(null)}
+        />
+      </>
     );
   }
 
@@ -693,6 +733,25 @@ export default function HikerEventDetail() {
 
       {/* Hike permit animation — the "assurance" instead of a dialog. */}
       {permit.element}
+      <OfflineActionModal
+        visible={offlineAction !== null}
+        message={offlineAction === 'load'
+          ? 'Hike details need an internet connection to load. Connect and try again.'
+          : offlineAction === 'cancel'
+            ? 'Canceling an RSVP needs an internet connection. Connect and try again.'
+            : 'Joining this hike needs an internet connection. Your RSVP has not been submitted.'}
+        retrying={working}
+        onRetry={() => {
+          if (offlineAction === 'load') {
+            void fetchAll();
+          } else if (offlineAction === 'cancel') {
+            void doCancel();
+          } else {
+            void handleRsvp();
+          }
+        }}
+        onDismiss={() => setOfflineAction(null)}
+      />
     </Shell>
   );
 }

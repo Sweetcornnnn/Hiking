@@ -11,6 +11,8 @@ import { useRouter } from 'expo-router';
 import { useWildTrackStore } from '../store/wildtrackStore';
 import { getMountainById } from '../data/mountains';
 import weatherService, { WeatherCondition } from '../services/weatherService';
+import OfflineActionModal from '../components/OfflineActionModal';
+import { isConnectionError } from '../services/offlineStatusService';
 
 export default function WeatherScreen() {
   const router = useRouter();
@@ -19,6 +21,8 @@ export default function WeatherScreen() {
   const [weather, setWeather] = useState<WeatherCondition | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offlineModalVisible, setOfflineModalVisible] = useState(false);
+  const [showingStaleWeather, setShowingStaleWeather] = useState(false);
 
   useEffect(() => {
     loadWeather();
@@ -30,6 +34,7 @@ export default function WeatherScreen() {
       setError(null);
 
       if (!selectedMountain) {
+        setOfflineModalVisible(false);
         setError('No mountain selected for weather lookup. Please choose a mountain in WildTrack.');
         setWeather(null);
         return;
@@ -40,10 +45,18 @@ export default function WeatherScreen() {
         selectedMountain.longitude
       );
       setWeather(currentWeather);
+      setOfflineModalVisible(false);
+      setShowingStaleWeather(false);
     } catch (error: any) {
       console.error('Weather screen load failed:', error);
-      setError(error?.message || 'Unable to fetch weather data.');
-      setWeather(null);
+      if (isConnectionError(error)) {
+        setOfflineModalVisible(true);
+        setError(null);
+        setShowingStaleWeather(weather !== null);
+      } else {
+        setOfflineModalVisible(false);
+        setError(error?.message || 'Unable to fetch weather data.');
+      }
     } finally {
       setLoading(false);
     }
@@ -58,7 +71,7 @@ export default function WeatherScreen() {
             Current weather for {selectedMountain?.name ?? 'your selected mountain'}
           </Text>
           <View style={styles.dividerH} />
-          {loading ? (
+          {loading && !weather ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color="#C9A96E" />
               <Text style={styles.loadingText}>Fetching weather data…</Text>
@@ -67,6 +80,9 @@ export default function WeatherScreen() {
             <Text style={styles.errorText}>{error}</Text>
           ) : weather ? (
             <>
+              {showingStaleWeather && (
+                <Text style={styles.offlineNote}>Showing the last weather loaded in this session.</Text>
+              )}
               <Text style={styles.weatherValue}>{weather.temperature.toFixed(1)}°C</Text>
               <Text style={styles.weatherTitle}>{weather.description}</Text>
               <Text style={styles.tabPaneBody}>
@@ -101,6 +117,16 @@ export default function WeatherScreen() {
               <Ionicons name="refresh" size={11} color="#C9A96E" />
             </TouchableOpacity>
           </View>
+          <OfflineActionModal
+            visible={offlineModalVisible}
+            message="We couldn’t load the latest mountain weather. Check your connection and try again."
+            retrying={loading}
+            onRetry={() => void loadWeather()}
+            onDismiss={() => {
+              setOfflineModalVisible(false);
+              if (!weather) setError('Weather needs an internet connection to load.');
+            }}
+          />
         </View>
       </View>
     </View>
@@ -221,6 +247,11 @@ const styles = StyleSheet.create({
     color: '#F38B5C',
     fontSize: 12,
     lineHeight: 18,
+  },
+  offlineNote: {
+    color: '#C9A96E',
+    fontSize: 11,
+    marginTop: 8,
   },
   weatherValue: {
     color: '#C9A96E',

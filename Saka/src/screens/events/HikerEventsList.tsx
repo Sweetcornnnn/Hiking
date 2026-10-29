@@ -15,6 +15,8 @@ import { eventService, type PublicEvent, type EventRsvpCounts } from '../../serv
 import { effectiveEnd } from '../../utils/dateRange';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import { useRequireAuth } from '../../hooks/useRoleGuard';
+import OfflineActionModal from '../../components/OfflineActionModal';
+import { isConnectionError } from '../../services/offlineStatusService';
 import {
   D,
   Shell,
@@ -84,6 +86,7 @@ export default function HikerEventsList() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offlineModalVisible, setOfflineModalVisible] = useState(false);
 
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>('All');
   const [dateRange, setDateRange] = useState<DateRangeId>('upcoming');
@@ -119,8 +122,14 @@ export default function HikerEventsList() {
       setEvents(list);
       const c = await eventService.getRsvpCounts(list.map((e) => e.id));
       setCounts(c);
+      setOfflineModalVisible(false);
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load events');
+      if (isConnectionError(e)) {
+        setOfflineModalVisible(true);
+      } else {
+        setOfflineModalVisible(false);
+        setError(e?.message ?? 'Failed to load events');
+      }
     } finally {
       setLoading(false);
       setHasLoaded(true);
@@ -446,6 +455,19 @@ export default function HikerEventsList() {
         selectedId={mountainId}
         onSelect={setMountainId}
         onClose={() => setMountainPickerOpen(false)}
+      />
+      <OfflineActionModal
+        visible={offlineModalVisible}
+        message="Hike events need an internet connection to load. Connect and try again."
+        retrying={refreshing || loading}
+        onRetry={() => {
+          setOfflineModalVisible(false);
+          onRefresh();
+        }}
+        onDismiss={() => {
+          setOfflineModalVisible(false);
+          setError('Connect to the internet to load hike events.');
+        }}
       />
     </>
   );

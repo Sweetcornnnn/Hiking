@@ -204,7 +204,7 @@ export const eventService = {
     const { data, error } = await query;
     if (error) {
       console.error('[EventService] getPublicEvents error:', error);
-      return [];
+      throw new Error(error.message);
     }
     return (data ?? []) as unknown as PublicEvent[];
   },
@@ -218,7 +218,7 @@ export const eventService = {
 
     if (error) {
       console.error('[EventService] getEventById error:', error);
-      return null;
+      throw new Error(error.message);
     }
     return (data as unknown as PublicEvent) ?? null;
   },

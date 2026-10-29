@@ -15,6 +15,8 @@ import {
   emergencyContactsService,
   type EmergencyContact,
 } from '../../services/emergencyContactsService';
+import OfflineActionModal from '../OfflineActionModal';
+import { isConnectionError } from '../../services/offlineStatusService';
 
 interface EmergencyContactFeatureProps {
   visible: boolean;
@@ -38,6 +40,7 @@ export default function EmergencyContactFeature({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [offlineAction, setOfflineAction] = useState<'load' | 'save' | null>(null);
 
   const loadContacts = useCallback(async () => {
     setIsLoading(true);
@@ -46,8 +49,14 @@ export default function EmergencyContactFeature({
       const savedContacts = await emergencyContactsService.load();
       setContacts(savedContacts);
       setHasLoaded(true);
+      setOfflineAction(null);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'Could not load emergency contacts.');
+      if (isConnectionError(error)) {
+        setOfflineAction('load');
+      } else {
+        setOfflineAction(null);
+        setLoadError(error instanceof Error ? error.message : 'Could not load emergency contacts.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -101,9 +110,15 @@ export default function EmergencyContactFeature({
     try {
       await emergencyContactsService.save(normalizedContacts);
       setContacts(normalizedContacts);
+      setOfflineAction(null);
       Alert.alert('Contacts saved', 'Your emergency contacts are saved to your account.');
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Could not save emergency contacts.');
+      if (isConnectionError(error)) {
+        setOfflineAction('save');
+      } else {
+        setOfflineAction(null);
+        setSaveError(error instanceof Error ? error.message : 'Could not save emergency contacts.');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -153,6 +168,21 @@ export default function EmergencyContactFeature({
           <Text style={styles.errorText}>{saveError}</Text>
         </View>
       ) : null}
+      <OfflineActionModal
+        visible={offlineAction !== null}
+        message={offlineAction === 'save'
+          ? 'Emergency contacts are saved to your account. Connect to the internet and try saving again.'
+          : 'Your emergency contacts need an internet connection to load.'}
+        retrying={isLoading || isSaving}
+        onRetry={() => {
+          if (offlineAction === 'save') {
+            void saveContacts();
+          } else {
+            void loadContacts();
+          }
+        }}
+        onDismiss={() => setOfflineAction(null)}
+      />
 
       {isLoading ? (
         <View style={styles.loading}>
