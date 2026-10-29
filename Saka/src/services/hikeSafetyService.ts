@@ -7,6 +7,8 @@ export interface PendingCheck {
   kind: SafetyKind;
   planned_finish_at: string;
   title: string;
+  mountain: string | null;
+  activity_date: string | null;
 }
 
 export interface AdminSafetyRow {
@@ -174,33 +176,68 @@ export const hikeSafetyService = {
     const [hikeRes, eventRes] = await Promise.all([
       supabase
         .from('hike_safety_checks')
-        .select('id, planned_finish_at, response_status, hikes(mountain_name, date)')
+        .select('id, planned_finish_at, response_status, hikes(mountain_name, mountain_id, date)')
         .eq('user_id', user.id)
         .eq('response_status', 'pending'),
       supabase
         .from('event_safety_checks')
-        .select('id, planned_finish_at, response_status, hiking_events(title)')
+        .select('id, planned_finish_at, response_status, hiking_events(title, event_date, mountain_id)')
         .eq('user_id', user.id)
         .eq('response_status', 'pending'),
     ]);
 
+    const hikeRows = (hikeRes.data ?? []) as any[];
+    const eventRows = (eventRes.data ?? []) as any[];
+    const mountainIds = Array.from(new Set([
+      ...hikeRows.map((row) => {
+        const hike = Array.isArray(row.hikes) ? row.hikes[0] : row.hikes;
+        return typeof hike?.mountain_id === 'string' ? hike.mountain_id : null;
+      }),
+      ...eventRows.map((row) => {
+        const event = Array.isArray(row.hiking_events) ? row.hiking_events[0] : row.hiking_events;
+        return typeof event?.mountain_id === 'string' ? event.mountain_id : null;
+      }),
+    ].filter((id): id is string => id !== null)));
+    const mountainNames = new Map<string, string>();
+    if (mountainIds.length > 0) {
+      const { data: mountains, error: mountainError } = await supabase
+        .from('mountains')
+        .select('id, name, location')
+        .in('id', mountainIds);
+      if (mountainError) {
+        console.warn('[HikeSafety] Could not load mountain names:', mountainError.message);
+      } else {
+        for (const mountain of mountains ?? []) {
+          mountainNames.set(
+            mountain.id,
+            [mountain.name, mountain.location].filter(Boolean).join(' · '),
+          );
+        }
+      }
+    }
+
     const checks: PendingCheck[] = [];
-    for (const row of (hikeRes.data ?? []) as any[]) {
+    for (const row of hikeRows) {
       const hike = Array.isArray(row.hikes) ? row.hikes[0] : row.hikes;
       checks.push({
         check_id: row.id,
         kind: 'hike',
         planned_finish_at: row.planned_finish_at,
         title: hike?.mountain_name ?? hike?.date ?? 'Hike',
+        mountain: hike?.mountain_name
+          ?? (hike?.mountain_id ? mountainNames.get(hike.mountain_id) ?? null : null),
+        activity_date: hike?.date ?? null,
       });
     }
-    for (const row of (eventRes.data ?? []) as any[]) {
+    for (const row of eventRows) {
       const event = Array.isArray(row.hiking_events) ? row.hiking_events[0] : row.hiking_events;
       checks.push({
         check_id: row.id,
         kind: 'event',
         planned_finish_at: row.planned_finish_at,
         title: event?.title ?? 'Event',
+        mountain: event?.mountain_id ? mountainNames.get(event.mountain_id) ?? null : null,
+        activity_date: event?.event_date ?? null,
       });
     }
     return checks;

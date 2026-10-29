@@ -20,6 +20,9 @@ interface PromptState {
   checkId: string;
   kind: SafetyKind;
   title: string;
+  mountain: string | null;
+  activityDate: string | null;
+  plannedFinishAt: string;
 }
 
 interface HikeSafetyState {
@@ -131,6 +134,9 @@ export const useHikeSafetyStore = create<HikeSafetyState>((set, get) => ({
           checkId: target.check_id,
           kind: target.kind,
           title: target.title,
+          mountain: target.mountain,
+          activityDate: target.activity_date,
+          plannedFinishAt: target.planned_finish_at,
         },
       });
     }
