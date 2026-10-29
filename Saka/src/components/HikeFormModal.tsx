@@ -32,13 +32,35 @@ const NAVY = '#0E1520';
 const ICON_GOLD = 'rgba(201,169,110,0.55)';
 const PLACEHOLDER = 'rgba(255,255,255,0.22)';
 
-const formatLong = (dateString: string) =>
-  new Date(dateString + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+const getDateParts = (isoDate: string) => {
+  const date = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const month = date.toLocaleDateString('en-US', { month: 'long' });
+  return {
+    day: date.getDate(),
+    month,
+    year: date.getFullYear(),
+  };
+};
+
+const formatFullDate = (isoDate: string) => {
+  const parts = getDateParts(isoDate);
+  return parts ? `${parts.month} ${parts.day}, ${parts.year}` : formatDisplayDate(isoDate);
+};
+
+const formatHikeDateRange = (startDate: string, endDate: string) => {
+  const start = getDateParts(startDate);
+  const end = getDateParts(endDate);
+  if (!start || !end || startDate === endDate) return formatFullDate(startDate);
+  if (start.year === end.year && start.month === end.month) {
+    return `${start.month} ${start.day}-${end.day}, ${start.year}`;
+  }
+  if (start.year === end.year) {
+    return `${start.month} ${start.day} - ${end.month} ${end.day}, ${end.year}`;
+  }
+  return `${start.month} ${start.day}, ${start.year} - ${end.month} ${end.day}, ${end.year}`;
+};
 
 interface HikeFormData {
   date: string;
@@ -206,9 +228,7 @@ export default function HikeFormModal({
             <View style={styles.headerText}>
               <Text style={styles.modalTitle}>{editingHike ? 'Edit Hike' : 'New Hike'}</Text>
               <Text style={styles.modalSubtitle} numberOfLines={1}>
-                {hasRange
-                  ? `${formatDisplayDate(formData.date)}  →  ${formatDisplayDate(formData.end_date)}`
-                  : formatLong(formData.date)}
+                {formatHikeDateRange(formData.date, hasRange ? formData.end_date : formData.date)}
               </Text>
             </View>
           </View>
@@ -269,10 +289,10 @@ export default function HikeFormModal({
                 >
                   <Ionicons name="calendar-outline" size={14} color={ICON_GOLD} style={styles.inputIcon} />
                   <Text
-                    style={[styles.input, styles.dateText, !formData.end_date && styles.dateTextEmpty]}
+                    style={[styles.input, styles.dateText]}
                     numberOfLines={1}
                   >
-                    {formData.end_date ? formatDisplayDate(formData.end_date) : 'Same day · tap to pick'}
+                    {formatFullDate(formData.end_date || formData.date)}
                   </Text>
                   {formData.end_date ? (
                     <TouchableOpacity
@@ -563,11 +583,6 @@ const styles = StyleSheet.create({
   dateText: {
     paddingVertical: 0,
   },
-  dateTextEmpty: {
-    color: PLACEHOLDER,
-    fontWeight: '400',
-  },
-
   /* Footer */
   modalFooter: {
     flexDirection: 'row',

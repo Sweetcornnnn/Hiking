@@ -76,9 +76,9 @@ interface DayWeather {
 const formatTimeShort = (time: string) => {
   const [hours, minutes] = time.split(':');
   const hour = parseInt(hours, 10);
-  const ampm = hour >= 12 ? 'P' : 'A';
+  const ampm = hour >= 12 ? 'PM' : 'AM';
   const displayHour = hour % 12 || 12;
-  return `${displayHour}:${minutes}${ampm}`;
+  return `${displayHour}:${minutes} ${ampm}`;
 };
 
 // Same mapping Calendar.tsx uses, so the icon shown here always matches

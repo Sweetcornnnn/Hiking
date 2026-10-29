@@ -109,7 +109,12 @@ function StubFace(p: HikeCardFaceProps) {
           <Text style={[s.stubTime, { color: ink }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
             {p.timePrimary}
           </Text>
-          <Text style={[s.stubSub, { color: label }]} numberOfLines={1}>
+          <Text
+            style={[s.stubSub, { color: label }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
             {p.timeSecondary}
           </Text>
         </View>
