@@ -17,7 +17,6 @@ export interface Mountain {
   elevation: number;          // numeric in meters
   latitude: number;
   longitude: number;
-  image_url: string | null;
   video_url: string | null;
   funny_warning: string | null;
   elevationDisplay: string;
@@ -181,7 +180,6 @@ export const mountainService = {
         elevation,
         latitude: toNumberOr(item.latitude, 0),
         longitude: toNumberOr(item.longitude, 0),
-        image_url: item.image_url,
         video_url: item.video_url,
         funny_warning: item.funny_warning || null,
         elevationDisplay: formatElevation(item.elevation),
@@ -248,7 +246,6 @@ export const mountainService = {
       elevation: toNumberOr(data.elevation, 0),
       latitude: toNumberOr(data.latitude, 0),
       longitude: toNumberOr(data.longitude, 0),
-      image_url: data.image_url,
       video_url: data.video_url,
       funny_warning: data.funny_warning || null,
       elevationDisplay: formatElevation(data.elevation),
