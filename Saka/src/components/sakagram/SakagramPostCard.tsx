@@ -27,6 +27,7 @@ import {
 interface Props {
   post: SakagramPost;
   onToggleLike: (id: string, liked: boolean) => void | Promise<void>;
+  onRemove?: (id: string) => void;
   onPressAuthor?: (userId: string) => void;
   isLikePending?: boolean;
   isLikeQueued?: boolean;
@@ -40,6 +41,7 @@ const LONG_CAPTION_CHARS = 90;
 export default function SakagramPostCard({
   post,
   onToggleLike,
+  onRemove,
   onPressAuthor,
   isLikePending = false,
   isLikeQueued = false,
@@ -129,21 +131,34 @@ export default function SakagramPostCard({
           </View>
         </TouchableOpacity>
 
-        <Pressable
-          onPress={() => void onToggleLike(post.id, !post.likedByMe)}
-          disabled={isLikePending}
-          style={s.likeButton}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={post.likedByMe ? 'Unlike journal entry' : 'Like journal entry'}
-          accessibilityState={{ selected: post.likedByMe, disabled: isLikePending }}
-        >
-          <Ionicons
-            name={post.likedByMe ? 'heart' : 'heart-outline'}
-            size={focused ? 28 : 22}
-            color={post.likedByMe ? TEXT_DANGER : TEXT_PRIMARY}
-          />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {onRemove && (
+            <Pressable
+              onPress={() => onRemove(post.id)}
+              style={s.likeButton}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Remove inappropriate Sakagram post"
+            >
+              <Ionicons name="trash-outline" size={focused ? 23 : 18} color={TEXT_DANGER} />
+            </Pressable>
+          )}
+          <Pressable
+            onPress={() => void onToggleLike(post.id, !post.likedByMe)}
+            disabled={isLikePending}
+            style={s.likeButton}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={post.likedByMe ? 'Unlike journal entry' : 'Like journal entry'}
+            accessibilityState={{ selected: post.likedByMe, disabled: isLikePending }}
+          >
+            <Ionicons
+              name={post.likedByMe ? 'heart' : 'heart-outline'}
+              size={focused ? 28 : 22}
+              color={post.likedByMe ? TEXT_DANGER : TEXT_PRIMARY}
+            />
+          </Pressable>
+        </View>
       </View>
 
       {images.length === 0 || (!isMulti && photoFailed) ? (

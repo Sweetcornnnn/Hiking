@@ -8,6 +8,7 @@ const VIEWPOINT_CACHE_UPDATED_PREFIX = 'SAKA_VIEWPOINT_CACHE_UPDATED:';
 
 export type ViewpointDetailRecord = {
   id: string;
+  mountainId: string;
   name: string;
   subtitle: string;
   elevation: string;
@@ -31,7 +32,7 @@ export type ViewpointDetailRecord = {
 
 function fallbackViewpoint(viewpointId: string): ViewpointDetailRecord | null {
   const fallback = VIEWPOINTS_DATA[(viewpointId as keyof ViewpointsDataType)] ?? Object.values(VIEWPOINTS_DATA)[0];
-  return fallback ?? null;
+  return fallback ? { ...fallback, mountainId: '' } : null;
 }
 
 export async function fetchViewpointDetail(viewpointId: string): Promise<ViewpointDetailRecord | null> {
@@ -84,6 +85,7 @@ async function refreshViewpointDetail(viewpointId: string): Promise<ViewpointDet
 
   const record: ViewpointDetailRecord = {
     id: data.id,
+    mountainId: data.mountain_id || '',
     name: data.name,
     subtitle: data.subtitle || '',
     elevation: data.elevation || '~0m',

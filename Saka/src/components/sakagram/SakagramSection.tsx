@@ -8,6 +8,8 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
+import { Alert } from 'react-native';
+import { managerService } from '../../services/managerService';
 import {
   fetchSakagramPosts,
   getPendingSakagramLikeIds,
@@ -34,6 +36,7 @@ import {
 interface Props {
   viewpointId: string;
   viewpointName?: string;
+  mountainName?: string;
   mountainId?: string;
   focused?: boolean;
   onPressAuthor?: (userId: string) => void;
@@ -42,6 +45,7 @@ interface Props {
 export default function SakagramSection({
   viewpointId,
   viewpointName,
+  mountainName,
   mountainId,
   focused = false,
   onPressAuthor,
@@ -49,6 +53,7 @@ export default function SakagramSection({
   const router = useRouter();
   const s = useMemo(() => makeStyles(focused), [focused]);
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
+  const isManager = useAuthStore((state) => state.profile?.role === 'manager');
   const [posts, setPosts] = useState<SakagramPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -56,13 +61,15 @@ export default function SakagramSection({
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
   const [queuedLikeIds, setQueuedLikeIds] = useState<Set<string>>(new Set());
   const [reloadKey, setReloadKey] = useState(0);
+  const [canModerate, setCanModerate] = useState(false);
+  const [moderationError, setModerationError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     setIsLoading(true);
     setLoadError(null);
 
-    void fetchSakagramPosts(viewpointId, currentUserId)
+    void fetchSakagramPosts(viewpointId, currentUserId, mountainId)
       .then((nextPosts) => {
         if (active) {
           setPosts(nextPosts);
@@ -83,7 +90,38 @@ export default function SakagramSection({
     return () => {
       active = false;
     };
-  }, [viewpointId, currentUserId, reloadKey]);
+  }, [viewpointId, currentUserId, mountainId, reloadKey]);
+
+  useEffect(() => {
+    let active = true;
+    if (!isManager || !currentUserId || !mountainId) {
+      setCanModerate(false);
+      return () => { active = false; };
+    }
+    void managerService.isAssignedToMountain(currentUserId, mountainId)
+      .then((assigned) => { if (active) setCanModerate(assigned); })
+      .catch((error: unknown) => {
+        console.warn('[Sakagram] Unable to verify moderation assignment:', error);
+        if (active) setCanModerate(false);
+      });
+    return () => { active = false; };
+  }, [currentUserId, isManager, mountainId]);
+
+  const handleRemovePost = (postId: string) => {
+    Alert.alert('Remove Sakagram post?', 'This removes the post and all of its photos from this mountain feed. Administrators will be notified.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          setModerationError(null);
+          void managerService.removeSakagramPost(postId)
+            .then(() => setPosts((current) => current.filter((post) => post.id !== postId)))
+            .catch((error: unknown) => setModerationError(error instanceof Error ? error.message : 'Unable to remove post.'));
+        },
+      },
+    ]);
+  };
 
   useEffect(() => subscribeToSakagramSync(() => {
     setReloadKey((value) => value + 1);
@@ -159,7 +197,7 @@ export default function SakagramSection({
             )}
           </View>
           <Text style={s.subtitle} numberOfLines={1}>
-            {viewpointName ? `Photos from ${viewpointName}` : 'Photos shared from this stop'}
+            {mountainId ? `Photos from ${mountainName || 'this mountain'}` : viewpointName ? `Photos from ${viewpointName}` : 'Photos shared from this stop'}
           </Text>
         </View>
         <TouchableOpacity
@@ -174,6 +212,7 @@ export default function SakagramSection({
       </View>
 
       {likeError && <Text style={s.inlineError}>{likeError}</Text>}
+      {moderationError && <Text style={s.inlineError}>{moderationError}</Text>}
 
       {isLoading ? (
         <View accessibilityLabel="Loading Sakagram posts">
@@ -218,6 +257,7 @@ export default function SakagramSection({
               key={post.id}
               post={post}
               onToggleLike={handleToggleLike}
+              onRemove={canModerate ? handleRemovePost : undefined}
               onPressAuthor={onPressAuthor}
               isLikePending={pendingLikeIds.has(post.id)}
               isLikeQueued={queuedLikeIds.has(post.id)}

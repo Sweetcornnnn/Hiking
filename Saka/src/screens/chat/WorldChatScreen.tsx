@@ -9,10 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { managerService } from '../../services/managerService';
 import { MessageBubble } from '../../components/chat/MessageBubble';
 import MessageInput from '../../components/chat/MessageInput';
 import ProfileCard from '../../components/chat/ProfileCard';
@@ -53,10 +56,44 @@ export default function WorldChatScreen({
 
   const listRef = useRef<FlatList>(null);
   const user = useAuthStore((state) => state.user);
+  const isManager = useAuthStore((state) => state.profile?.role === 'manager');
+  const [managedMountainIds, setManagedMountainIds] = useState<Set<string>>(new Set());
 
   const subscriptionRef = useRef<any>(null);
   const mountedRef = useRef(true);
   const pendingMessagesRef = useRef(new Map<string, number[]>());
+
+  useEffect(() => {
+    let active = true;
+    if (!isManager || !user) {
+      setManagedMountainIds(new Set());
+      return () => { active = false; };
+    }
+    void managerService.fetchAssignedMountains(user.id)
+      .then((mountains) => {
+        if (active) setManagedMountainIds(new Set(mountains.map((mountain) => mountain.id)));
+      })
+      .catch((loadError: unknown) => {
+        console.warn('[WorldChat] Failed to load manager mountain assignments:', loadError);
+        if (active) setError('Mountain moderation access could not be verified.');
+      });
+    return () => { active = false; };
+  }, [isManager, user]);
+
+  const removeMessage = (messageId: number) => {
+    Alert.alert('Remove mountain message?', 'This message will be removed and administrators will be notified.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          void managerService.removeMountainChatMessage(messageId)
+            .then(() => setMessages((current) => current.filter((message) => message.id !== messageId)))
+            .catch((removeError: unknown) => setError(removeError instanceof Error ? removeError.message : 'Unable to remove message.'));
+        },
+      },
+    ]);
+  };
 
   const isNearBottomRef = useRef(true);
   const initialPositionPendingRef = useRef(false);
@@ -124,6 +161,7 @@ export default function WorldChatScreen({
         .select(`
           id,
           user_id,
+          mountain_id,
           content,
           type,
           media_url,
@@ -198,6 +236,7 @@ export default function WorldChatScreen({
       .select(`
         id,
         user_id,
+        mountain_id,
         content,
         type,
         media_url,
@@ -397,28 +436,38 @@ export default function WorldChatScreen({
 
           return (
             <View style={styles.messageItem}>
-              <MessageBubble
-                content={item.content}
-                time={time}
-                isMe={isMe}
-                deliveryStatus={item.sync_status}
-                showReadReceipt={false}
-                showAvatar={true}
-                avatarOffsetY={4}
-                showSenderHeader={true}
-                senderName={senderName}
-                senderColorSeed={item.user_id}
-                senderAvatarUrl={senderAvatar}
-                avatarUri={senderAvatar}
-                avatarLabel={senderName}
-                disableAvatarLift={false}
-                onPressSender={
-                  canOpenProfile ? () => openProfile(item.user_id) : undefined
-                }
-                onPressBubble={
-                  canOpenProfile ? () => openProfile(item.user_id) : undefined
-                }
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ flex: 1 }}>
+                  <MessageBubble
+                    content={item.content}
+                    time={time}
+                    isMe={isMe}
+                    deliveryStatus={item.sync_status}
+                    showReadReceipt={false}
+                    showAvatar={true}
+                    avatarOffsetY={4}
+                    showSenderHeader={true}
+                    senderName={senderName}
+                    senderColorSeed={item.user_id}
+                    senderAvatarUrl={senderAvatar}
+                    avatarUri={senderAvatar}
+                    avatarLabel={senderName}
+                    disableAvatarLift={false}
+                    onPressSender={canOpenProfile ? () => openProfile(item.user_id) : undefined}
+                    onPressBubble={canOpenProfile ? () => openProfile(item.user_id) : undefined}
+                  />
+                </View>
+                {isManager && item.mountain_id && managedMountainIds.has(item.mountain_id) && (
+                  <TouchableOpacity
+                    onPress={() => removeMessage(Number(item.id))}
+                    style={styles.removeMessageButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove message from assigned mountain chat"
+                  >
+                    <Ionicons name="trash-outline" size={14} color="#E07070" />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           );
         }}
@@ -558,6 +607,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   messageItem: { marginVertical: 4 },
+  removeMessageButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,112,112,0.12)' },
 
   inputWrapper: {
     paddingHorizontal: 12,

@@ -21,6 +21,7 @@ export type ChatMessage = {
   media_url: string | null;
   created_at: string;
   updated_at: string;
+  mountain_id?: string | null;
   profiles?: {
     full_name: string | null;
     username: string | null;

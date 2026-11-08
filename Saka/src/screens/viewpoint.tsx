@@ -595,7 +595,8 @@ export default function ViewpointScreen() {
             <SakagramSection
               viewpointId={data.id}
               viewpointName={data.name}
-              mountainId={mountainId}
+              mountainName={mountainName}
+              mountainId={data.mountainId || mountainId}
               onPressAuthor={setProfileUserId}
             />
           </ScrollView>

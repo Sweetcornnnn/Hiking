@@ -66,17 +66,21 @@ export interface SakagramPost extends JournalEntry {
 export async function fetchSakagramPosts(
   viewpointId: string,
   currentUserId: string | null,
+  mountainId?: string,
   limit = 20,
 ): Promise<SakagramPost[]> {
   let posts: SakagramPost[];
   try {
-    const { data: entries, error } = await supabase
+    let entriesQuery = supabase
       .from('hiking_journals')
       .select('*')
-      .eq('viewpoint_id', viewpointId)
       .eq('is_public', true)
       .order('created_at', { ascending: false })
       .limit(limit);
+    entriesQuery = mountainId
+      ? entriesQuery.eq('mountain_id', mountainId)
+      : entriesQuery.eq('viewpoint_id', viewpointId);
+    const { data: entries, error } = await entriesQuery;
 
     if (error) throw new Error(`Unable to load Sakagram posts: ${error.message}`);
     if (!entries?.length) {
