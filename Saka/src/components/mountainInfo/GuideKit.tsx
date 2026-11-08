@@ -4,7 +4,7 @@ import { BORDER_DEFAULT, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../them
 
 /**
  * Small layout pieces shared by the single-look popups (Safety, Preparation, Etiquette).
- * UI only: the data for each guide lives in data/mountainTips.ts.
+ * UI only: guide content is loaded from Supabase by TipsAndTricksScreen.
  */
 
 /** True when the popup is wide enough for two columns. */

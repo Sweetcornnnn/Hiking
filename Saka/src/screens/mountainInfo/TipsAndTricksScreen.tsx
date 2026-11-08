@@ -1,37 +1,46 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import {
   getMountainAlertKey,
   getUnreadMountainAlertKeys,
   markMountainAlertRead,
 } from '../../services/mountainAlertReadService';
-import type { Alert } from '../../data/mountainTips';
+import type { Alert, MountainTips } from '../../data/mountainTips';
 import { Text, StyleSheet, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import TipsAndTricks from '../../components/mountainInfo/TipsAndTricks';
 import ContourMark from '../../components/mountainInfo/ContourMark';
-import { MOUNTAIN_TIPS } from '../../data/mountainTips';
 import { ACCENT_GOLD, BG_CARD, TEXT_PRIMARY } from '../../theme/designTokens';
+import { managerService } from '../../services/managerService';
 
 const GOLD_SOFT = 'rgba(201,169,110,0.12)';
 const GOLD_LINE = 'rgba(201,169,110,0.35)';
+const EMPTY_ALERT_KEYS = new Set<string>();
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function normalize(value: string | undefined) {
-  return value?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? '';
+function hasGuideContent(tips: MountainTips) {
+  return tips.preparation.length > 0
+    || tips.safety.length > 0
+    || tips.transportation.length > 0
+    || tips.trailTips.length > 0
+    || tips.etiquette.length > 0
+    || tips.alerts.length > 0
+    || Boolean(tips.preparationGuide || tips.safetyGuide || tips.transportGuide || tips.trailGuide || tips.etiquetteGuide);
 }
 
 type EmptyStateProps = {
   mountainName?: string;
+  title?: string;
+  description?: string;
   onBack: () => void;
 };
 
-function EmptyState({ mountainName, onBack }: EmptyStateProps) {
+function EmptyState({ mountainName, title, description, onBack }: EmptyStateProps) {
   const hasName = Boolean(mountainName);
 
   return (
@@ -50,12 +59,12 @@ function EmptyState({ mountainName, onBack }: EmptyStateProps) {
         <View style={styles.emptyBody}>
           <ContourMark size={180} summit style={styles.contour} />
           <Text style={styles.title} accessibilityRole="header">
-            {hasName ? `No guide for ${mountainName} yet` : 'Choose a mountain first'}
+            {title ?? (hasName ? `No guide for ${mountainName} yet` : 'Choose a mountain first')}
           </Text>
           <Text style={styles.description}>
-            {hasName
+            {description ?? (hasName
               ? 'We haven’t written trail tips for this mountain. Check back after the next update.'
-              : 'Open a mountain from the list to see its trail tips.'}
+              : 'Open a mountain from the list to see its trail tips.')}
           </Text>
         </View>
 
@@ -84,29 +93,54 @@ export default function TipsAndTricksScreen() {
   const mountainId = firstParam(mountainIdParam);
   const mountainName = firstParam(mountainNameParam);
 
-  const mountainTips = useMemo(() => {
-    const byId = mountainId ? MOUNTAIN_TIPS.find((tips) => tips.id === mountainId) : undefined;
-    if (byId) return byId;
-
-    const target = normalize(mountainName);
-    if (!target) return undefined;
-    return MOUNTAIN_TIPS.find((tips) => normalize(tips.mountainName) === target);
-  }, [mountainId, mountainName]);
-
-  const [unreadAlertKeys, setUnreadAlertKeys] = useState<Set<string>>(new Set());
+  const [tipsState, setTipsState] = useState<{
+    mountainId: string | null;
+    tips: MountainTips | null;
+    error: string | null;
+  }>({ mountainId: null, tips: null, error: null });
+  const [unreadAlertState, setUnreadAlertState] = useState<{
+    userId: string | null;
+    mountainId: string | null;
+    keys: Set<string>;
+  }>({ userId: null, mountainId: null, keys: new Set() });
+  const displayedMountainTips = tipsState.mountainId === mountainId ? tipsState.tips : null;
+  const tipsError = tipsState.mountainId === mountainId ? tipsState.error : null;
+  const tipsLoading = Boolean(mountainId) && tipsState.mountainId !== mountainId;
+  const unreadAlertKeys = user && displayedMountainTips
+    && unreadAlertState.userId === user.id
+    && unreadAlertState.mountainId === displayedMountainTips.id
+    ? unreadAlertState.keys
+    : EMPTY_ALERT_KEYS;
 
   useEffect(() => {
     let active = true;
-    if (!user || !mountainTips) {
-      setUnreadAlertKeys(new Set());
-      return () => {
-        active = false;
-      };
-    }
+    if (!mountainId) return () => { active = false; };
+    void managerService.fetchContent(mountainId, mountainName ?? 'Mountain')
+      .then((content) => {
+        if (active) setTipsState({ mountainId, tips: content.tips_data, error: null });
+      })
+      .catch((error: unknown) => {
+        console.warn('[TipsAndTricks] Failed to load official mountain information:', error);
+        if (active) setTipsState({
+          mountainId,
+          tips: null,
+          error: error instanceof Error ? error.message : 'Unable to load mountain tips.',
+        });
+      });
+    return () => { active = false; };
+  }, [mountainId, mountainName]);
 
-    void getUnreadMountainAlertKeys(user.id, mountainTips)
+  useEffect(() => {
+    let active = true;
+    if (!user || !displayedMountainTips) return () => { active = false; };
+
+    void getUnreadMountainAlertKeys(user.id, displayedMountainTips)
       .then((keys) => {
-        if (active) setUnreadAlertKeys(keys);
+        if (active) setUnreadAlertState({
+          userId: user.id,
+          mountainId: displayedMountainTips.id,
+          keys,
+        });
       })
       .catch((error) => {
         console.warn('[TipsAndTricks] Failed to load unread alerts:', error);
@@ -115,31 +149,32 @@ export default function TipsAndTricksScreen() {
     return () => {
       active = false;
     };
-  }, [mountainTips, user]);
+  }, [displayedMountainTips, user]);
 
   const goBack = () => router.back();
   const handleAlertViewed = useCallback(async (alert: Alert) => {
-    if (!user || !mountainTips) return;
-    const key = getMountainAlertKey(mountainTips, alert);
+    if (!user || !displayedMountainTips) return;
+    const key = getMountainAlertKey(displayedMountainTips, alert);
     if (!unreadAlertKeys.has(key)) return;
     try {
-      await markMountainAlertRead(user.id, mountainTips, alert);
-      setUnreadAlertKeys((current) => {
-        const next = new Set(current);
+      await markMountainAlertRead(user.id, displayedMountainTips, alert);
+      setUnreadAlertState((current) => {
+        if (current.userId !== user.id || current.mountainId !== displayedMountainTips.id) return current;
+        const next = new Set(current.keys);
         next.delete(key);
-        return next;
+        return { ...current, keys: next };
       });
     } catch (error) {
       console.warn('[TipsAndTricks] Failed to save read alert:', error);
     }
-  }, [mountainTips, unreadAlertKeys, user]);
+  }, [displayedMountainTips, unreadAlertKeys, user]);
 
   // TipsAndTricks manages its own safe area, so it is not wrapped again here.
-  if (mountainTips) {
+  if (displayedMountainTips && hasGuideContent(displayedMountainTips)) {
     return (
       <View style={styles.screen}>
         <TipsAndTricks
-          mountainTips={mountainTips}
+          mountainTips={displayedMountainTips}
           unreadAlertKeys={unreadAlertKeys}
           onAlertViewed={handleAlertViewed}
           onBack={goBack}
@@ -148,6 +183,12 @@ export default function TipsAndTricksScreen() {
     );
   }
 
+  if (tipsLoading) {
+    return <EmptyState mountainName={mountainName} title="Loading mountain guide" description="Loading official tips and information…" onBack={goBack} />;
+  }
+  if (tipsError) {
+    return <EmptyState mountainName={mountainName} title="Couldn’t load mountain guide" description={tipsError} onBack={goBack} />;
+  }
   return <EmptyState mountainName={mountainName} onBack={goBack} />;
 }
 

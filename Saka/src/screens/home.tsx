@@ -42,8 +42,9 @@ import {
 import { mountainService, Mountain } from '../services/mountainService';
 import { persistProfileAvatarLocally } from '../services/profileAvatarService';
 import { MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
-import { MOUNTAIN_TIPS } from '../data/mountainTips';
 import { getUnreadMountainAlertCounts } from '../services/mountainAlertReadService';
+import { managerService } from '../services/managerService';
+import type { MountainTips } from '../data/mountainTips';
 import {
   ACCENT_GOLD,
   BG_CARD,
@@ -402,6 +403,7 @@ function HomeContent() {
   const reduceMotion = useReduceMotion();
   const [eventCounts, setEventCounts] = useState<Record<string, number>>({});
   const [alertCounts, setAlertCounts] = useState<Record<string, number>>({});
+  const [mountainTips, setMountainTips] = useState<MountainTips[]>([]);
   const [profileCardVisible, setProfileCardVisible] = useState(returnToProfile === 'true');
   const profileImage = profile?.avatar_url ?? null;
   const [mountains, setMountains] = useState<Mountain[]>(() => mountainService.getCachedMountains());
@@ -498,15 +500,20 @@ function HomeContent() {
       setFocused(true);
       let active = true;
       if (user) {
-        void getUnreadMountainAlertCounts(user.id, MOUNTAIN_TIPS)
-          .then((counts) => {
-            if (active) setAlertCounts(counts);
+        setMountainTips([]);
+        setAlertCounts({});
+        void managerService.fetchAllTips()
+          .then((tips) => {
+            if (active) setMountainTips(tips);
+            return getUnreadMountainAlertCounts(user.id, tips);
           })
+          .then((counts) => { if (active) setAlertCounts(counts); })
           .catch((error) => {
             console.warn('[Home] Failed to load unread mountain alerts:', error);
           });
       } else {
         setAlertCounts({});
+        setMountainTips([]);
       }
       return () => {
         active = false;
@@ -733,7 +740,7 @@ function HomeContent() {
           const shouldMountVideo = focused && distance < VIDEO_WINDOW;
           const isActive = focused && index === activeIndex;
           const normalizedMountainName = mountain.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const tips = MOUNTAIN_TIPS.find((item) =>
+          const tips = mountainTips.find((item) =>
             item.id === mountain.id
             || item.mountainName.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedMountainName
           );
@@ -805,6 +812,18 @@ function HomeContent() {
               accessibilityLabel="Back to admin dashboard"
             >
               <Ionicons name="grid-outline" size={20} color="#C9A96E" />
+            </TouchableOpacity>
+          )}
+
+          {profile?.role === 'manager' && (
+            <TouchableOpacity
+              onPress={() => router.push('/manager/Manager')}
+              style={styles.chatButton}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Open mountain manager dashboard"
+            >
+              <Ionicons name="trail-sign-outline" size={20} color="#C9A96E" />
             </TouchableOpacity>
           )}
 
