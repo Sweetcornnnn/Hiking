@@ -22,7 +22,7 @@ import Toast, { ToastHandle } from '../components/Toast';
 import { dateInRange, effectiveEnd, formatRangeShort } from '../utils/dateRange';
 import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
-import { HikeCardFace, getCardShell, CARD_VARIANT } from '../components/HikeCardFace';
+import { HikeCardFace, getCardShell, getHikeAge, CARD_VARIANT } from '../components/HikeCardFace';
 
 const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
 
@@ -216,7 +216,7 @@ const HikeCard = React.memo(function HikeCard({
     if (canEdit) onEdit(hike);
   };
 
-  const shell = getCardShell(CARD_VARIANT, canEdit);
+  const shell = getCardShell(CARD_VARIANT, canEdit, getHikeAge(hike.date, hike.end_date));
   const wipeWidth = fillAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, cardWidth],
@@ -287,6 +287,8 @@ const HikeCard = React.memo(function HikeCard({
           timePrimary={timePrimary}
           timeSecondary={timeSecondary}
           dateText={formatRangeShort(hike.date, hike.end_date)}
+          hikeDate={hike.date}
+          endDate={hike.end_date}
           group={hike.tagalongs}
           weather={
             weather
