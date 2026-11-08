@@ -39,6 +39,16 @@ const SIDE_BY_SIDE_MIN_WIDTH = 640;
 const PANEL_GAP = 48; // room between the permit and the details (also clears the tilt + shadow)
 const CAPTION_GAP = 34; // stacked layout: clears the paper's shadow and tilted corners
 const RIP_DROP = 0.18; // stacked layout: how far (x card height) the pile reaches below the card
+// Moves ONLY where the ripped pile ENDS UP. The permit still starts and tears at its normal spot,
+// then the pile settles here as the halves drop. Positive x = right, positive y = down.
+const RIPPED_PERMIT_OFFSET = { x: 0, y: -30 };
+const OVERLAP = 1; // px the left half tucks under the right one, so no hairline shows along the fold
+
+/* ---- tuning ---- */
+// How the two torn halves settle into the pile.
+// Lower stiffness = slower. Lower damping = more bounce. (Old values felt like ~0.3s, this is ~1s.)
+const RIP_SPRING = { stiffness: 24, damping: 7.5, mass: 1 };
+const CAPTION_AFTER_RIP = 900; // ms after the halves let go before the text fades in
 
 export type PermitMode = 'approved' | 'cancelled';
 
@@ -100,16 +110,164 @@ const safeVibrate = (pattern: number | number[]) => {
   }
 };
 
+/* ===================== stamp timeline (one native clock) ===================== */
+/*
+ * The whole stamp (lift, hover, slam, paper dip, ring-out, ink rings, flecks) used to be a
+ * chain of separate Animated.sequence / .start() callbacks. Each hand-off goes through the
+ * JS thread, so the impact effects started a few frames AFTER the stamp landed = choppy.
+ *
+ * Now it is ONE linear 0 -> 1 timing running natively. Every moving part is a pre-sampled
+ * curve (one keyframe per frame) of that single clock, so nothing waits on JS mid-slam.
+ */
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
+const easeInCubic = (x: number) => x * x * x;
+const easeOutQuad = (x: number) => 1 - (1 - x) * (1 - x);
+const smooth = (x: number) => x * x * (3 - 2 * x);
+
+// RN's tension/friction -> real spring numbers, so the curves match the old Animated.spring feel
+const origami = (tension: number, friction: number) => ({
+  stiffness: (tension - 30) * 3.62 + 194,
+  damping: (friction - 8) * 3 + 25,
+});
+
+/** Where a spring released from `x0` (at rest) is after `ms`, relative to its target (0). */
+const springDisp = (ms: number, cfg: { stiffness: number; damping: number }, x0: number) => {
+  const t = ms / 1000;
+  const w0 = Math.sqrt(cfg.stiffness);
+  const z = cfg.damping / (2 * w0);
+  if (z >= 1) return x0 * Math.exp(-w0 * t) * (1 + w0 * t);
+  const wd = w0 * Math.sqrt(1 - z * z);
+  return x0 * Math.exp(-z * w0 * t) * (Math.cos(wd * t) + ((z * w0) / wd) * Math.sin(wd * t));
+};
+
+const STAMP_STEP = 16; // ms between keyframes (about one frame)
+const STAMP_LIFT_END = 256; // stamp rises and hovers...
+const STAMP_HOLD_END = 384; // ...holds a beat...
+const STAMP_IMPACT = 544; // ...then slams down (160 ms)
+const STAMP_TOTAL = 1264; // everything has finished ringing out
+
+const PRESS_SPRING = origami(180, 7);
+const SHAKE_SPRING = origami(260, 4.2);
+const SQUASH_SPRING = origami(200, 5);
+
+const sinceImpact = (ms: number) => Math.max(0, ms - STAMP_IMPACT);
+
+/** 0 held high -> 0.35 hovering -> 1 slammed */
+const liftAt = (ms: number) => {
+  if (ms <= STAMP_LIFT_END) return 0.35 * easeOutCubic(ms / STAMP_LIFT_END);
+  if (ms <= STAMP_HOLD_END) return 0.35;
+  if (ms < STAMP_IMPACT) {
+    return 0.35 + 0.65 * easeInCubic((ms - STAMP_HOLD_END) / (STAMP_IMPACT - STAMP_HOLD_END));
+  }
+  return 1;
+};
+const lerp3 = (v: number, a: number, b: number, c: number) =>
+  v <= 0.35 ? a + (b - a) * (v / 0.35) : b + (c - b) * ((v - 0.35) / 0.65);
+
+const stampOpacityAt = (ms: number) => {
+  // never exactly 0, so the stamp is already drawn (logo decoded) before it becomes visible
+  if (ms <= STAMP_LIFT_END) return Math.max(0.003, 0.6 * smooth(ms / STAMP_LIFT_END));
+  if (ms <= STAMP_HOLD_END) return 0.6;
+  return 0.6 + 0.34 * smooth(clamp01((ms - STAMP_HOLD_END) / 96));
+};
+const squashAt = (ms: number) =>
+  ms <= STAMP_IMPACT ? 1 : 1 + springDisp(sinceImpact(ms), SQUASH_SPRING, -0.1);
+const pressAt = (ms: number) => {
+  if (ms <= STAMP_IMPACT) return 0;
+  const t = sinceImpact(ms);
+  return t <= 48 ? easeOutQuad(t / 48) : springDisp(t - 48, PRESS_SPRING, 1);
+};
+const shakeAt = (ms: number) => (ms <= STAMP_IMPACT ? 0 : springDisp(sinceImpact(ms), SHAKE_SPRING, 1));
+const ring1At = (ms: number) => easeOutQuad(clamp01(sinceImpact(ms) / 520));
+const ring2At = (ms: number) => easeOutQuad(clamp01((sinceImpact(ms) - 90) / 620));
+const splatAt = (ms: number) => easeOutCubic(clamp01(sinceImpact(ms) / 560));
+
+const buildStampTracks = (clock: Animated.Value) => {
+  const make = (fn: (ms: number) => number) => {
+    const inputRange: number[] = [];
+    const outputRange: number[] = [];
+    for (let ms = 0; ms <= STAMP_TOTAL; ms += STAMP_STEP) {
+      inputRange.push(ms / STAMP_TOTAL);
+      outputRange.push(fn(ms));
+    }
+    return clock.interpolate({ inputRange, outputRange, extrapolate: 'clamp' });
+  };
+  return {
+    opacity: make(stampOpacityAt),
+    scale: make((ms) => lerp3(liftAt(ms), 2.6, 2.05, 1) * squashAt(ms)),
+    rotate: make((ms) => lerp3(liftAt(ms), -30, -24, -12)).interpolate({
+      inputRange: [-90, 90],
+      outputRange: ['-90deg', '90deg'],
+    }),
+    pressScale: make((ms) => 1 - 0.025 * pressAt(ms)), // paper dips under the stamp
+    shake: make(shakeAt), // the whole permit rings like a struck bell
+    // two ink rings: invisible until the moment of impact
+    ring1Opacity: make((ms) => (ms <= STAMP_IMPACT ? 0 : 0.55 * (1 - ring1At(ms)))),
+    ring1Scale: make((ms) => 1 + 0.7 * ring1At(ms)),
+    ring2Opacity: make((ms) => (ms <= STAMP_IMPACT ? 0 : 0.35 * (1 - ring2At(ms)))),
+    ring2Scale: make((ms) => 1 + 1.2 * ring2At(ms)),
+    splat: make(splatAt), // 0 -> 1 progress of the flung ink flecks
+  };
+};
+
+/* ===================== soft shadow (no native shadow) ===================== */
+/*
+ * Native shadows (shadow* props / elevation) are computed from everything inside the view.
+ * The permit has ~150 child views, so every animated frame re-did that work, and on Android
+ * elevation also re-sorts sibling draw order. This is a stack of faint rounded rects instead:
+ * static, cheap, identical on both platforms. The halves use one-sided versions so a half
+ * never casts a shadow across the fold onto its neighbour.
+ */
+function SoftShadow({
+  W,
+  H,
+  spreadLeft = true,
+  spreadRight = true,
+}: {
+  W: number;
+  H: number;
+  spreadLeft?: boolean;
+  spreadRight?: boolean;
+}) {
+  const LIFT = 10;
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }}>
+      {Array.from({ length: 8 }, (_, i) => {
+        const spread = i * 2.2;
+        return (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: spreadLeft ? -spread : 0,
+              right: spreadRight ? -spread : 0,
+              top: LIFT - spread,
+              bottom: -(LIFT + spread),
+              borderRadius: 6 + spread,
+              backgroundColor: 'rgba(0,0,0,0.05)',
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 /* ============================ stamp ================================ */
 
 function StampMark({
   size,
   ink,
   logoSource,
+  onReady,
 }: {
   size: number;
   ink: string;
   logoSource?: ImageSourcePropType;
+  /** Called once the logo has loaded (immediately when there is no logo file). */
+  onReady?: () => void;
 }) {
   // Little gaps in the ink make it read as a real rubber stamp
   const specks = useMemo(() => {
@@ -124,6 +282,12 @@ function StampMark({
 
   const logoSize = size * 1.34;
   const inner = size - 14;
+
+  // no logo file to wait for -> the text fallback is ready straight away
+  useEffect(() => {
+    if (!logoSource) onReady?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <View style={{ width: size, height: size }}>
@@ -160,6 +324,9 @@ function StampMark({
               transform: [{ translateX: -0.9 }, { translateY: -10 }],
             }}
             resizeMode="contain"
+            fadeDuration={0} // Android fades images in over 300ms by default: the logo would pop in mid-slam
+            onLoad={onReady}
+            onError={onReady}
           />
         ) : (
           <Text style={{ color: ink, fontWeight: '900', fontSize: size * 0.24, letterSpacing: 2 }}>
@@ -334,7 +501,11 @@ function PermitFace({
   stamp?: React.ReactNode;
 }) {
   return (
-    <View style={[styles.face, { width: W, height: H }]}>
+    <View
+      style={[styles.face, { width: W, height: H }]}
+      renderToHardwareTextureAndroid
+      shouldRasterizeIOS
+    >
       <View style={styles.faceFrame} pointerEvents="none" />
       <PaperTexture W={W} H={H} />
 
@@ -373,13 +544,14 @@ function Teeth({
 }: {
   H: number;
   side: 'left' | 'right';
-  opacity: Animated.Value;
+  /** One fade for the whole edge: it is ragged from the very first pull, never a clean cut. */
+  opacity: ReturnType<Animated.Value['interpolate']>;
 }) {
   const teeth = useMemo(() => {
     const rnd = seeded(side === 'left' ? 5 : 23);
-    const out: { y: number; s: number }[] = [];
+    const out: { y: number; s: number; fibre: number; fa: number; fy: number }[] = [];
     for (let y = side === 'left' ? 4 : 0; y < H; y += 9) {
-      out.push({ y, s: 6 + rnd() * 6 });
+      out.push({ y, s: 6 + rnd() * 6, fibre: 3 + rnd() * 5, fa: (rnd() - 0.5) * 50, fy: rnd() * 6 });
     }
     return out;
   }, [H, side]);
@@ -387,21 +559,34 @@ function Teeth({
   return (
     <Animated.View
       pointerEvents="none"
-      style={[styles.teeth, side === 'right' ? { right: -5 } : { left: -5 }, { opacity }]}
+      style={[styles.teeth, side === 'right' ? { right: -5 + OVERLAP } : { left: -5 }, { opacity }]}
     >
       {teeth.map((t, i) => (
-        <View
-          key={i}
-          style={{
-            position: 'absolute',
-            left: 5 - t.s / 2,
-            top: t.y - t.s / 2,
-            width: t.s,
-            height: t.s,
-            backgroundColor: PAPER,
-            transform: [{ rotate: '45deg' }],
-          }}
-        />
+        <React.Fragment key={i}>
+          <View
+            style={{
+              position: 'absolute',
+              left: 5 - t.s / 2,
+              top: t.y - t.s / 2,
+              width: t.s,
+              height: t.s,
+              backgroundColor: PAPER,
+              transform: [{ rotate: '45deg' }],
+            }}
+          />
+          {/* a loose fibre of the paper's pale core, pulled out of the tear */}
+          <View
+            style={{
+              position: 'absolute',
+              left: side === 'right' ? 5 : 5 - t.fibre,
+              top: t.y + t.fy - 3,
+              width: t.fibre,
+              height: 0.8,
+              backgroundColor: 'rgba(255,252,240,0.85)',
+              transform: [{ rotate: `${t.fa}deg` }],
+            }}
+          />
+        </React.Fragment>
       ))}
     </Animated.View>
   );
@@ -500,7 +685,7 @@ interface HikePermitModalProps {
   onDone: () => void;
 }
 
-export function HikePermitModal({
+function HikePermitModalImpl({
   visible,
   mode,
   details,
@@ -517,6 +702,7 @@ export function HikePermitModal({
   // only when the details panel would otherwise get too narrow to read.
   let W = Math.min(width - 48, 380);
   if (sideBySide) W = Math.min(W, Math.max(260, width - 48 - PANEL_GAP - 220));
+  W = Math.floor(W / 2) * 2; // even, so the two halves meet on a whole pixel
   const H = Math.round(Math.max(170, Math.min(W * 0.58, height - 130)));
   const rowW = Math.min(width - 48, W * 2 + PANEL_GAP);
   const infoW = rowW - W - PANEL_GAP;
@@ -525,19 +711,16 @@ export function HikePermitModal({
 
   // Animation values
   const enter = useRef(new Animated.Value(0)).current; // permit drops in (spring, overshoots)
-  const press = useRef(new Animated.Value(0)).current; // paper dips under the stamp
   const tense = useRef(new Animated.Value(0)).current; // cancel: paper tightens before it tears
-  const stampLift = useRef(new Animated.Value(0)).current; // 0 held high -> 0.35 hovering -> 1 slammed
-  const stampOpacity = useRef(new Animated.Value(0)).current;
-  const stampSquash = useRef(new Animated.Value(1)).current; // squash + rebound on impact
-  const bloom = useRef(new Animated.Value(0)).current;
-  const bloom2 = useRef(new Animated.Value(0)).current;
-  const splat = useRef(new Animated.Value(0)).current;
+  // approved: the stamp runs on ONE native clock; lift, slam, dip, rings and flecks are curves of it
+  const stampT = useRef(new Animated.Value(0)).current;
+  const stamp = useMemo(() => buildStampTracks(stampT), [stampT]);
+  const logoReady = useRef(!logoSource); // the stamp waits (briefly) for the logo to be decoded
   const shake = useRef(new Animated.Value(0)).current;
   const wiggle = useRef(new Animated.Value(0)).current;
-  const rip = useRef(new Animated.Value(0)).current;
+  const tear = useRef(new Animated.Value(0)).current; // cancel: how far the tear has travelled down the fold
+  const rip = useRef(new Animated.Value(0)).current; // cancel: the halves part and drop into a pile
   const bits = useRef(new Animated.Value(0)).current;
-  const teethOpacity = useRef(new Animated.Value(0)).current;
   const caption = useRef(new Animated.Value(0)).current;
 
   // Ink flecks thrown off by the stamp
@@ -550,18 +733,22 @@ export function HikePermitModal({
     }));
   }, []);
 
-  // Scraps of paper that fall out of the tear
+  // Scraps of paper that fall out of the tear, each one as the tear passes its height
   const bitSpecs = useMemo(() => {
     const rnd = seeded(41);
-    return Array.from({ length: 14 }, () => ({
-      x: W / 2 + (rnd() - 0.5) * 16,
-      y: rnd() * H,
-      s: 3 + rnd() * 4,
-      fall: 50 + rnd() * 100,
-      drift: (rnd() - 0.5) * 60,
-      rot: (rnd() - 0.5) * 540,
-      edge: rnd() > 0.5,
-    }));
+    return Array.from({ length: 18 }, () => {
+      const y = rnd() * H;
+      return {
+        x: W / 2 + (rnd() - 0.5) * 16,
+        y,
+        start: (y / H) * 0.6, // where on the 0 -> 1 fall timeline this scrap lets go
+        s: 3 + rnd() * 4,
+        fall: 50 + rnd() * 100,
+        drift: (rnd() - 0.5) * 60,
+        rot: (rnd() - 0.5) * 540,
+        edge: rnd() > 0.5,
+      };
+    });
   }, [W, H]);
 
   const onDoneRef = useRef(onDone);
@@ -588,93 +775,94 @@ export function HikePermitModal({
     }, 60);
 
     if (mode === 'approved') {
-      later(() => {
-        // Stamp: lifts and hovers, holds a beat, then slams
-        Animated.sequence([
-          Animated.parallel([
-            Animated.timing(stampLift, {
-              toValue: 0.35,
-              duration: 240,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(stampOpacity, { toValue: 0.6, duration: 240, useNativeDriver: true }),
-          ]),
-          Animated.delay(110),
-          Animated.parallel([
-            Animated.timing(stampLift, {
-              toValue: 1,
-              duration: 130,
-              easing: Easing.in(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(stampOpacity, { toValue: 0.94, duration: 90, useNativeDriver: true }),
-          ]),
-        ]).start(({ finished }) => {
-          if (!finished) return;
-          // IMPACT
-          safeVibrate([0, 40, 25, 12]);
-          // paper dips under the stamp, then springs back
-          Animated.sequence([
-            Animated.timing(press, { toValue: 1, duration: 55, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-            Animated.spring(press, { toValue: 0, tension: 180, friction: 7, useNativeDriver: true }),
-          ]).start();
-          // the whole permit rings like a struck bell: damped oscillation
-          shake.setValue(1);
-          Animated.spring(shake, { toValue: 0, tension: 260, friction: 4.2, useNativeDriver: true }).start();
-          // stamp squashes flat, then rebounds
-          stampSquash.setValue(0.9);
-          Animated.spring(stampSquash, { toValue: 1, tension: 200, friction: 5, useNativeDriver: true }).start();
-          // two ink rings and a spray of flecks
-          Animated.timing(bloom, { toValue: 1, duration: 520, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
-          Animated.sequence([
-            Animated.delay(90),
-            Animated.timing(bloom2, { toValue: 1, duration: 620, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-          ]).start();
-          Animated.timing(splat, { toValue: 1, duration: 560, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-          later(showCaption, 180);
-          scheduleClose();
-        });
-      }, 820);
+      const runStamp = () => {
+        Animated.timing(stampT, {
+          toValue: 1,
+          duration: STAMP_TOTAL,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }).start();
+        // haptics + caption only need to land roughly on the impact; the visuals are already scheduled natively
+        later(() => safeVibrate([0, 40, 25, 12]), STAMP_IMPACT);
+        later(showCaption, STAMP_IMPACT + 180);
+        later(scheduleClose, STAMP_IMPACT);
+      };
+      // never slam an undecoded logo: wait for it (max ~0.7s more), so it does not pop in mid-flight
+      let waited = 0;
+      const tryStart = () => {
+        if (logoReady.current || waited >= 700) {
+          runStamp();
+          return;
+        }
+        waited += 50;
+        later(tryStart, 50);
+      };
+      later(tryStart, 820);
     } else {
       later(() => {
-        // Anticipation: the paper tightens and trembles harder and harder
+        // 1. Anticipation: the paper tightens and trembles harder and harder
         safeVibrate(18);
-        teethOpacity.setValue(1);
-        const amp = [0.3, -0.45, 0.6, -0.8, 0.95, -1, 0.7, 0];
+        const amp = [0.3, -0.45, 0.6, -0.8, 0.95, -1, 0.7, -0.5, 0];
         Animated.parallel([
-          Animated.timing(tense, { toValue: 1, duration: 420, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+          Animated.timing(tense, { toValue: 1, duration: 720, easing: Easing.out(Easing.quad), useNativeDriver: true }),
           Animated.sequence(
-            amp.map((v) => Animated.timing(shake, { toValue: v, duration: 50, useNativeDriver: true }))
+            amp.map((v) => Animated.timing(shake, { toValue: v, duration: 80, useNativeDriver: true }))
           ),
           Animated.sequence(
-            amp.map((v) => Animated.timing(wiggle, { toValue: v, duration: 50, useNativeDriver: true }))
+            amp.map((v) => Animated.timing(wiggle, { toValue: v, duration: 80, useNativeDriver: true }))
           ),
         ]).start(({ finished }) => {
           if (!finished) return;
-          // TEAR: splits a little (resistance), a beat, then the halves slide together into a pile
-          safeVibrate([0, 30, 35, 45]);
-          Animated.parallel([
-            Animated.sequence([
-              Animated.timing(rip, { toValue: 0.3, duration: 200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-              Animated.delay(40),
-              Animated.spring(rip, { toValue: 1, tension: 70, friction: 9, useNativeDriver: true }),
-            ]),
-            Animated.timing(tense, { toValue: 0, duration: 200, useNativeDriver: true }),
-            Animated.timing(bits, { toValue: 1, duration: 1000, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-          ]).start();
-          later(showCaption, 560);
-          scheduleClose();
+
+          // 2. The tear travels down the fold in three pulls. It starts reluctantly, the hand
+          //    regrips, it rips steadily, regrips again, then the last fibres give way.
+          const jerk = (strength: number) => {
+            shake.setValue(strength);
+            Animated.spring(shake, { toValue: 0, tension: 240, friction: 5, useNativeDriver: true }).start();
+          };
+          safeVibrate([0, 22]);
+          jerk(0.5);
+          // scraps start falling as the tear reaches them
+          Animated.timing(bits, {
+            toValue: 1,
+            duration: 2500,
+            easing: Easing.in(Easing.quad),
+            useNativeDriver: true,
+          }).start();
+          later(() => {
+            safeVibrate([0, 20]);
+            jerk(0.7);
+          }, 660);
+          later(() => {
+            safeVibrate([0, 16, 24, 16]);
+            jerk(0.9);
+          }, 1420);
+
+          Animated.sequence([
+            Animated.timing(tear, { toValue: 0.2, duration: 520, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+            Animated.delay(140),
+            Animated.timing(tear, { toValue: 0.58, duration: 680, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+            Animated.delay(80),
+            Animated.timing(tear, { toValue: 1, duration: 460, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+          ]).start(({ finished: torn }) => {
+            if (!torn) return;
+
+            // 3. The last fibres snap and the halves drop onto the table, settling slowly
+            safeVibrate([0, 35, 40, 55]);
+            Animated.parallel([
+              Animated.spring(rip, { toValue: 1, ...RIP_SPRING, useNativeDriver: true }),
+              Animated.timing(tense, { toValue: 0, duration: 700, useNativeDriver: true }),
+            ]).start();
+            later(showCaption, CAPTION_AFTER_RIP);
+            scheduleClose();
+          });
         });
-      }, 1000);
+      }, 1100);
     }
 
     return () => {
       timers.forEach(clearTimeout);
-      [
-        enter, press, tense, stampLift, stampOpacity, stampSquash, bloom, bloom2,
-        splat, shake, wiggle, rip, bits, teethOpacity, caption,
-      ].forEach((v) => v.stopAnimation());
+      [enter, tense, stampT, shake, wiggle, tear, rip, bits, caption].forEach((v) => v.stopAnimation());
       try {
         Vibration.cancel();
       } catch {
@@ -686,64 +874,87 @@ export function HikePermitModal({
   }, []);
 
   const enterScale = enter.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] });
-  const pressScale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.975] });
+  const pressScale = stamp.pressScale;
   const tenseScale = tense.interpolate({ inputRange: [0, 1], outputRange: [1, 1.03] });
 
   const cardStyle = {
     opacity: enter.interpolate({ inputRange: [0, 0.35], outputRange: [0, 1], extrapolate: 'clamp' as const }),
     transform: [
+      { translateX: rip.interpolate({ inputRange: [0, 1], outputRange: [0, RIPPED_PERMIT_OFFSET.x] }) },
+      { translateY: rip.interpolate({ inputRange: [0, 1], outputRange: [0, RIPPED_PERMIT_OFFSET.y] }) },
       { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [-80, 0] }) },
       { scale: Animated.multiply(Animated.multiply(enterScale, pressScale), tenseScale) },
-      { translateX: shake.interpolate({ inputRange: [-1, 1], outputRange: [-5, 5] }) },
+      { translateX: Animated.add(shake, stamp.shake).interpolate({ inputRange: [-1, 1], outputRange: [-5, 5] }) },
       { rotate: enter.interpolate({ inputRange: [0, 1], outputRange: ['-8deg', TILT] }) },
     ],
   };
 
-  // Ripped halves: a small resisting split first (rip 0 -> 0.3), then they slide together and
-  // settle in a loose pile centred on the permit's own box, so nothing spills into the text panel.
-  // Each half is W/2 wide, so moving by W/4 puts its centre at the middle of the box.
+  // Ripped halves. A real tear opens like a V: both halves stay joined at the bottom of the fold
+  // while the top pulls apart, so each half hinges on the bottom of the fold (W/2, H). When the
+  // tear reaches the bottom they drop and settle into a loose pile in the middle of the box.
   // The right half is last in the tree, so it lands on top.
-  const leftHalf = {
-    transform: [
-      {
-        translateX: rip.interpolate({
-          inputRange: [0, 0.3, 1],
-          outputRange: [0, -W * 0.015, W * 0.25 - W * 0.03],
-        }),
-      },
-      { translateY: rip.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, H * 0.02, H * 0.1] }) },
-      {
-        rotate: Animated.add(
-          Animated.multiply(wiggle, 1.5),
-          rip.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, -2, -9] })
-        ).interpolate({ inputRange: [-60, 60], outputRange: ['-60deg', '60deg'] }),
-      },
-    ],
-  };
-  const rightHalf = {
-    transform: [
-      {
-        translateX: rip.interpolate({
-          inputRange: [0, 0.3, 1],
-          outputRange: [0, W * 0.015, -W * 0.25 + W * 0.025],
-        }),
-      },
-      { translateY: rip.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, H * 0.03, H * 0.07] }) },
-      {
-        rotate: Animated.add(
-          Animated.multiply(wiggle, 1.5),
-          rip.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 2, 6] })
-        ).interpolate({ inputRange: [-60, 60], outputRange: ['-60deg', '60deg'] }),
-      },
-    ],
-  };
+  const HINGE = 15; // degrees the halves open to just before the last fibres give way
+  const LEFT_END = -9; // final tilt of each half in the pile
+  const RIGHT_END = 6;
 
-  // Stamp: big and high -> hovering -> slammed flat, twisting into place as it falls
-  const stampScale = stampLift.interpolate({ inputRange: [0, 0.35, 1], outputRange: [2.6, 2.05, 1] });
-  const stampRotate = stampLift.interpolate({
-    inputRange: [0, 0.35, 1],
-    outputRange: ['-30deg', '-24deg', '-12deg'],
-  });
+  // Where a half ends up if it is turned by `deg` about the hinge: the shift needed so its centre
+  // lands on (cx, cy). Both halves hinge on the card point (W/2, H).
+  const settle = (c0x: number, deg: number, cx: number, cy: number) => {
+    const a = (deg * Math.PI) / 180;
+    const vx = c0x - W / 2;
+    const vy = H / 2 - H;
+    const x = W / 2 + vx * Math.cos(a) - vy * Math.sin(a);
+    const y = H + vx * Math.sin(a) + vy * Math.cos(a);
+    return { x: cx - x, y: cy - y };
+  };
+  const leftEnd = settle(W / 4, LEFT_END, W * 0.47, H * 0.6);
+  const rightEnd = settle((W * 3) / 4, RIGHT_END, W * 0.525, H * 0.57);
+
+  // How wide the V is as the tear travels: slow at first, wider as it gets going
+  const tearAngle = (sign: number) =>
+    tear.interpolate({
+      inputRange: [0, 0.2, 0.58, 1],
+      outputRange: [0, sign * HINGE * 0.27, sign * HINGE * 0.67, sign * HINGE],
+    });
+  const pull = W * 0.02; // each hand drifts outward a little as it pulls
+
+  const half = (side: 'left' | 'right') => {
+    const sign = side === 'left' ? -1 : 1;
+    const end = side === 'left' ? leftEnd : rightEnd;
+    const endDeg = side === 'left' ? LEFT_END : RIGHT_END;
+    const dx = side === 'left' ? W / 4 - OVERLAP / 2 : -W / 4; // from the half's centre to the hinge
+    return {
+      transform: [
+        {
+          translateX: Animated.add(
+            tear.interpolate({ inputRange: [0, 1], outputRange: [0, sign * pull] }),
+            rip.interpolate({ inputRange: [0, 1], outputRange: [0, end.x - sign * pull] })
+          ),
+        },
+        { translateY: rip.interpolate({ inputRange: [0, 1], outputRange: [0, end.y] }) },
+        { translateX: dx },
+        { translateY: H / 2 },
+        {
+          rotate: Animated.add(
+            Animated.add(tearAngle(sign), Animated.multiply(wiggle, 1.2)),
+            rip.interpolate({ inputRange: [0, 1], outputRange: [0, endDeg - sign * HINGE] })
+          ).interpolate({ inputRange: [-60, 60], outputRange: ['-60deg', '60deg'] }),
+        },
+        { translateY: -H / 2 },
+        { translateX: -dx },
+      ],
+    };
+  };
+  const leftHalf = half('left');
+  const rightHalf = half('right');
+
+  const { splat } = stamp;
+
+  // The torn edge is ragged from the very first pull (no clean straight cut ever shows).
+  // Shadows hand over from the whole sheet to the two halves as they come apart.
+  const teethOpacity = tear.interpolate({ inputRange: [0, 0.06], outputRange: [0, 1], extrapolate: 'clamp' });
+  const sheetShadowFade = tear.interpolate({ inputRange: [0, 0.3], outputRange: [1, 0], extrapolate: 'clamp' });
+  const halfShadowFade = tear.interpolate({ inputRange: [0.3, 1], outputRange: [0, 1], extrapolate: 'clamp' });
 
   const staticStamp = (
     <View style={{ opacity: 0.9, transform: [{ rotate: '-12deg' }] }}>
@@ -755,6 +966,7 @@ export function HikePermitModal({
           <Animated.View style={[{ width: W, height: H }, cardStyle]}>
             {approved ? (
               <>
+                <SoftShadow W={W} H={H} />
                 <PermitFace W={W} H={H} details={details} permitNo={permitNo} stampSize={stampSize} />
                 <View
                   pointerEvents="none"
@@ -768,8 +980,8 @@ export function HikePermitModal({
                         borderRadius: stampSize / 2,
                         borderWidth: 2.5,
                         borderColor: inkColor,
-                        opacity: bloom.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
-                        transform: [{ scale: bloom.interpolate({ inputRange: [0, 1], outputRange: [1, 1.7] }) }],
+                        opacity: stamp.ring1Opacity,
+                        transform: [{ scale: stamp.ring1Scale }],
                       },
                     ]}
                   />
@@ -780,8 +992,8 @@ export function HikePermitModal({
                         borderRadius: stampSize / 2,
                         borderWidth: 1.5,
                         borderColor: inkColor,
-                        opacity: bloom2.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }),
-                        transform: [{ scale: bloom2.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] }) }],
+                        opacity: stamp.ring2Opacity,
+                        transform: [{ scale: stamp.ring2Scale }],
                       },
                     ]}
                   />
@@ -821,18 +1033,35 @@ export function HikePermitModal({
                   })}
                   <Animated.View
                     style={{
-                      opacity: stampOpacity,
-                      transform: [{ rotate: stampRotate }, { scale: Animated.multiply(stampScale, stampSquash) }],
+                      opacity: stamp.opacity,
+                      transform: [{ rotate: stamp.rotate }, { scale: stamp.scale }],
                     }}
                   >
-                    <StampMark size={stampSize} ink={inkColor} logoSource={logoSource} />
+                    <StampMark
+                      size={stampSize}
+                      ink={inkColor}
+                      logoSource={logoSource}
+                      onReady={() => {
+                        logoReady.current = true;
+                      }}
+                    />
                   </Animated.View>
                 </View>
               </>
             ) : (
               <>
-                <Animated.View style={[styles.half, { left: 0, width: W / 2, height: H }, leftHalf]}>
-                  <View style={{ width: W / 2, height: H, overflow: 'hidden' }}>
+                {/* whole-sheet shadow: fades out as the halves come apart */}
+                <Animated.View
+                  pointerEvents="none"
+                  style={[StyleSheet.absoluteFill, { opacity: sheetShadowFade }]}
+                >
+                  <SoftShadow W={W} H={H} />
+                </Animated.View>
+                <Animated.View style={[styles.half, { left: 0, width: W / 2 + OVERLAP, height: H }, leftHalf]}>
+                  <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: halfShadowFade }]}>
+                    <SoftShadow W={W / 2 + OVERLAP} H={H} spreadRight={false} />
+                  </Animated.View>
+                  <View style={{ width: W / 2 + OVERLAP, height: H, overflow: 'hidden' }}>
                     <PermitFace
                       W={W}
                       H={H}
@@ -845,6 +1074,9 @@ export function HikePermitModal({
                   <Teeth H={H} side="right" opacity={teethOpacity} />
                 </Animated.View>
                 <Animated.View style={[styles.half, { left: W / 2, width: W / 2, height: H }, rightHalf]}>
+                  <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: halfShadowFade }]}>
+                    <SoftShadow W={W / 2} H={H} spreadLeft={false} />
+                  </Animated.View>
                   <View style={{ width: W / 2, height: H, overflow: 'hidden' }}>
                     <View style={{ marginLeft: -W / 2 }}>
                       <PermitFace
@@ -871,11 +1103,29 @@ export function HikePermitModal({
                         width: b.s,
                         height: b.s * 0.7,
                         backgroundColor: b.edge ? PAPER_EDGE : PAPER,
-                        opacity: bits.interpolate({ inputRange: [0, 0.08, 0.7, 1], outputRange: [0, 1, 0.9, 0] }),
+                        opacity: bits.interpolate({
+                          inputRange: [0, b.start, b.start + 0.03, 0.85, 1],
+                          outputRange: [0, 0, 1, 0.9, 0],
+                        }),
                         transform: [
-                          { translateX: bits.interpolate({ inputRange: [0, 1], outputRange: [0, b.drift] }) },
-                          { translateY: bits.interpolate({ inputRange: [0, 1], outputRange: [0, b.fall] }) },
-                          { rotate: bits.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${b.rot}deg`] }) },
+                          {
+                            translateX: bits.interpolate({
+                              inputRange: [0, b.start, 1],
+                              outputRange: [0, 0, b.drift],
+                            }),
+                          },
+                          {
+                            translateY: bits.interpolate({
+                              inputRange: [0, b.start, 1],
+                              outputRange: [0, 0, b.fall],
+                            }),
+                          },
+                          {
+                            rotate: bits.interpolate({
+                              inputRange: [0, b.start, 1],
+                              outputRange: ['0deg', '0deg', `${b.rot}deg`],
+                            }),
+                          },
                         ],
                       }}
                     />
@@ -949,6 +1199,9 @@ export function HikePermitModal({
   );
 }
 
+// memo: a parent re-render while the animation runs must not rebuild the animated nodes mid-flight
+export const HikePermitModal = React.memo(HikePermitModalImpl);
+
 /* ============================ hook ================================= */
 
 /**
@@ -1008,11 +1261,6 @@ const styles = StyleSheet.create({
     borderColor: PAPER_EDGE,
     paddingHorizontal: 16,
     paddingTop: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.38,
-    shadowRadius: 14,
-    elevation: 10,
   },
   edgeWear: {
     ...StyleSheet.absoluteFillObject,
@@ -1117,16 +1365,10 @@ const styles = StyleSheet.create({
   },
 
   /* ripped halves */
+  // no background / radius / shadow here: the clipped face supplies the paper, so the fold has no notch or shadow seam
   half: {
     position: 'absolute',
     top: 0,
-    borderRadius: 6,
-    backgroundColor: PAPER,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.38,
-    shadowRadius: 14,
-    elevation: 10,
   },
   teeth: {
     position: 'absolute',
