@@ -109,7 +109,7 @@ export type Tables = {
     name?: string | null;
     full_name?: string | null;
     is_admin?: boolean | null;
-    role?: 'hiker' | 'organization' | 'admin' | null;
+    role?: 'hiker' | 'organization' | 'admin' | 'manager' | null;
     organization_id?: string | null;
     is_verified?: boolean | null;
     avatar_url?: string | null;
@@ -148,7 +148,6 @@ export type Tables = {
     operating_hours: string;
     latitude: number;
     longitude: number;
-    image_url: string;
     created_at: string;
   };
   species: {

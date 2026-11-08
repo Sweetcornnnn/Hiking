@@ -18,7 +18,7 @@ interface Profile {
   full_name: string;
   contact_number: string | null;
   is_admin: boolean;
-  role: 'hiker' | 'organization' | 'admin' | null;
+  role: 'hiker' | 'organization' | 'admin' | 'manager' | null;
   organization_id: string | null;
   is_verified: boolean;
   avatar_url: string | null;
@@ -124,7 +124,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email,
         password,
         options: {
-          emailRedirectTo: 'saka://auth/callback',
+          emailRedirectTo: 'saka://auth/callback?flow=signup',
           data: {
             full_name: fullName,
             contact_number: contactNumber || null,
@@ -442,7 +442,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'saka://auth/callback', 
+        redirectTo: 'saka://auth/callback?flow=recovery',
       });
 
       if (error) {
@@ -453,7 +453,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         if (message.toLowerCase().includes('email') || message.toLowerCase().includes('provider')) {
-          throw new Error('Supabase email auth is not configured correctly. Enable Email sign-in and add the redirect URL saka://auth/callback in Supabase Auth settings.');
+          throw new Error('Supabase email auth is not configured correctly. Enable Email sign-in and add saka://auth/callback?flow=recovery to the allowed redirect URLs in Supabase Auth settings.');
         }
 
         throw new Error(message);

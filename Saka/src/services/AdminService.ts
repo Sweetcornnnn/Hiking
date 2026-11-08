@@ -32,7 +32,7 @@ export interface AdminUserRow {
   username: string | null;
   contact_number: string | null;
   is_admin: boolean;
-  role: 'hiker' | 'organization' | 'admin' | null;
+  role: 'hiker' | 'organization' | 'admin' | 'manager' | null;
   organization_id: string | null;
   is_verified: boolean;
   avatar_url: string | null;

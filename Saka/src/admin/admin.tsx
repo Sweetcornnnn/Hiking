@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import {
   FlatList,
+  Pressable,
   View,
   Text,
   TouchableOpacity,
@@ -13,6 +14,7 @@ import {
   Animated,
   Easing,
   Alert,
+  Switch,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +25,7 @@ import { useHikesStore } from '../store/hikesStore';
 import { useHikeSafetyStore } from '../store/hikeSafetyStore';
 import { supabase } from '../lib/supabase';
 import { organizationService } from '../services/organizationService';
+import { mountainService, type Mountain } from '../services/mountainService';
 import type { AdminSafetyRow } from '../services/hikeSafetyService';
 import { hikeSafetyService } from '../services/hikeSafetyService';
 import {
@@ -38,6 +41,7 @@ import {
 } from '../services/AdminService';
 import { formatRangeShort } from '../utils/dateRange';
 import UserLocationModal from './UserLocationModal';
+import AdminModal from './AdminModal';
 import {
   CHAT_BG,
   CHAT_ONLINE,
@@ -59,7 +63,8 @@ type Tab =
   | 'events'
   | 'safety'
   | 'emergencies'
-  | 'moderation';
+  | 'moderation'
+  | 'managerChanges';
 
 const TABS: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: 'overview', label: 'Overview', icon: 'grid-outline' },
@@ -70,6 +75,7 @@ const TABS: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] =
   { id: 'safety', label: 'Safety', icon: 'shield-checkmark-outline' },
   { id: 'emergencies', label: 'Emergencies', icon: 'alert-circle-outline' },
   { id: 'moderation', label: 'Moderation', icon: 'eye-outline' },
+  { id: 'managerChanges', label: 'Manager updates', icon: 'notifications-outline' },
 ];
 
 export default function AdminRoute() {
@@ -97,7 +103,13 @@ export default function AdminRoute() {
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [userSearch, setUserSearch] = useState('');
-  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'hiker' | 'organization' | 'admin'>('all');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'hiker' | 'organization' | 'admin' | 'manager'>('all');
+  const [managerModalVisible, setManagerModalVisible] = useState(false);
+  const [managerTarget, setManagerTarget] = useState<AdminUserRow | null>(null);
+  const [managerEnabled, setManagerEnabled] = useState(false);
+  const [managerMountains, setManagerMountains] = useState<Mountain[]>([]);
+  const [managerMountainIds, setManagerMountainIds] = useState<Set<string>>(new Set());
+  const [managerSaving, setManagerSaving] = useState(false);
 
   const [orgs, setOrgs] = useState<AdminOrgRow[]>([]);
   const [orgsLoading, setOrgsLoading] = useState(false);
@@ -120,6 +132,17 @@ export default function AdminRoute() {
   const [journal, setJournal] = useState<AdminJournalRow[]>([]);
   const [journalLoading, setJournalLoading] = useState(false);
   const [journalPublicOnly, setJournalPublicOnly] = useState(true);
+  const [managerChanges, setManagerChanges] = useState<Array<{
+    id: string;
+    manager_id: string | null;
+    mountain_id: string | null;
+    action: string;
+    entity: string;
+    entity_id: string | null;
+    summary: string;
+    created_at: string;
+    read_at: string | null;
+  }>>([]);
   const [discoveries, setDiscoveries] = useState<AdminDiscoveryRow[]>([]);
   const [discoveriesLoading, setDiscoveriesLoading] = useState(false);
   const [moderationTab, setModerationTab] = useState<'journal' | 'discoveries'>('journal');
@@ -211,12 +234,50 @@ export default function AdminRoute() {
   };
   const fetchJournal = async () => { setJournalLoading(true); try { setJournal(await adminService.fetchAdminJournal(journalPublicOnly)); } finally { setJournalLoading(false); } };
   const fetchDiscoveries = async () => { setDiscoveriesLoading(true); try { setDiscoveries(await adminService.fetchAdminDiscoveries()); } finally { setDiscoveriesLoading(false); } };
+  const fetchManagerChanges = async () => {
+    const { data, error } = await supabase
+      .from('manager_change_notifications')
+      .select('id, manager_id, mountain_id, action, entity, entity_id, summary, created_at, read_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) { showToast('error', 'Notification Load Failed', error.message); return; }
+    setManagerChanges(data ?? []);
+  };
+  const markManagerChangeRead = async (id: string) => {
+    const readAt = new Date().toISOString();
+    const { error } = await supabase
+      .from('manager_change_notifications')
+      .update({ read_at: readAt })
+      .eq('id', id);
+    if (error) { showToast('error', 'Unable to mark notification read', error.message); return; }
+    setManagerChanges((rows) => rows.map((row) => row.id === id ? { ...row, read_at: readAt } : row));
+  };
 
   useEffect(() => {
     if (!profile?.is_admin) { router.replace('/Home'); return; }
     fetchStats();
     fetchAllHikes();
   }, [profile?.is_admin]);
+
+  useEffect(() => {
+    if (!profile?.is_admin || !user?.id) return;
+    const channel = supabase
+      .channel(`manager-updates-${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'manager_change_notifications',
+      }, (payload) => {
+        const change = payload.new as typeof managerChanges[number];
+        setManagerChanges((current) => [change, ...current.filter((item) => item.id !== change.id)].slice(0, 100));
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[Admin] Manager update subscription failed:', status);
+        }
+      });
+    return () => { void supabase.removeChannel(channel); };
+  }, [profile?.is_admin, user?.id]);
 
   useEffect(() => {
     if (activeTab === 'overview') fetchStats();
@@ -226,6 +287,7 @@ export default function AdminRoute() {
     else if (activeTab === 'safety') loadAdminSafety();
     else if (activeTab === 'emergencies') { fetchSos(); fetchEmergencyContacts(); }
     else if (activeTab === 'moderation') { if (moderationTab === 'journal') fetchJournal(); else fetchDiscoveries(); }
+    else if (activeTab === 'managerChanges') fetchManagerChanges();
   }, [activeTab, moderationTab, journalPublicOnly]);
 
   const refreshCurrentTab = () => {
@@ -237,13 +299,58 @@ export default function AdminRoute() {
     else if (activeTab === 'safety') loadAdminSafety();
     else if (activeTab === 'emergencies') { fetchSos(); fetchEmergencyContacts(); }
     else if (activeTab === 'moderation') { if (moderationTab === 'journal') fetchJournal(); else fetchDiscoveries(); }
+    else if (activeTab === 'managerChanges') fetchManagerChanges();
   };
 
   // Actions (same as previous Admin)
   const updateUserAdmin = async (userId: string, isAdmin: boolean) => {
-    const { error } = await supabase.from('profiles').update({ is_admin: isAdmin, updated_at: new Date().toISOString() }).eq('id', userId);
+    const { error } = await supabase.from('profiles').update({
+      is_admin: isAdmin,
+      role: isAdmin ? 'admin' : 'hiker',
+      updated_at: new Date().toISOString(),
+    }).eq('id', userId);
     if (error) { showToast('error', 'Update Failed', error.message); return; }
+    const { error: assignmentError } = await supabase
+      .from('mountain_manager_assignments')
+      .delete()
+      .eq('manager_id', userId);
+    if (assignmentError) { showToast('error', 'Assignments Not Cleared', assignmentError.message); return; }
     showToast('success', 'Admin Updated', `Privileges have been ${isAdmin ? 'granted' : 'removed'}.`);
+    fetchUsers();
+  };
+  const openManagerAssignments = async (target: AdminUserRow) => {
+    if (target.id === user?.id) {
+      showToast('warning', 'Not Allowed', 'You cannot change your own manager role.');
+      return;
+    }
+    try {
+      const [mountains, assignments] = await Promise.all([
+        mountainService.fetchMountains(true),
+        supabase.from('mountain_manager_assignments').select('mountain_id').eq('manager_id', target.id),
+      ]);
+      if (assignments.error) throw new Error(assignments.error.message);
+      setManagerTarget(target);
+      setManagerEnabled(target.role === 'manager');
+      setManagerMountains(mountains);
+      setManagerMountainIds(new Set((assignments.data ?? []).map((row) => row.mountain_id)));
+      setManagerModalVisible(true);
+    } catch (error) {
+      showToast('error', 'Unable to load mountains', error instanceof Error ? error.message : 'Try again.');
+    }
+  };
+  const saveManagerAssignments = async () => {
+    if (!managerTarget) return;
+    setManagerSaving(true);
+    const { error } = await supabase.rpc('set_mountain_manager', {
+      p_manager_id: managerTarget.id,
+      p_mountain_ids: Array.from(managerMountainIds),
+      p_make_manager: managerEnabled,
+    });
+    setManagerSaving(false);
+    if (error) { showToast('error', 'Manager Update Failed', error.message); return; }
+    setManagerModalVisible(false);
+    setManagerTarget(null);
+    showToast('success', managerEnabled ? 'Manager Updated' : 'Manager Removed', managerEnabled ? 'Mountain access assignments have been saved.' : 'Manager role and mountain assignments were removed.');
     fetchUsers();
   };
   const deleteUser = async (userId: string) => {
@@ -345,6 +452,7 @@ export default function AdminRoute() {
     if (t.id === 'orgs') badge = pendingOrgCount;
     if (t.id === 'safety') badge = activeAlertCount;
     if (t.id === 'emergencies') badge = stats?.sosCount ?? 0;
+    if (t.id === 'managerChanges') badge = managerChanges.filter((change) => !change.read_at).length;
     return (
       <TouchableOpacity
         key={t.id}
@@ -426,25 +534,30 @@ export default function AdminRoute() {
 
   // ── Modals (same look as before, ChatScreen-tinted) ──
   const renderModalShell = (visible: boolean, onClose: () => void, title: string, icon: keyof typeof Ionicons.glyphMap, children: React.ReactNode, footer?: React.ReactNode) => (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent presentationStyle="overFullScreen">
-      <View style={ss.modalOverlay}>
-        <View style={ss.modalCard}>
-          <View style={ss.modalHeader}>
-            <View style={ss.modalTitleRow}>
-              <View style={ss.modalIconWrap}>
-                <Ionicons name={icon} size={13} color={ACCENT_GOLD} />
-              </View>
-              <Text style={ss.modalTitle} numberOfLines={1}>{title}</Text>
+    <AdminModal visible={visible} onClose={onClose}>
+      <View style={ss.modalCard}>
+        <View style={ss.modalHeader}>
+          <View style={ss.modalTitleRow}>
+            <View style={ss.modalIconWrap}>
+              <Ionicons name={icon} size={13} color={ACCENT_GOLD} />
             </View>
-            <TouchableOpacity onPress={onClose} style={ss.modalClose}>
-              <Ionicons name="close" size={13} color={TEXT_MUTED} />
-            </TouchableOpacity>
+            <Text style={ss.modalTitle} numberOfLines={1}>{title}</Text>
           </View>
-          <View style={ss.modalBody}>{children}</View>
-          {footer ? <View style={ss.modalFooter}>{footer}</View> : null}
+          <TouchableOpacity onPress={onClose} style={ss.modalClose}>
+            <Ionicons name="close" size={13} color={TEXT_MUTED} />
+          </TouchableOpacity>
         </View>
+        <ScrollView
+          style={ss.modalBodyScroll}
+          contentContainerStyle={ss.modalBody}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {children}
+        </ScrollView>
+        {footer ? <View style={ss.modalFooter}>{footer}</View> : null}
       </View>
-    </Modal>
+    </AdminModal>
   );
 
   const renderModalAction = (label: string, onPress: () => void, variant: 'ghost' | 'primary' | 'danger' = 'ghost', icon?: keyof typeof Ionicons.glyphMap) => (
@@ -474,7 +587,110 @@ export default function AdminRoute() {
         onClose={() => setLocationModalVisible(false)}
       />
 
-      {/* Make / remove admin */}
+      {/* Assign / edit mountain manager (compact, same size as the other popups) */}
+      {renderModalShell(
+        managerModalVisible,
+        () => { if (!managerSaving) setManagerModalVisible(false); },
+        managerTarget?.role === 'manager' ? 'Edit mountain manager' : 'Assign mountain manager',
+        'trail-sign-outline',
+        <>
+          <View style={ss.userPill}>
+            <View style={ss.userPillAvatar}>
+              <Text style={ss.userPillAvatarText}>{(managerTarget?.name || managerTarget?.email || '?')[0].toUpperCase()}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={ss.userPillName} numberOfLines={1}>{managerTarget?.name || 'No name'}</Text>
+              <Text style={ss.userPillEmail} numberOfLines={1}>{managerTarget?.email}</Text>
+            </View>
+          </View>
+
+          {/* Role switch */}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => setManagerEnabled((enabled) => !enabled)}
+            style={[ss.mgrRoleRow, managerEnabled && ss.mgrRoleRowOn]}
+            accessibilityRole="switch"
+            accessibilityLabel="Mountain manager role"
+            accessibilityState={{ checked: managerEnabled }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={ss.mgrRoleTitle}>Mountain manager</Text>
+              <Text style={ss.mgrRoleSub} numberOfLines={2}>
+                {managerEnabled ? 'Can maintain the mountains selected below' : 'Turn on to give manager access'}
+              </Text>
+            </View>
+            <Switch
+              value={managerEnabled}
+              onValueChange={setManagerEnabled}
+              style={{ transform: [{ scale: 0.78 }] }}
+              trackColor={{ false: 'rgba(255,255,255,0.12)', true: 'rgba(111,175,138,0.55)' }}
+              thumbColor={managerEnabled ? '#6FAF8A' : '#B8BEC8'}
+              ios_backgroundColor="rgba(255,255,255,0.12)"
+            />
+          </TouchableOpacity>
+
+          {/* Mountains: dimmed and locked while the role is off */}
+          <View style={[{ gap: 6 }, !managerEnabled && { opacity: 0.4 }]} pointerEvents={managerEnabled ? 'auto' : 'none'}>
+            <View style={ss.mgrSectionRow}>
+              <Text style={ss.mgrSectionLabel}>MOUNTAINS · {managerMountainIds.size}/{managerMountains.length}</Text>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity hitSlop={8} onPress={() => setManagerMountainIds(new Set(managerMountains.map((m) => m.id)))}>
+                  <Text style={ss.mgrLink}>All</Text>
+                </TouchableOpacity>
+                <TouchableOpacity hitSlop={8} onPress={() => setManagerMountainIds(new Set())}>
+                  <Text style={ss.mgrLink}>None</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <ScrollView style={ss.mgrList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+              {managerMountains.length === 0 ? (
+                <Text style={[ss.mgrRoleSub, { padding: 10, textAlign: 'center' }]}>No mountains found</Text>
+              ) : managerMountains.map((mountain, index) => {
+                const checked = managerMountainIds.has(mountain.id);
+                return (
+                  <TouchableOpacity
+                    key={mountain.id}
+                    activeOpacity={0.7}
+                    onPress={() => setManagerMountainIds((current) => {
+                      const next = new Set(current);
+                      if (next.has(mountain.id)) next.delete(mountain.id);
+                      else next.add(mountain.id);
+                      return next;
+                    })}
+                    style={[ss.mgrOption, index === managerMountains.length - 1 && { borderBottomWidth: 0 }, checked && ss.mgrOptionOn]}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked }}
+                  >
+                    <View style={[ss.mgrCheck, checked && ss.mgrCheckOn]}>
+                      {checked && <Ionicons name="checkmark" size={11} color={CHAT_BG} />}
+                    </View>
+                    <Text style={[ss.mgrOptionText, checked && { color: TEXT_PRIMARY, fontWeight: '700' }]} numberOfLines={1}>
+                      {mountain.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {!managerEnabled && managerTarget?.role === 'manager' && (
+            <View style={ss.mgrWarn}>
+              <Ionicons name="alert-circle-outline" size={13} color="#E07070" />
+              <Text style={ss.mgrWarnText}>Saving removes their manager role and all mountain assignments.</Text>
+            </View>
+          )}
+        </>,
+        <>
+          {renderModalAction('Cancel', () => { if (!managerSaving) setManagerModalVisible(false); })}
+          {renderModalAction(
+            managerSaving ? 'Saving…' : !managerEnabled && managerTarget?.role === 'manager' ? 'Remove manager' : 'Save',
+            () => { if (!managerSaving) saveManagerAssignments(); },
+            !managerEnabled && managerTarget?.role === 'manager' ? 'danger' : 'primary',
+            !managerEnabled && managerTarget?.role === 'manager' ? 'person-remove-outline' : 'checkmark',
+          )}
+        </>,
+      )}
+
       {renderModalShell(
         makeAdminModalVisible,
         () => setMakeAdminModalVisible(false),
@@ -572,8 +788,7 @@ export default function AdminRoute() {
       )}
 
       {/* Attendees */}
-      <Modal visible={attendeesModalVisible} transparent animationType="fade" onRequestClose={() => setAttendeesModalVisible(false)}>
-        <View style={ss.modalOverlay}>
+      <AdminModal visible={attendeesModalVisible} onClose={() => setAttendeesModalVisible(false)}>
           <View style={[ss.modalCard, { maxHeight: 460 }]}>
             <View style={ss.modalHeader}>
               <View style={ss.modalTitleRow}>
@@ -601,8 +816,7 @@ export default function AdminRoute() {
                 ))}
             </ScrollView>
           </View>
-        </View>
-      </Modal>
+      </AdminModal>
 
       {/* MAIN SHELL — ChatScreen-style */}
       <SafeAreaView style={ss.screen} edges={['top', 'left', 'right']}>
@@ -750,6 +964,7 @@ export default function AdminRoute() {
                     { id: 'hiker', label: 'Hikers' },
                     { id: 'organization', label: 'Organizers' },
                     { id: 'admin', label: 'Admins' },
+                    { id: 'manager', label: 'Managers' },
                   ] as const,
                   userRoleFilter,
                   setUserRoleFilter,
@@ -767,6 +982,7 @@ export default function AdminRoute() {
                     renderItem={({ item: u }) => {
                       const role = u.role ?? (u.is_admin ? 'admin' : 'hiker');
                       const online = u.status === 'online';
+                      const isOrganization = role === 'organization' || !!u.organization_id;
                       return (
                         <View style={ss.userRow}>
                           <View style={{ flex: 1, minWidth: 0 }}>
@@ -774,6 +990,8 @@ export default function AdminRoute() {
                               <View style={[ss.onlineDot, { backgroundColor: online ? CHAT_ONLINE : 'rgba(255,255,255,0.2)' }]} />
                               <Text style={ss.rowTitle} numberOfLines={1}>{u.name || 'No name'}</Text>
                               {u.is_admin && <Ionicons name="shield-checkmark" size={11} color={ACCENT_GOLD} style={{ marginLeft: 4 }} />}
+                              {isOrganization && <Ionicons name="business" size={11} color="#3FD69D" style={{ marginLeft: 4 }} />}
+                              {role === 'manager' && <Ionicons name="trail-sign" size={11} color="#74B7FF" style={{ marginLeft: 4 }} />}
                             </View>
                             <Text style={ss.rowSub} numberOfLines={1}>{u.email}{u.username ? ` · @${u.username}` : ''}</Text>
                             <Text style={ss.rowMeta} numberOfLines={1}>
@@ -796,6 +1014,15 @@ export default function AdminRoute() {
                             >
                               <Ionicons name={u.is_admin ? 'shield-checkmark' : 'shield-outline'} size={16} color={u.is_admin ? ACCENT_GOLD : TEXT_MUTED} />
                             </TouchableOpacity>
+                            {!u.is_admin && (
+                              <TouchableOpacity
+                                onPress={() => void openManagerAssignments(u)}
+                                style={ss.iconAction}
+                                accessibilityLabel={u.role === 'manager' ? 'Edit mountain manager assignments' : 'Make user a mountain manager'}
+                              >
+                                <Ionicons name="trail-sign-outline" size={16} color={u.role === 'manager' ? ACCENT_GOLD : TEXT_MUTED} />
+                              </TouchableOpacity>
+                            )}
                             <TouchableOpacity
                               onPress={() => {
                                 if (u.id === user?.id) { showToast('warning', 'Not Allowed', 'You cannot delete your own account from here.'); return; }
@@ -1138,6 +1365,40 @@ export default function AdminRoute() {
                   </>
                 )}
 
+                {activeTab === 'managerChanges' && (
+                  <>
+                    {renderHeader('Manager updates', 'Changes and removals made to managed mountain content')}
+                    {managerChanges.length === 0 ? (
+                      renderEmpty('notifications-outline', 'No manager updates', 'Updates made by mountain managers will be listed here.')
+                    ) : (
+                      <FlatList
+                        data={managerChanges}
+                        keyExtractor={(change) => change.id}
+                        contentContainerStyle={ss.mainContent}
+                        showsVerticalScrollIndicator={false}
+                        renderItem={({ item: change }) => (
+                          <View style={[ss.card, !change.read_at && ss.cardAlert]}>
+                            <View style={ss.cardHeader}>
+                              <View style={{ flex: 1, minWidth: 0 }}>
+                                <Text style={ss.rowTitle}>{change.summary}</Text>
+                                <Text style={ss.rowSub} numberOfLines={1}>
+                                  {change.action} · {change.entity}{change.mountain_id ? ` · mountain ${change.mountain_id}` : ''}
+                                </Text>
+                              </View>
+                              {!change.read_at && (
+                                <TouchableOpacity onPress={() => void markManagerChangeRead(change.id)} style={ss.iconAction} accessibilityLabel="Mark manager update read">
+                                  <Ionicons name="checkmark-done-outline" size={16} color={ACCENT_GOLD} />
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                            <Text style={ss.rowMeta}>{new Date(change.created_at).toLocaleString()}</Text>
+                          </View>
+                        )}
+                      />
+                    )}
+                  </>
+                )}
+
                 {moderationTab === 'discoveries' && (
                   <>
                     {discoveriesLoading ? (
@@ -1446,9 +1707,8 @@ const ss = StyleSheet.create({
   emptyStateText: { fontSize: 12, color: TEXT_MUTED, textAlign: 'center' },
 
   // Modals
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalCard: {
-    width: '100%', maxWidth: 460, maxHeight: 560,
+    width: '100%', maxWidth: 460, flexShrink: 1,
     backgroundColor: CHAT_BG, borderRadius: 16, overflow: 'hidden',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
   },
@@ -1464,9 +1724,35 @@ const ss = StyleSheet.create({
   },
   modalTitle: { fontSize: 14, fontWeight: '700', color: TEXT_PRIMARY },
   modalClose: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' },
+  modalBodyScroll: { flexShrink: 1 },
   modalBody: { paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
   modalDesc: { fontSize: 12, color: TEXT_MUTED, lineHeight: 18 },
+  // Manager popup (compact)
+  mgrRoleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingLeft: 10, paddingRight: 4, borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  mgrRoleRowOn: { borderColor: 'rgba(111,175,138,0.35)', backgroundColor: 'rgba(111,175,138,0.07)' },
+  mgrRoleTitle: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '700' },
+  mgrRoleSub: { color: TEXT_MUTED, fontSize: 10.5, lineHeight: 14, marginTop: 1 },
+  mgrSectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  mgrSectionLabel: { color: TEXT_MUTED, fontSize: 9.5, fontWeight: '800', letterSpacing: 0.7 },
+  mgrLink: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
+  mgrList: { maxHeight: 190, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.02)' },
+  mgrOption: {
+    minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  mgrOptionOn: { backgroundColor: 'rgba(201,169,110,0.06)' },
+  mgrOptionText: { flex: 1, color: TEXT_MUTED, fontSize: 12, fontWeight: '500' },
+  mgrCheck: { width: 17, height: 17, borderRadius: 5, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)', justifyContent: 'center', alignItems: 'center' },
+  mgrCheckOn: { backgroundColor: ACCENT_GOLD, borderColor: ACCENT_GOLD },
+  mgrWarn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 8,
+    backgroundColor: 'rgba(224,112,112,0.08)', borderWidth: 1, borderColor: 'rgba(224,112,112,0.25)',
+  },
+  mgrWarnText: { flex: 1, color: '#E07070', fontSize: 10.5, lineHeight: 14, fontWeight: '600' },
   modalActionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8,

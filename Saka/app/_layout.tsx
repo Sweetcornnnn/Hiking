@@ -107,6 +107,7 @@ export default function RootLayout() {
         <Stack.Screen name="Calendar" options={screenOptionsNoHeader} />
         <Stack.Screen name="EmergencyContacts" options={screenOptionsNoHeader} />
         <Stack.Screen name="admin/Admin" options={screenOptionsNoHeader} />
+        <Stack.Screen name="manager/Manager" options={screenOptionsNoHeader} />
         <Stack.Screen name="wildtrack/WildTrack" options={screenOptionsNoHeader} />
         <Stack.Screen name="MountainTop" options={screenOptionsNoHeader} />
         <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
