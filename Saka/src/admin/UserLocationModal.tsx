@@ -1,7 +1,8 @@
 // UserLocationModal.tsx
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, FlatList } from 'react-native';
 import locationService from '../services/locationService';
+import AdminModal from './AdminModal';
 
 interface UserLocationModalProps {
   visible: boolean;
@@ -27,8 +28,7 @@ export default function UserLocationModal({ visible, user, onClose }: UserLocati
   }, [visible, user]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+    <AdminModal visible={visible} onClose={onClose}>
         <View style={styles.card}>
           <Text style={styles.title}>User Location</Text>
           <Text style={styles.subtitle}>{user?.name || user?.email}</Text>
@@ -62,19 +62,11 @@ export default function UserLocationModal({ visible, user, onClose }: UserLocati
             <Text style={styles.closeText}>Close</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+    </AdminModal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
   card: {
     width: '100%',
     maxWidth: 340,
