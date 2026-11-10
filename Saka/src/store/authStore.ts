@@ -442,18 +442,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'saka://auth/callback?flow=recovery',
+        redirectTo: 'saka://auth/callback',
       });
 
       if (error) {
         const message = error.message || 'Password reset request failed.';
 
-        if (message.toLowerCase().includes('user not found')) {
-          throw new Error('No account exists for this email. Check the email address or sign up first.');
-        }
-
-        if (message.toLowerCase().includes('email') || message.toLowerCase().includes('provider')) {
-          throw new Error('Supabase email auth is not configured correctly. Enable Email sign-in and add saka://auth/callback?flow=recovery to the allowed redirect URLs in Supabase Auth settings.');
+        if (/redirect.*(not allowed|allowlist)|redirect url.*(invalid|not permitted)/i.test(message)) {
+          throw new Error('Supabase rejected the password-reset redirect URL. Add saka://auth/callback to the allowed redirect URLs in Supabase Auth settings.');
         }
 
         throw new Error(message);

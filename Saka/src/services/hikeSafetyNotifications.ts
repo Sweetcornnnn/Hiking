@@ -84,6 +84,13 @@ export async function requestPermissions(): Promise<boolean> {
   return ask.status === 'granted';
 }
 
+export async function getNotificationPermissionStatus(): Promise<boolean | null> {
+  const notifications = getNotifications();
+  if (!notifications) return null;
+  const permissions = await notifications.getPermissionsAsync();
+  return permissions.status === 'granted';
+}
+
 /* ------------------------------------------------------------- schedule/cancel */
 
 export async function scheduleCheck(c: ScheduledCheck): Promise<string | null> {
