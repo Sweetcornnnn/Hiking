@@ -875,10 +875,11 @@ export default function IntroScreen() {
     };
   }, []);
 
-  // "splash text" nudge: only appears once the logo is actually tappable
-  const canStart = ready && authRestored;
+  // Show the prompt when the intro is ready, even if there is no saved session.
+  // The logo itself remains disabled until authentication restoration completes.
+  const canShowHint = ready;
   useEffect(() => {
-    if (!canStart) return;
+    if (!canShowHint) return;
     Animated.timing(hintFade, { toValue: 1, duration: 700, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
     const pulse = Animated.loop(
       Animated.sequence([
@@ -888,7 +889,7 @@ export default function IntroScreen() {
     );
     pulse.start();
     return () => pulse.stop();
-  }, [canStart]);
+  }, [canShowHint]);
 
   const handleStart = () => {
     if (!ready || !authRestored || navigating.current) return;
