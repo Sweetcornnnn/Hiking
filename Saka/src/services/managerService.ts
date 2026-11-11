@@ -19,6 +19,10 @@ export interface ManagedViewpoint {
   best_time: string | null;
   difficulty: string;
   trail_status: string;
+  crowd_level: string;
+  tags: string[];
+  features: { icon: string; text: string; safe: boolean }[];
+  trail_notes: string[];
 }
 
 export const createEmptyMountainTips = (mountainId: string, mountainName: string): MountainTips => ({
@@ -212,11 +216,25 @@ export const managerService = {
   async fetchViewpoints(mountainId: string): Promise<ManagedViewpoint[]> {
     const { data, error } = await supabase
       .from('viewpoints')
-      .select('id, mountain_id, name, subtitle, description, elevation, distance_from_start, estimated_hike, best_time, difficulty, trail_status')
+      .select('id, mountain_id, name, subtitle, description, elevation, distance_from_start, estimated_hike, best_time, difficulty, trail_status, crowd_level, tags, features, trail_notes')
       .eq('mountain_id', mountainId)
       .order('name');
     if (error) throw new Error(`Unable to load viewpoints: ${error.message}`);
-    return (data ?? []) as ManagedViewpoint[];
+    return (data ?? []).map((row) => ({
+      ...row,
+      crowd_level: row.crowd_level ?? 'Low',
+      tags: Array.isArray(row.tags) ? row.tags : [],
+      features: Array.isArray(row.features)
+        ? row.features.flatMap((feature) => {
+            if (!feature || typeof feature !== 'object' || Array.isArray(feature)) return [];
+            const record = feature as Record<string, unknown>;
+            return typeof record.icon === 'string' && typeof record.text === 'string'
+              ? [{ icon: record.icon, text: record.text, safe: record.safe === true }]
+              : [];
+          })
+        : [],
+      trail_notes: Array.isArray(row.trail_notes) ? row.trail_notes : [],
+    })) as ManagedViewpoint[];
   },
 
   async saveMountain(mountainId: string, values: Pick<Mountain, 'name' | 'description' | 'difficulty' | 'elevation' | 'location'>): Promise<void> {
@@ -257,6 +275,10 @@ export const managerService = {
         best_time: viewpoint.best_time,
         difficulty: viewpoint.difficulty,
         trail_status: viewpoint.trail_status,
+        crowd_level: viewpoint.crowd_level,
+        tags: viewpoint.tags,
+        features: viewpoint.features,
+        trail_notes: viewpoint.trail_notes,
       })
       .eq('id', viewpoint.id)
       .eq('mountain_id', viewpoint.mountain_id);
