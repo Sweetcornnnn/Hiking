@@ -42,7 +42,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const LEFT_COLUMN_WIDTH = SCREEN_WIDTH * 0.35;
 
 // ── ProfileCard design tokens ─────────────────────────────────────────────
-const PC = {
+export const PC = {
   bgCard:        '#0E1520',
   bgPanel:       '#111927',
   bgAvatar:      '#1E2D42',
@@ -213,7 +213,7 @@ interface StatChipProps {
   value: string;
 }
 
-interface MediaItem {
+export interface MediaItem {
   type: 'image' | 'video';
   key?: string;
   uri?: string;
@@ -272,6 +272,58 @@ const NANGTUD_GALLERIES: Record<string, MediaItem[]> = {
   ng9: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ng9-${index}` })),
 };
 
+/**
+ * Resolves the gallery for a viewpoint. Shared by the hiker-facing screen below
+ * and the manager's live editor so both always show the same media.
+ */
+export function getViewpointMedia({
+  data,
+  viewpointId,
+  mountainId,
+  mountainName,
+  viewpointNumber,
+}: {
+  data: any;
+  viewpointId?: string;
+  mountainId?: string;
+  mountainName?: string;
+  viewpointNumber: number;
+}): MediaItem[] {
+  const madjaasGallery = MADJAAS_GALLERIES[data?.id ?? viewpointId ?? ''];
+  if (madjaasGallery) {
+    return madjaasGallery;
+  }
+
+  const isNangtud = /nangtud/i.test(mountainName ?? '')
+    || mountainId === 'nangtud'
+    || mountainId === 'e8dbcdf2-2120-4ed4-a677-69f9a2c7dc65';
+  const fallbackNangtudNumber = Number(
+    data?.sort_order ?? /^ng([1-9])$/i.exec(String(data?.id ?? ''))?.[1]
+  );
+  if (isNangtud) {
+    const number = Number.isInteger(viewpointNumber) && viewpointNumber >= 1 && viewpointNumber <= 9
+      ? viewpointNumber
+      : fallbackNangtudNumber;
+    const gallery = NANGTUD_GALLERIES[`ng${number}`];
+    if (gallery) {
+      return gallery;
+    }
+  }
+  if (data?.media && Array.isArray(data.media) && data.media.length > 0) {
+    return data.media as MediaItem[];
+  }
+  if (BALINSAYAW_GALLERIES[data?.id]) {
+    return BALINSAYAW_GALLERIES[data.id];
+  }
+  if (PANDAN_GALLERIES[data?.id]) {
+    return PANDAN_GALLERIES[data.id];
+  }
+  if (data?.imageKey) {
+    return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.id }));
+  }
+  return [];
+}
+
 export default function ViewpointScreen() {
   const router      = useRouter();
   const insets = useSafeAreaInsets();
@@ -325,41 +377,10 @@ export default function ViewpointScreen() {
     };
   }, [viewpointId]);
 
-  const mediaList: MediaItem[] = React.useMemo(() => {
-    const madjaasGallery = MADJAAS_GALLERIES[data?.id ?? viewpointId ?? ''];
-    if (madjaasGallery) {
-      return madjaasGallery;
-    }
-
-    const isNangtud = /nangtud/i.test(mountainName ?? '')
-      || mountainId === 'nangtud'
-      || mountainId === 'e8dbcdf2-2120-4ed4-a677-69f9a2c7dc65';
-    const fallbackNangtudNumber = Number(
-      data?.sort_order ?? /^ng([1-9])$/i.exec(String(data?.id ?? ''))?.[1]
-    );
-    if (isNangtud) {
-      const number = Number.isInteger(viewpointNumber) && viewpointNumber >= 1 && viewpointNumber <= 9
-        ? viewpointNumber
-        : fallbackNangtudNumber;
-      const gallery = NANGTUD_GALLERIES[`ng${number}`];
-      if (gallery) {
-        return gallery;
-      }
-    }
-    if (data?.media && Array.isArray(data.media) && data.media.length > 0) {
-      return data.media as MediaItem[];
-    }
-    if (BALINSAYAW_GALLERIES[data?.id]) {
-      return BALINSAYAW_GALLERIES[data.id];
-    }
-    if (PANDAN_GALLERIES[data?.id]) {
-      return PANDAN_GALLERIES[data.id];
-    }
-    if (data?.imageKey) {
-      return Array.from({ length: 6 }, () => ({ type: 'image' as const, key: data.id }));
-    }
-    return [];
-  }, [data, mountainId, mountainName, viewpointId, viewpointNumber]);
+  const mediaList: MediaItem[] = React.useMemo(
+    () => getViewpointMedia({ data, viewpointId, mountainId, mountainName, viewpointNumber }),
+    [data, mountainId, mountainName, viewpointId, viewpointNumber],
+  );
   const firstMedia = mediaList[0];
   const waitsForFirstImage = Boolean(
     firstMedia?.type === 'image' &&
@@ -708,7 +729,7 @@ const CARD_GAP = -10;
 const CARD_INSET = 10;
 const LOOP_REPEATS = 3;
 
-function VerticalMediaCarousel({
+export function VerticalMediaCarousel({
   media,
   height,
   fallbackLabel,
