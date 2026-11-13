@@ -128,7 +128,7 @@ export default function SignupScreen() {
   return (
     <>
       <AuthShell
-        eyebrow="INTO THE VERDANT SUBLIMITY"
+        eyebrow="TRAIL IS CALLING — MUSYON, SAKA!"
         title="Create account"
         subtitle="Start tracking your summits."
         note="Your trail. Your adventure. Your SAKA."
