@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   FlatList,
+  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -18,67 +19,155 @@ import { useRequireAuth } from '../../hooks/useRoleGuard';
 import OfflineActionModal from '../../components/OfflineActionModal';
 import { isConnectionError } from '../../services/offlineStatusService';
 import {
-  D,
-  Shell,
-  Sidebar,
-  Center,
-  RightPane,
+  T,
+  SERIF,
+  Screen,
+  TopBar,
   CenterMessage,
-  SidebarHeader,
-  SectionLabel,
-  SearchField,
-  SelectField,
-  Chip,
-  LinkButton,
-  ActionButton,
-  Badge,
-  MetaRow,
-  Meter,
-  Panel,
-  PickerSheet,
+  SearchBox,
+  FilterButton,
+  RemovableTag,
+  SheetShell,
+  Button,
+  Pill,
+  difficultyColor,
   todayISO,
   plusDaysISO,
   toLocalISO,
   parseISO,
   formatTime,
-} from '../../components/events/DesktopKit';
+} from '../../components/events/TrailKit';
 
 const DIFFICULTIES = ['All', 'Easy', 'Moderate', 'Hard', 'Expert'] as const;
 const DATE_RANGES = [
-  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'upcoming', label: 'Coming up' },
   { id: 'week', label: 'This week' },
   { id: 'month', label: 'This month' },
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'Any date' },
 ] as const;
 
+type Difficulty = (typeof DIFFICULTIES)[number];
 type DateRangeId = (typeof DATE_RANGES)[number]['id'];
 
-const shortDate = (iso: string) =>
-  parseISO(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const SPACER = { __spacer: true } as const;
+type ListItem = PublicEvent | typeof SPACER;
 
-const longDate = (iso: string) =>
-  parseISO(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-
-/** Compact date label for table rows. */
-const dateLabel = (start: string, end?: string | null) => {
-  if (end && end !== start) {
-    const s = parseISO(start);
-    const e = parseISO(end);
-    return s.getMonth() === e.getMonth()
-      ? `${shortDate(start)}–${e.getDate()}`
-      : `${shortDate(start)} – ${shortDate(end)}`;
-  }
-  if (start === todayISO()) return { label: 'Today', hot: true };
-  if (start === toLocalISO(new Date(Date.now() + 86400_000))) return { label: 'Tomorrow', hot: true };
-  return longDate(start);
+/** Calendar-style date for the card: "Sat / 14 / Nov", or "Today / 14 / Nov". */
+const dateBlock = (start: string, end?: string | null) => {
+  const s = parseISO(start);
+  const multi = !!end && end !== start;
+  const rel =
+    start === todayISO()
+      ? 'Today'
+      : start === toLocalISO(new Date(Date.now() + 86400_000))
+      ? 'Tomorrow'
+      : null;
+  return {
+    top: rel ?? s.toLocaleDateString('en-US', { weekday: 'short' }),
+    big: multi ? `${s.getDate()}–${parseISO(end as string).getDate()}` : String(s.getDate()),
+    month: s.toLocaleDateString('en-US', { month: 'short' }),
+    hot: !!rel,
+  };
 };
+
+// ── Filters sheet: three option lists side by side, no footer ───────
+function Option({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={styles.opt}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: active }}
+    >
+      <View style={[styles.radio, active && styles.radioOn]}>{active ? <View style={styles.radioDot} /> : null}</View>
+      <Text style={[styles.optText, active && styles.optTextOn]} numberOfLines={1}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function FilterSheet({
+  visible,
+  onClose,
+  dateRange,
+  onDateRange,
+  difficulty,
+  onDifficulty,
+  mountains,
+  mountainId,
+  onMountain,
+  canReset,
+  onReset,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  dateRange: DateRangeId;
+  onDateRange: (r: DateRangeId) => void;
+  difficulty: Difficulty;
+  onDifficulty: (d: Difficulty) => void;
+  mountains: Mountain[];
+  mountainId: string | null;
+  onMountain: (id: string | null) => void;
+  canReset: boolean;
+  onReset: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const stacked = width < 520;
+
+  return (
+    <SheetShell
+      visible={visible}
+      title="Filters"
+      onClose={onClose}
+      headerRight={
+        canReset ? (
+          <TouchableOpacity onPress={onReset} hitSlop={10} accessibilityRole="button" accessibilityLabel="Reset filters">
+            <Text style={styles.resetText}>Reset</Text>
+          </TouchableOpacity>
+        ) : null
+      }
+    >
+      <View style={[styles.fBody, !stacked && { flexDirection: 'row' }]}>
+        <View style={styles.fCol}>
+          <Text style={styles.fLabel}>When</Text>
+          {DATE_RANGES.map((r) => (
+            <Option key={r.id} label={r.label} active={dateRange === r.id} onPress={() => onDateRange(r.id)} />
+          ))}
+        </View>
+
+        <View style={styles.fCol}>
+          <Text style={styles.fLabel}>Difficulty</Text>
+          {DIFFICULTIES.map((d) => (
+            <Option
+              key={d}
+              label={d === 'All' ? 'Any level' : d}
+              active={difficulty === d}
+              onPress={() => onDifficulty(d)}
+            />
+          ))}
+        </View>
+
+        <View style={styles.fCol}>
+          <Text style={styles.fLabel}>Mountain</Text>
+          <ScrollView style={{ maxHeight: stacked ? 150 : 190 }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+            <Option label="Any mountain" active={mountainId === null} onPress={() => onMountain(null)} />
+            {mountains.map((m) => (
+              <Option key={m.id} label={m.name} active={mountainId === m.id} onPress={() => onMountain(m.id)} />
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </SheetShell>
+  );
+}
 
 export default function HikerEventsList() {
   useRequireAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  // Hide the mountain column when the centre pane gets tight.
-  const wide = width - D.sidebarW - D.paneW >= 500;
+  const cols = width >= 1000 ? 3 : width >= 560 ? 2 : 1;
 
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [counts, setCounts] = useState<Record<string, EventRsvpCounts>>({});
@@ -88,13 +177,12 @@ export default function HikerEventsList() {
   const [error, setError] = useState<string | null>(null);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
 
-  const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>('All');
+  const [difficulty, setDifficulty] = useState<Difficulty>('All');
   const [dateRange, setDateRange] = useState<DateRangeId>('upcoming');
   const [mountainId, setMountainId] = useState<string | null>(null);
-  const [mountainPickerOpen, setMountainPickerOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [mountains, setMountains] = useState<Mountain[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selectedMountain = useMemo(
     () => mountains.find((m) => m.id === mountainId) ?? null,
@@ -172,32 +260,20 @@ export default function HikerEventsList() {
     );
   }, [events, dateRange, searchText]);
 
-  // Keep a valid selection so the preview pane is never empty when there are results.
-  useEffect(() => {
-    if (filtered.length === 0) {
-      if (selectedId !== null) setSelectedId(null);
-    } else if (!selectedId || !filtered.some((e) => e.id === selectedId)) {
-      setSelectedId(filtered[0].id);
-    }
-  }, [filtered, selectedId]);
-
-  const selected = useMemo(
-    () => filtered.find((e) => e.id === selectedId) ?? null,
-    [filtered, selectedId]
-  );
-
   const mountainNameFor = (id: string) => mountains.find((m) => m.id === id)?.name ?? 'Mountain';
 
-  const hasFilters =
-    difficulty !== 'All' ||
-    dateRange !== 'upcoming' ||
-    mountainId !== null ||
-    searchText.trim().length > 0;
+  // Filters that live in the sheet (search has its own box).
+  const activeCount =
+    (dateRange !== 'upcoming' ? 1 : 0) + (difficulty !== 'All' ? 1 : 0) + (mountainId !== null ? 1 : 0);
+  const hasFilters = activeCount > 0 || searchText.trim().length > 0;
 
-  const clearFilters = () => {
+  const resetSheetFilters = () => {
     setDifficulty('All');
     setDateRange('upcoming');
     setMountainId(null);
+  };
+  const clearFilters = () => {
+    resetSheetFilters();
     setSearchText('');
   };
 
@@ -208,257 +284,168 @@ export default function HikerEventsList() {
     const c = counts[event.id] ?? { confirmed: 0, waitlist: 0, total: 0 };
     const hasCap = event.capacity !== null && event.capacity !== undefined;
     const left = hasCap ? (event.capacity as number) - c.confirmed : null;
-    if (hasCap && (left as number) <= 0) return { color: D.orange, text: 'Full', c };
-    if (left !== null)
-      return { color: left <= 3 ? D.gold : D.green, text: `${left} left`, c };
-    return { color: D.green, text: `${c.confirmed} going`, c };
+    if (hasCap && (left as number) <= 0) return { color: T.orange, text: 'Full' };
+    if (left !== null) {
+      if (left <= 3) return { color: T.gold, text: `Only ${left} left` };
+      return { color: T.green, text: `${left} spots left` };
+    }
+    return { color: T.green, text: c.confirmed > 0 ? `${c.confirmed} going` : 'Open' };
   };
 
   // Full-screen loader only for the very first load; filter changes load inside the list.
-  if (!hasLoaded && loading) return <CenterMessage loading message="Finding hikes…" />;
+  if (!hasLoaded && loading) return <CenterMessage loading message="Loading events…" />;
 
-  const renderRow = ({ item: event }: { item: PublicEvent }) => {
-    const isSel = event.id === selectedId;
-    const verified = !!event.organizations?.is_verified;
-    const date = dateLabel(event.event_date, event.end_date);
-    const dateText = typeof date === 'string' ? date : date.label;
-    const hot = typeof date !== 'string';
+  const renderItem = ({ item }: { item: ListItem }) => {
+    if ('__spacer' in item) return <View style={{ flex: 1 }} />;
+    const event = item;
+    const db = dateBlock(event.event_date, event.end_date);
     const st = statusFor(event);
+    const verified = !!event.organizations?.is_verified;
 
     return (
       <TouchableOpacity
-        activeOpacity={0.75}
-        onPress={() => setSelectedId(event.id)}
-        onLongPress={() => openEvent(event.id)}
-        style={[styles.row, isSel && styles.rowSel]}
+        activeOpacity={0.85}
+        onPress={() => openEvent(event.id)}
+        style={[styles.card, cols > 1 && { flex: 1 }]}
         accessibilityRole="button"
-        accessibilityState={{ selected: isSel }}
-        accessibilityLabel={`${event.title}, ${st.text}`}
+        accessibilityLabel={`${event.title}, ${db.top} ${db.month} ${db.big}, ${event.difficulty}, ${st.text}`}
       >
-        <View style={styles.cDate}>
-          <Text style={[styles.dateMain, hot && { color: D.gold }]} numberOfLines={1}>
-            {dateText}
+        <View style={[styles.dateBlock, db.hot && styles.dateBlockHot]}>
+          <Text style={[styles.dateTop, db.hot && { color: T.gold }]} numberOfLines={1}>
+            {db.top}
           </Text>
-          <Text style={styles.dateSub}>{formatTime(event.start_time)}</Text>
+          <Text style={styles.dateBig} numberOfLines={1}>
+            {db.big}
+          </Text>
+          <Text style={styles.dateMonth}>{db.month}</Text>
         </View>
 
-        <View style={styles.cEvent}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardTitle} numberOfLines={2}>
             {event.title}
           </Text>
+          <Text style={styles.line} numberOfLines={1}>
+            {mountainNameFor(event.mountain_id)}, {formatTime(event.start_time)}
+          </Text>
           <View style={styles.byline}>
-            {verified ? <Ionicons name="shield-checkmark" size={10} color={D.green} /> : null}
+            {verified ? <Ionicons name="shield-checkmark" size={12} color={T.green} /> : null}
             <Text style={styles.org} numberOfLines={1}>
               {event.organizations?.name ?? 'Organizer'}
             </Text>
           </View>
-        </View>
-
-        {wide ? (
-          <Text style={styles.cMountain} numberOfLines={1}>
-            {mountainNameFor(event.mountain_id)}
-          </Text>
-        ) : null}
-
-        <View style={styles.cEnd}>
-          <Text style={styles.level}>{event.difficulty}</Text>
-          <View style={styles.statusRow}>
-            <View style={[styles.dot, { backgroundColor: st.color }]} />
-            <Text style={[styles.statusText, { color: st.color }]}>{st.text}</Text>
+          <View style={styles.cardBottom}>
+            <Pill label={event.difficulty} color={difficultyColor(event.difficulty)} />
+            <Text style={[styles.status, { color: st.color }]} numberOfLines={1}>
+              {st.text}
+            </Text>
           </View>
         </View>
-
-        <TouchableOpacity
-          onPress={() => openEvent(event.id)}
-          hitSlop={8}
-          accessibilityLabel={`Open ${event.title}`}
-        >
-          <Ionicons name="chevron-forward" size={13} color={isSel ? D.gold : D.faint} />
-        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
 
+  // Applied filters, shown only when there are any. Tap to remove.
+  const appliedBar =
+    activeCount > 0 ? (
+      <View style={styles.applied}>
+        {dateRange !== 'upcoming' ? (
+          <RemovableTag
+            label={DATE_RANGES.find((r) => r.id === dateRange)?.label ?? ''}
+            onRemove={() => setDateRange('upcoming')}
+          />
+        ) : null}
+        {difficulty !== 'All' ? <RemovableTag label={difficulty} onRemove={() => setDifficulty('All')} /> : null}
+        {selectedMountain ? (
+          <RemovableTag label={selectedMountain.name} onRemove={() => setMountainId(null)} />
+        ) : null}
+      </View>
+    ) : null;
+
+  const empty = loading ? (
+    <View style={styles.state}>
+      <ActivityIndicator color={T.gold} />
+    </View>
+  ) : error ? (
+    <View style={styles.state}>
+      <Ionicons name="cloud-offline-outline" size={26} color={T.red} />
+      <Text style={styles.stateTitle}>Couldn't load events</Text>
+      <Text style={styles.stateText}>{error}</Text>
+      <View style={{ width: 160 }}>
+        <Button label="Try again" variant="quiet" onPress={onRefresh} />
+      </View>
+    </View>
+  ) : (
+    <View style={styles.state}>
+      <Ionicons name="calendar-clear-outline" size={26} color={T.faint} />
+      <Text style={styles.stateTitle}>No events match</Text>
+      <Text style={styles.stateText}>Try a wider date range or a different mountain.</Text>
+      {hasFilters ? (
+        <View style={{ width: 160 }}>
+          <Button label="Clear filters" variant="quiet" onPress={clearFilters} />
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const data: ListItem[] = loading
+    ? []
+    : cols > 1 && filtered.length % cols !== 0
+    ? [...filtered, ...Array.from({ length: cols - (filtered.length % cols) }, () => SPACER)]
+    : filtered;
+
   return (
     <>
-      <Shell>
-        {/* ── Sidebar: filters ── */}
-        <Sidebar
-          footer={
-            hasFilters ? (
-              <LinkButton icon="refresh-outline" label="Clear filters" onPress={clearFilters} />
-            ) : undefined
+      <Screen>
+        <TopBar
+          onBack={() => router.back()}
+          a11yLabel="Back to Home"
+          backIcon="home-outline"
+          title="Events"
+          subtitle={loading ? 'Loading…' : `${filtered.length} ${filtered.length === 1 ? 'event' : 'events'}`}
+          right={
+            <>
+              <View style={{ flex: 1, maxWidth: 260 }}>
+                <SearchBox value={searchText} onChangeText={setSearchText} placeholder="Search events" />
+              </View>
+              <FilterButton count={activeCount} onPress={() => setFiltersOpen(true)} />
+            </>
           }
-        >
-          <SidebarHeader
-            onBack={() => router.back()}
-            backLabel="Home"
-            title="Hike events"
-            status={loading ? 'Updating…' : `${filtered.length} posted`}
-          />
+        />
 
-          <SearchField value={searchText} onChangeText={setSearchText} placeholder="Search hikes or organizers" />
+        <FlatList
+          key={`cols-${cols}`}
+          data={data}
+          numColumns={cols}
+          keyExtractor={(e, i) => ('__spacer' in e ? `spacer-${i}` : e.id)}
+          renderItem={renderItem}
+          ListHeaderComponent={appliedBar}
+          ListEmptyComponent={empty}
+          columnWrapperStyle={cols > 1 ? { gap: 8 } : undefined}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+          extraData={[counts, mountains, cols]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.gold} />}
+        />
+      </Screen>
 
-          <SelectField
-            icon="trail-sign-outline"
-            text={selectedMountain ? selectedMountain.name : 'All mountains'}
-            selected={!!selectedMountain}
-            onPress={() => setMountainPickerOpen(true)}
-            onClear={() => setMountainId(null)}
-          />
-
-          <SectionLabel>DIFFICULTY</SectionLabel>
-          <View style={styles.chipWrap}>
-            {DIFFICULTIES.map((d) => (
-              <Chip key={d} label={d} active={difficulty === d} onPress={() => setDifficulty(d)} />
-            ))}
-          </View>
-
-          <SectionLabel>WHEN</SectionLabel>
-          <View style={styles.chipWrap}>
-            {DATE_RANGES.map((r) => (
-              <Chip key={r.id} label={r.label} active={dateRange === r.id} onPress={() => setDateRange(r.id)} />
-            ))}
-          </View>
-        </Sidebar>
-
-        {/* ── Centre: table ── */}
-        <Center>
-          <View style={styles.thead}>
-            <Text style={[styles.th, styles.cDate]}>Date</Text>
-            <Text style={[styles.th, styles.cEventHead]}>Event</Text>
-            {wide ? <Text style={[styles.cMountain, styles.th]}>Mountain</Text> : null}
-            <Text style={[styles.th, styles.cEnd, { textAlign: 'right' }]}>Level</Text>
-            <View style={{ width: 13 }} />
-          </View>
-
-          {loading ? (
-            <View style={styles.state}>
-              <ActivityIndicator color={D.gold} />
-              <Text style={styles.stateText}>Updating results…</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.state}>
-              <Ionicons name="alert-circle-outline" size={20} color={D.red} />
-              <Text style={styles.stateTitle}>{error}</Text>
-              <ActionButton label="Try again" variant="ghost" onPress={onRefresh} fullWidth={false} />
-            </View>
-          ) : filtered.length === 0 ? (
-            <View style={styles.state}>
-              <Ionicons name="calendar-clear-outline" size={20} color={D.faint} />
-              <Text style={styles.stateTitle}>No hikes match these filters</Text>
-              <Text style={styles.stateText}>Widen the date range or clear the filters.</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(e) => e.id}
-              renderItem={renderRow}
-              extraData={[selectedId, counts, mountains, wide]}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={D.gold} />
-              }
-            />
-          )}
-        </Center>
-
-        {/* ── Right pane: preview ── */}
-        <RightPane
-          footer={
-            selected ? (
-              <ActionButton
-                icon="open-outline"
-                label="View details"
-                onPress={() => openEvent(selected.id)}
-              />
-            ) : undefined
-          }
-        >
-          {selected ? (
-            (() => {
-              const st = statusFor(selected);
-              const hasCap = selected.capacity !== null && selected.capacity !== undefined;
-              const pct = hasCap && (selected.capacity as number) > 0
-                ? (st.c.confirmed / (selected.capacity as number)) * 100
-                : 0;
-              const multi = !!selected.end_date && selected.end_date !== selected.event_date;
-              return (
-                <>
-                  <View style={styles.previewHead}>
-                    <Text style={styles.previewTitle} numberOfLines={2}>
-                      {selected.title}
-                    </Text>
-                    <View style={styles.badgeRow}>
-                      <Badge label={selected.difficulty} />
-                      {selected.organizations?.is_verified ? (
-                        <Badge
-                          label="Verified"
-                          icon="shield-checkmark"
-                          color={D.green}
-                          bg="rgba(63,214,157,0.08)"
-                          border="rgba(63,214,157,0.25)"
-                        />
-                      ) : null}
-                    </View>
-                  </View>
-
-                  <Panel style={{ gap: 6 }}>
-                    <MetaRow icon="business-outline" text={selected.organizations?.name ?? 'Organizer'} color={D.text} />
-                    <MetaRow icon="trail-sign-outline" text={mountainNameFor(selected.mountain_id)} />
-                    <MetaRow
-                      icon="calendar-outline"
-                      text={multi
-                        ? `${longDate(selected.event_date)} – ${longDate(selected.end_date as string)}`
-                        : longDate(selected.event_date)}
-                    />
-                    <MetaRow icon="time-outline" text={formatTime(selected.start_time)} />
-                    <MetaRow icon="location-outline" text={selected.meeting_point} lines={2} />
-                  </Panel>
-
-                  <Panel style={{ gap: 6 }}>
-                    <View style={styles.attendRow}>
-                      <Text style={styles.attendLabel}>Attending</Text>
-                      <Text style={styles.attendValue}>
-                        {st.c.confirmed}
-                        {hasCap ? <Text style={styles.attendSub}>{` / ${selected.capacity}`}</Text> : null}
-                      </Text>
-                    </View>
-                    {hasCap ? <Meter value={pct} color={st.text === 'Full' ? D.orange : D.green} /> : null}
-                    {st.c.waitlist > 0 ? (
-                      <Text style={styles.waitlist}>{st.c.waitlist} on the waitlist</Text>
-                    ) : null}
-                  </Panel>
-
-                  {selected.description ? (
-                    <Text style={styles.previewDesc} numberOfLines={3}>
-                      {selected.description}
-                    </Text>
-                  ) : null}
-                </>
-              );
-            })()
-          ) : (
-            <View style={styles.state}>
-              <Ionicons name="reader-outline" size={20} color={D.faint} />
-              <Text style={styles.stateText}>Select a hike to preview it here.</Text>
-            </View>
-          )}
-        </RightPane>
-      </Shell>
-
-      <PickerSheet
-        visible={mountainPickerOpen}
-        title="Filter by mountain"
-        allLabel="All mountains"
-        items={mountains}
-        selectedId={mountainId}
-        onSelect={setMountainId}
-        onClose={() => setMountainPickerOpen(false)}
+      <FilterSheet
+        visible={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        dateRange={dateRange}
+        onDateRange={setDateRange}
+        difficulty={difficulty}
+        onDifficulty={setDifficulty}
+        mountains={mountains}
+        mountainId={mountainId}
+        onMountain={setMountainId}
+        canReset={activeCount > 0}
+        onReset={resetSheetFilters}
       />
       <OfflineActionModal
         visible={offlineModalVisible}
-        message="Hike events need an internet connection to load. Connect and try again."
+        message="Events need an internet connection to load. Connect and try again."
         retrying={refreshing || loading}
         onRetry={() => {
           setOfflineModalVisible(false);
@@ -466,7 +453,7 @@ export default function HikerEventsList() {
         }}
         onDismiss={() => {
           setOfflineModalVisible(false);
-          setError('Connect to the internet to load hike events.');
+          setError('Connect to the internet to load events.');
         }}
       />
     </>
@@ -474,63 +461,63 @@ export default function HikerEventsList() {
 }
 
 const styles = StyleSheet.create({
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  listContent: { paddingHorizontal: 12, paddingBottom: 20, flexGrow: 1 },
+  applied: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 8 },
 
-  // Table
-  thead: {
+  // Card: one compact row, date on the left
+  card: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 10,
-    height: 30,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: D.border,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: T.card,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  th: { color: D.faint, fontSize: 9, fontWeight: '600', letterSpacing: 0.4 },
-
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    minHeight: 44,
-    paddingHorizontal: 12,
+  dateBlock: {
+    width: 54,
+    alignSelf: 'flex-start',
     paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.04)',
-    borderLeftWidth: 2,
-    borderLeftColor: 'transparent',
+    borderRadius: 11,
+    alignItems: 'center',
+    backgroundColor: T.ctrl,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  rowSel: { backgroundColor: D.goldSoft, borderLeftColor: D.gold },
+  dateBlockHot: { backgroundColor: T.goldSoft, borderColor: T.goldLine },
+  dateTop: { color: T.muted, fontSize: 12, fontWeight: '600' },
+  dateBig: { color: T.text, fontFamily: SERIF, fontSize: 20, lineHeight: 24 },
+  dateMonth: { color: T.muted, fontSize: 12 },
+  cardBody: { flex: 1, minWidth: 0, gap: 2 },
+  cardTitle: { color: T.text, fontFamily: SERIF, fontSize: 15, lineHeight: 19 },
+  line: { color: T.body, fontSize: 13 },
+  byline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  org: { color: T.muted, fontSize: 12, flexShrink: 1 },
+  cardBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  status: { fontSize: 13, fontWeight: '700' },
 
-  cDate: { width: 74 },
-  cEvent: { flex: 1, minWidth: 0 },
-  cEventHead: { flex: 1 },
-  cMountain: { width: 104, color: D.muted, fontSize: 10.5 },
-  cEnd: { width: 70, alignItems: 'flex-end' },
-
-  dateMain: { color: D.text, fontSize: 11, fontWeight: '600' },
-  dateSub: { color: D.muted, fontSize: 9.5, marginTop: 1 },
-  rowTitle: { color: D.text, fontSize: 12, fontWeight: '700' },
-  byline: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  org: { color: D.muted, fontSize: 10, flexShrink: 1 },
-  level: { color: D.gold, fontSize: 10.5, fontWeight: '600' },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  dot: { width: 5, height: 5, borderRadius: 3 },
-  statusText: { fontSize: 9.5, fontWeight: '600' },
+  // Filters sheet
+  fBody: { padding: 16, gap: 14 },
+  fCol: { flex: 1, gap: 2 },
+  fLabel: { color: T.muted, fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  opt: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 36 },
+  radio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: T.faint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOn: { borderColor: T.gold },
+  radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: T.gold },
+  optText: { color: T.body, fontSize: 14, flexShrink: 1 },
+  optTextOn: { color: T.gold, fontWeight: '700' },
+  resetText: { color: T.gold, fontSize: 14, fontWeight: '600' },
 
   // States
-  state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, padding: 16 },
-  stateTitle: { color: D.text, fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  stateText: { color: D.muted, fontSize: 10.5, textAlign: 'center' },
-
-  // Preview
-  previewHead: { gap: 6 },
-  previewTitle: { color: D.text, fontSize: 14, fontWeight: '700', letterSpacing: -0.1, lineHeight: 18 },
-  badgeRow: { flexDirection: 'row', gap: 5, flexWrap: 'wrap' },
-  attendRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  attendLabel: { color: D.faint, fontSize: 9, fontWeight: '600', letterSpacing: 0.4 },
-  attendValue: { color: D.text, fontSize: 14, fontWeight: '800' },
-  attendSub: { color: D.muted, fontSize: 10.5, fontWeight: '600' },
-  waitlist: { color: D.gold, fontSize: 10, fontWeight: '600' },
-  previewDesc: { color: D.muted, fontSize: 10.5, lineHeight: 15 },
+  state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 36 },
+  stateTitle: { color: T.text, fontFamily: SERIF, fontSize: 17, textAlign: 'center' },
+  stateText: { color: T.muted, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
 });

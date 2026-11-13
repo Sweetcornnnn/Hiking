@@ -8,6 +8,11 @@ export interface ToastOptions {
   message?: string;
 }
 
+interface ToastProps {
+  position?: 'top' | 'top-right';
+  topOffset?: number;
+}
+
 export interface ToastHandle {
   show: (options: ToastOptions) => void;
 }
@@ -15,7 +20,7 @@ export interface ToastHandle {
 // Small top-anchored notification card, styled to match the app instead of
 // relying on the OS's default Alert dialog. Usage: keep a ref, render
 // <Toast ref={toastRef} /> once in the screen, call toastRef.current?.show(...).
-const Toast = forwardRef<ToastHandle>((_props, ref) => {
+const Toast = forwardRef<ToastHandle, ToastProps>(({ position = 'top', topOffset = 14 }, ref) => {
   const [content, setContent] = useState<ToastOptions | null>(null);
   const translateY = useRef(new Animated.Value(-80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -63,8 +68,10 @@ const Toast = forwardRef<ToastHandle>((_props, ref) => {
       pointerEvents="none"
       style={[
         styles.toast,
+        position === 'top' && styles.toastCentered,
+        position === 'top-right' && styles.toastTopRight,
         isSuccess ? styles.toastSuccess : styles.toastError,
-        { transform: [{ translateY }], opacity },
+        { top: topOffset, transform: [{ translateY }], opacity },
       ]}
     >
       <View style={[styles.iconWrap, isSuccess ? styles.iconWrapSuccess : styles.iconWrapError]}>
@@ -89,7 +96,6 @@ export default Toast;
 const styles = StyleSheet.create({
   toast: {
     position: 'absolute',
-    top: 14,
     left: 14,
     right: 14,
     flexDirection: 'row',
@@ -105,6 +111,17 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 14,
     zIndex: 999,
+  },
+  toastTopRight: {
+    left: undefined,
+    width: '92%',
+    maxWidth: 360,
+  },
+  toastCentered: {
+    left: undefined,
+    right: undefined,
+    width: '50%',
+    alignSelf: 'center',
   },
   toastSuccess: {
     borderColor: 'rgba(110,175,138,0.3)',

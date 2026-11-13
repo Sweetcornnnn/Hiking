@@ -42,7 +42,7 @@ interface AuthState {
 
   // Actions
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signUp: (email: string, password: string, fullName: string, contactNumber?: string) => Promise<{ success: boolean; error?: string }>;
+  signUp: (email: string, password: string, fullName: string, contactNumber?: string) => Promise<{ success: boolean; error?: string; needsEmailConfirmation?: boolean }>;
   signOut: () => Promise<void>;
   loadSession: () => Promise<void>;
   loadProfile: () => Promise<void>;
@@ -142,44 +142,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw new Error('User creation failed');
       }
 
-      // Step 2: Create or update profile in profiles table (idempotent)
-      // Use upsert so this call is safe if a DB trigger already created the profile.
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert(
-          {
-            id: data.user.id,
-            email: email,
-            full_name: fullName,
-            contact_number: contactNumber || null,
-            is_admin: false,
-            role: 'hiker',
-            organization_id: null,
-            is_verified: false,
-            avatar_url: null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'id' }
-        );
-
-      if (profileError) {
-        console.warn('[Auth] Profile creation blocked by RLS or backend config:', profileError);
-        // RLS / permission error: allow sign-up but inform backend needs fixing
-        if (profileError.code === '42501') {
-          // permission denied under RLS - don't fail the signup flow here
-        } else if (profileError.code === '23505') {
-          // duplicate key - profile already exists (created previously)
-          console.warn('[Auth] Profile already exists; loading existing profile');
-          try {
-            await get().loadProfile();
-          } catch (e) {
-            console.warn('[Auth] loadProfile failed after duplicate key:', e);
-          }
-        } else {
-          throw new Error('Profile creation failed. Please try again.');
-        }
-      }
-
       if (data.session?.access_token) {
         await SecureStore.setItemAsync('authToken', data.session.access_token);
       }
@@ -192,7 +154,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
 
-      return { success: true };
+      return {
+        success: true,
+        needsEmailConfirmation: !data.session && !data.user.email_confirmed_at,
+      };
     } catch (error: any) {
       console.error('[Auth] Signup failed:', error.message);
       set({ error: error.message, isLoading: false });
