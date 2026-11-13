@@ -42,6 +42,31 @@ function TransportDetail({ guide }: { guide: TransportGuide }) {
 
   const tip = guide.tip ? <Text style={styles.tip}>{guide.tip}</Text> : null;
 
+  const nextStop = guide.nextStop ? (
+    <View style={styles.guideBlock}>
+      <Text style={styles.kicker}>NEXT STOP</Text>
+      <Text style={styles.startText}>{guide.nextStop}</Text>
+    </View>
+  ) : null;
+  const whereToAvail = guide.whereToAvail ? (
+    <View style={styles.guideBlock}>
+      <Text style={styles.kicker}>WHERE TO AVAIL</Text>
+      <Text style={styles.startText}>{guide.whereToAvail}</Text>
+    </View>
+  ) : null;
+  const lastStop = guide.lastStop ? (
+    <View style={styles.guideBlock}>
+      <Text style={styles.kicker}>LAST STOP / DROP-OFF</Text>
+      <Text style={styles.startText}>{guide.lastStop}</Text>
+    </View>
+  ) : null;
+  const faresNotes = guide.faresNotes ? (
+    <View style={styles.guideBlock}>
+      <Text style={styles.kicker}>FARES / NOTES</Text>
+      <Text style={styles.startText}>{guide.faresNotes}</Text>
+    </View>
+  ) : null;
+
   const rides = guide.options.map((option, index) => (
     <View key={index} style={[styles.row, index > 0 && styles.rowRule]}>
       <View style={styles.rowText}>
@@ -66,10 +91,16 @@ function TransportDetail({ guide }: { guide: TransportGuide }) {
       <View style={styles.cols}>
         <View style={styles.left}>
           {start}
+          {whereToAvail}
+          {nextStop}
           {tip}
         </View>
         <View style={styles.vline} />
-        <View style={styles.right}>{rides}</View>
+        <View style={styles.right}>
+          {rides}
+          {lastStop}
+          {faresNotes}
+        </View>
       </View>
     );
   }
@@ -77,7 +108,11 @@ function TransportDetail({ guide }: { guide: TransportGuide }) {
   return (
     <View>
       {start}
+      {whereToAvail}
+      {nextStop}
       {rides}
+      {lastStop}
+      {faresNotes}
       {tip ? <View style={styles.tipStacked}>{tip}</View> : null}
     </View>
   );
@@ -96,7 +131,11 @@ export default function TransportationSection({ items, guide, bare }: Transporta
       fitModal={hasGuide}
       items={items}
       detail={hasGuide && guide ? <TransportDetail guide={guide} /> : undefined}
-      countLabel={hasGuide && guide ? `${guide.options.length} ${guide.options.length === 1 ? 'ride' : 'rides'}` : undefined}
+      countLabel={hasGuide && guide
+        ? guide.options.length > 0
+          ? `${guide.options.length} ${guide.options.length === 1 ? 'ride' : 'rides'}`
+          : 'Route details'
+        : undefined}
       bare={bare}
     />
   );
@@ -130,6 +169,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: BORDER_DEFAULT,
+  },
+  guideBlock: {
+    paddingTop: 10,
   },
   tipStacked: {
     paddingTop: 4,

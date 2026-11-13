@@ -196,12 +196,12 @@ export default function LoginScreen() {
   return (
     <>
       <AuthShell
-        eyebrow={isAdminLogin ? 'ADMIN ACCESS' : 'INTO THE VERDANT SUBLIMITY'}
+        eyebrow={isAdminLogin ? 'ADMIN ACCESS' : 'TRAIL IS CALLING — MUSYON, SAKA!'}
         title={isAdminLogin ? 'Admin login' : 'Welcome back'}
         subtitle={
           isAdminLogin
             ? 'Hidden sign in for administrators only.'
-            : 'Ready for your climb? Sign in to discover the sublime landscapes of Aklan.'
+            : 'Ready for your climb? Sign in to explore five featured mountains in Aklan.'
         }
         note={isAdminLogin ? 'Admin ka Gale?' : undefined}
         onLogoPress={handleLogoPress}
