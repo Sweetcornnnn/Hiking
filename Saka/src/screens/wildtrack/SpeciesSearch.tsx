@@ -102,7 +102,7 @@ export default function SpeciesSearchScreen() {
                 <SpeciesCard
                   species={item}
                   showDiscoveryStatus={false}
-                  detailSections={['gallery', 'timeline', 'taxonomy']}
+                  detailSections={['gallery', 'quickFacts', 'timeline', 'taxonomy']}
                 />
               </View>
             )}

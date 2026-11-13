@@ -20,6 +20,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Reanimated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BG_PANEL,
   BG_SUBTLE,
@@ -29,6 +37,7 @@ import {
   ACCENT_GOLD,
   ACCENT_GREEN,
 } from '../../theme/designTokens';
+import { FULLSCREEN_MODAL_PROPS } from '../ModalScrim';
 import { SpeciesGallery } from './SpeciesGallery';
 import { TaxonomyTree } from './TaxonomyTree';
 import { ObservationTimeline } from './ObservationTimeline';
@@ -72,15 +81,19 @@ export interface SpeciesCardProps {
  * HOW THIS WORKS
  * --------------
  * Grid card : the original design, unchanged.
- * Press it  : the profile opens (image LEFT, description RIGHT, bookmark).
+ * Press it  : the profile opens.
  *
- * `detailSections` decides what else the profile shows:
- *   []  (default)  plain profile only. Used by WildTrack and Discovery.
- *   ['gallery','timeline','taxonomy']  adds those sections below the hero.
- *                  Used by SpeciesSearch. Only then does the profile load
- *                  species details (useSpeciesDetails + useOccurrenceData).
+ * `detailSections` decides which profile you get:
+ *   []  (default)  the compact profile above (image LEFT, description RIGHT,
+ *                  bookmark). Used by WildTrack and Discovery.
+ *   ['gallery','quickFacts','timeline','taxonomy']  a FULL-SCREEN profile
+ *                  with the title header (back button, sticky title), the
+ *                  gallery, quick facts + description, the observation
+ *                  timeline and the taxonomy tree. Used by SpeciesSearch.
+ *                  Only this one loads species details
+ *                  (useSpeciesDetails + useOccurrenceData).
  *
- * BOOKMARK (shown only when showDiscoveryStatus is true):
+ * BOOKMARK (compact profile only, shown only when showDiscoveryStatus is true):
  *   GOLD = undiscovered, GREEN = discovered. Pull it down: a confirmation card
  *   asks the question. Keep pulling to the end = yes, release early = no.
  */
@@ -320,13 +333,10 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
 
       {detailOpen &&
         (detailSections && detailSections.length > 0 ? (
-          <SpeciesDetailWithData
+          <SpeciesFullProfile
             species={species}
             imageUri={resolvedImage}
-            discovered={discovered}
-            showStatus={showDiscoveryStatus}
             sections={detailSections}
-            onSetDiscovered={handleSetDiscovered}
             onClose={() => setDetailOpen(false)}
           />
         ) : (
@@ -335,7 +345,6 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
             imageUri={resolvedImage}
             discovered={discovered}
             showStatus={showDiscoveryStatus}
-            sections={[]}
             onSetDiscovered={handleSetDiscovered}
             onClose={() => setDetailOpen(false)}
           />
@@ -348,19 +357,11 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
 /*  PROFILE (opens when the card is pressed)                                  */
 /* ========================================================================== */
 
-interface DetailData {
-  detail: any;
-  records: any[];
-  loading: boolean;
-}
-
 interface SpeciesDetailProps {
   species: any;
   imageUri?: string;
   discovered: boolean;
   showStatus: boolean;
-  sections: SpeciesDetailSection[];
-  data?: DetailData;
   onSetDiscovered: (next: boolean) => void;
   onClose: () => void;
 }
@@ -375,8 +376,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
   imageUri,
   discovered,
   showStatus,
-  sections,
-  data,
   onSetDiscovered,
   onClose,
 }) => {
@@ -389,49 +388,22 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
   const [imageLoading, setImageLoading] = useState(true);
   const [done, setDone] = useState<DoneToast | null>(null);
   const [scrollLocked, setScrollLocked] = useState(false);
-  const [descExpanded, setDescExpanded] = useState(false);
   const hasImage = !!imageUri && !imageError;
 
-  // details/observations are provided by SpeciesDetailWithData, and only for
-  // screens that asked for extra sections
-  const hasSections = sections.length > 0;
-  const detail = data?.detail;
-  const records: any[] = data?.records ?? [];
-  const loadingDetail = hasSections ? data?.loading ?? true : false;
-
-  const galleryImages = useMemo(() => {
-    const images =
-      detail?.gallery_images ||
-      species?.gallery_images ||
-      (imageUri ? [imageUri] : []);
-    return (images || []).filter(Boolean);
-  }, [detail, species, imageUri]);
-
-  const commonName =
-    detail?.common_name || species?.common_name || 'Unknown species';
-  const scientificName: string | undefined =
-    detail?.scientific_name || species?.scientific_name;
-
-  const detailDescription = String(detail?.description ?? '').trim();
-  const apiDescription: string =
-    detailDescription ||
-    String(species?.description || species?.summary || '').trim();
+  const commonName = species?.common_name || 'Unknown species';
+  const scientificName: string | undefined = species?.scientific_name;
+  const apiDescription: string = String(
+    species?.description || species?.summary || '',
+  ).trim();
   const hasDescription = apiDescription.length > 0;
-  const descriptionSource: string | undefined = detailDescription
-    ? detail?.description_source
-    : undefined;
-  const noInfoMode = !hasDescription && !loadingDetail;
-  const canExpand = hasSections && apiDescription.length > 220;
+  const noInfoMode = !hasDescription;
 
   const descriptionText = useMemo(
     () =>
       hasDescription
         ? apiDescription
-        : noInfoLine(
-            { ...species, ...(detail?.taxonomy ?? {}) },
-            `${commonName}${scientificName ?? ''}`,
-          ),
-    [hasDescription, apiDescription, species, detail, commonName, scientificName],
+        : noInfoLine(species, `${commonName}${scientificName ?? ''}`),
+    [hasDescription, apiDescription, species, commonName, scientificName],
   );
 
   // ---------------------------------------------------------------- animation
@@ -666,7 +638,11 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
     }),
     ribbonWiggle,
   );
-  const ribbonHandleH = Animated.add(ribbonH, 28);
+  // handle is the ribbon plus a little slack (interpolate, so every arg is an Animated node)
+  const ribbonHandleH = ribbonH.interpolate({
+    inputRange: [0, 400],
+    outputRange: [28, 428],
+  });
 
   const ribbonColor = tone.interpolate({
     inputRange: [0, 1, 2, 3],
@@ -725,16 +701,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
   const question = discovered
     ? 'Remove this discovery?'
     : 'Did you discover this species?';
-
-  // quick-facts occurrence text (same wording as the old modal)
-  const occurrenceText =
-    detail?.occurrence_count != null
-      ? `${detail.occurrence_count.toLocaleString()} ${
-          detail.occurrence_count === 1 ? 'record' : 'records'
-        }`
-      : `${(records?.length ?? 0).toLocaleString()} ${
-          (records?.length ?? 0) === 1 ? 'record' : 'records'
-        } in this timeline`;
 
   // ------------------------------------------------------------------- render
   return (
@@ -901,45 +867,17 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
                       </Text>
                     )}
 
-                    {!hasDescription && loadingDetail ? (
-                      <View style={styles.descLoading}>
-                        <ActivityIndicator size="small" color={ACCENT_GOLD} />
-                        <Text style={styles.descLoadingText}>Loading details</Text>
-                      </View>
-                    ) : (
-                      <>
-                        <Text
-                          style={[
-                            styles.sheetDescription,
-                            !hasDescription && styles.sheetDescriptionEmpty,
-                          ]}
-                          numberOfLines={
-                            hasDescription ? (descExpanded ? undefined : 6) : 3
-                          }
-                        >
-                          {descriptionText}
-                        </Text>
-                        {hasDescription && canExpand && (
-                          <Pressable
-                            onPress={() => setDescExpanded((v) => !v)}
-                            hitSlop={8}
-                            accessibilityRole="button"
-                          >
-                            <Text style={styles.readMore}>
-                              {descExpanded ? 'Show less' : 'Read more'}
-                            </Text>
-                          </Pressable>
-                        )}
-                        {!!descriptionSource && (
-                          <Text style={styles.descSource}>
-                            Source: {descriptionSource}
-                          </Text>
-                        )}
-                      </>
-                    )}
+                    <Text
+                      style={[
+                        styles.sheetDescription,
+                        !hasDescription && styles.sheetDescriptionEmpty,
+                      ]}
+                      numberOfLines={hasDescription ? 6 : 3}
+                    >
+                      {descriptionText}
+                    </Text>
 
-                    {!hasSections &&
-                      (!!species?.family || !!species?.conservation_status) && (
+                    {(!!species?.family || !!species?.conservation_status) && (
                         <View style={styles.chipRow}>
                           {!!species?.family && (
                             <View style={styles.chip}>
@@ -961,105 +899,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
                 </View>
               </View>
 
-              {/* ===== EXTRA SECTIONS (only when detailSections is passed) ===== */}
-              {hasSections && (
-                <View style={styles.sections}>
-                  {loadingDetail ? (
-                    <View style={styles.sectionLoading}>
-                      <ActivityIndicator size="small" color={ACCENT_GOLD} />
-                      <Text style={styles.sectionLoadingText}>
-                        Loading species details...
-                      </Text>
-                    </View>
-                  ) : detail ? (
-                    <>
-                      {sections.includes('gallery') &&
-                        (galleryImages.length > 0 ? (
-                          <SpeciesGallery images={galleryImages} />
-                        ) : (
-                          <View style={styles.noImageCard}>
-                            <Ionicons
-                              name="images-outline"
-                              size={28}
-                              color="#94A3B8"
-                            />
-                            <Text style={styles.noImageText}>
-                              No image data available
-                            </Text>
-                          </View>
-                        ))}
-
-                      {(sections.includes('quickFacts') ||
-                        sections.includes('timeline')) && (
-                        <View style={styles.infoSection}>
-                          {sections.includes('quickFacts') && (
-                            <>
-                              <Text style={styles.cardTitle}>Quick facts</Text>
-                              <View style={styles.quickFactsGrid}>
-                                <View style={styles.factRow}>
-                                  <Text style={styles.factLabel}>Status</Text>
-                                  <Text style={styles.factText}>
-                                    {detail?.conservation_status || 'Not listed'}
-                                  </Text>
-                                </View>
-
-                                <View style={styles.factRow}>
-                                  <Text style={styles.factLabel}>Habitat</Text>
-                                  <Text style={styles.factText}>
-                                    {detail?.habitat || 'Mountain ecosystem'}
-                                  </Text>
-                                </View>
-
-                                <View style={styles.factRow}>
-                                  <Text style={styles.factLabel}>Native</Text>
-                                  <Text style={styles.factText}>
-                                    {detail?.is_native === false
-                                      ? 'Introduced'
-                                      : 'Native'}
-                                  </Text>
-                                </View>
-
-                                <View style={styles.factRow}>
-                                  <Text style={styles.factLabel}>Occurrence</Text>
-                                  <Text style={styles.factText}>
-                                    {occurrenceText}
-                                  </Text>
-                                </View>
-                              </View>
-                            </>
-                          )}
-
-                          {sections.includes('quickFacts') &&
-                            sections.includes('timeline') && (
-                              <View style={styles.infoSectionDivider} />
-                            )}
-
-                          {sections.includes('timeline') && (
-                            <ObservationTimeline
-                              observations={records || []}
-                              embedded
-                            />
-                          )}
-                        </View>
-                      )}
-
-                      {sections.includes('taxonomy') && (
-                        <TaxonomyTree
-                          taxonomy={detail?.taxonomy}
-                          source={detail?.taxonomy_source}
-                        />
-                      )}
-                    </>
-                  ) : (
-                    <View style={styles.noImageCard}>
-                      <Ionicons name="leaf-outline" size={28} color="#94A3B8" />
-                      <Text style={styles.noImageText}>
-                        Species summary unavailable
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
             </ScrollView>
           </View>
 
@@ -1145,13 +984,23 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
 };
 
 /* ========================================================================== */
-/*  PROFILE + DATA (only used when detailSections is passed)                  */
+/*  FULL-SCREEN PROFILE (used when detailSections is passed, e.g. search)     */
 /* ========================================================================== */
 
-const SpeciesDetailWithData: React.FC<Omit<SpeciesDetailProps, 'data'>> = (
-  props,
-) => {
-  const { species } = props;
+interface SpeciesFullProfileProps {
+  species: any;
+  imageUri?: string;
+  sections: SpeciesDetailSection[];
+  onClose: () => void;
+}
+
+const SpeciesFullProfile: React.FC<SpeciesFullProfileProps> = ({
+  species,
+  imageUri,
+  sections,
+  onClose,
+}) => {
+  const insets = useSafeAreaInsets();
   const {
     detail,
     isLoading: detailLoading,
@@ -1186,15 +1035,257 @@ const SpeciesDetailWithData: React.FC<Omit<SpeciesDetailProps, 'data'>> = (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail]);
 
+  const loading = detailLoading || !settled;
+  const displayData = detail || species;
+
+  const galleryImages = useMemo(() => {
+    const images =
+      detail?.gallery_images ||
+      species?.gallery_images ||
+      (imageUri ? [imageUri] : []);
+    return (images || []).filter(Boolean);
+  }, [detail, species, imageUri]);
+
+  // ---- sticky header that fades in while scrolling (same as the old modal) --
+  const detailScrollY = useSharedValue(0);
+  const onDetailScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      detailScrollY.value = event.contentOffset.y;
+    },
+  });
+  const stickyTitleStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      detailScrollY.value,
+      [24, 100],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
+    transform: [
+      {
+        translateY: interpolate(
+          detailScrollY.value,
+          [24, 100],
+          [10, 0],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+  const stickyHeaderStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateY: interpolate(
+          detailScrollY.value,
+          [0, 72],
+          [-68, 0],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+  const detailBackButtonStyle = useAnimatedStyle(() => ({
+    opacity:
+      1 -
+      interpolate(detailScrollY.value, [24, 100], [0, 1], Extrapolation.CLAMP),
+  }));
+
+  const titleName =
+    displayData?.common_name || displayData?.scientific_name || 'Unknown Species';
+  const showScientific = !!displayData?.common_name && !!displayData?.scientific_name;
+
+  const has = (key: SpeciesDetailSection) => sections.includes(key);
+
+  // blocks inside the info card (separated by dividers)
+  const infoBlocks: React.ReactNode[] = [];
+  if (detail && has('quickFacts')) {
+    infoBlocks.push(
+      <View key="facts">
+        <Text style={styles.cardTitle}>Quick facts</Text>
+        <View style={styles.quickFactsGrid}>
+          <View style={styles.factRow}>
+            <Text style={styles.factLabel}>Status</Text>
+            <Text style={styles.factText}>
+              {detail?.conservation_status || 'Not listed'}
+            </Text>
+          </View>
+
+          <View style={styles.factRow}>
+            <Text style={styles.factLabel}>Habitat</Text>
+            <Text style={styles.factText}>
+              {detail?.habitat || 'Mountain ecosystem'}
+            </Text>
+          </View>
+
+          <View style={styles.factRow}>
+            <Text style={styles.factLabel}>Native</Text>
+            <Text style={styles.factText}>
+              {detail?.is_native === false ? 'Introduced' : 'Native'}
+            </Text>
+          </View>
+
+          <View style={styles.factRow}>
+            <Text style={styles.factLabel}>Occurrence</Text>
+            <Text style={styles.factText}>
+              {detail?.occurrence_count != null
+                ? `${detail.occurrence_count.toLocaleString()} ${
+                    detail.occurrence_count === 1 ? 'record' : 'records'
+                  }`
+                : `${(records?.length ?? 0).toLocaleString()} ${
+                    (records?.length ?? 0) === 1 ? 'record' : 'records'
+                  } in this timeline`}
+            </Text>
+          </View>
+        </View>
+      </View>,
+    );
+  }
+  if (detail?.description) {
+    infoBlocks.push(
+      <View key="desc">
+        <Text style={styles.cardTitle}>Description</Text>
+        <Text style={styles.descriptionText}>{detail.description}</Text>
+        {!!detail.description_source && (
+          <Text style={styles.descriptionSource}>
+            Source: {detail.description_source}
+          </Text>
+        )}
+      </View>,
+    );
+  }
+  if (detail && has('timeline')) {
+    infoBlocks.push(
+      <ObservationTimeline key="timeline" observations={records || []} embedded />,
+    );
+  }
+
   return (
-    <SpeciesDetail
-      {...props}
-      data={{
-        detail,
-        records: records || [],
-        loading: detailLoading || !settled,
-      }}
-    />
+    <Modal
+      {...FULLSCREEN_MODAL_PROPS}
+      visible
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View
+        style={[
+          styles.modalBackdrop,
+          {
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
+        <View style={styles.modalScreen}>
+          {/* sticky header: slides in once you scroll past the title */}
+          <Reanimated.View style={[styles.modalHeader, stickyHeaderStyle]}>
+            <Reanimated.View
+              pointerEvents="none"
+              style={[styles.stickyTitle, stickyTitleStyle]}
+            >
+              <Text style={styles.modalTitle} numberOfLines={1}>
+                {titleName}
+              </Text>
+              {showScientific && (
+                <Text style={styles.modalScientific} numberOfLines={1}>
+                  {displayData.scientific_name}
+                </Text>
+              )}
+            </Reanimated.View>
+
+            <Reanimated.View
+              pointerEvents="none"
+              style={[styles.modalHeaderLine, stickyTitleStyle]}
+            />
+            <Pressable
+              style={styles.closeModalButton}
+              onPress={onClose}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Back to species search"
+            >
+              <Ionicons name="chevron-back" size={22} color="#94A3B8" />
+            </Pressable>
+          </Reanimated.View>
+
+          <Reanimated.ScrollView
+            style={styles.modalContent}
+            contentContainerStyle={styles.modalContentContainer}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onScroll={onDetailScroll}
+          >
+            {/* title block with back button */}
+            <View style={styles.detailTitle}>
+              <Reanimated.View
+                style={[styles.detailBackButton, detailBackButtonStyle]}
+              >
+                <Pressable
+                  onPress={onClose}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to species search"
+                >
+                  <Ionicons name="chevron-back" size={22} color="#94A3B8" />
+                </Pressable>
+              </Reanimated.View>
+              <Text style={styles.detailTitleCommon} numberOfLines={1}>
+                {titleName}
+              </Text>
+              {showScientific && (
+                <Text style={styles.detailTitleScientific} numberOfLines={1}>
+                  {displayData.scientific_name}
+                </Text>
+              )}
+            </View>
+
+            {loading ? (
+              <View style={styles.modalLoading}>
+                <ActivityIndicator size="large" color="#D4A574" />
+                <Text style={styles.modalLoadingText}>
+                  Loading species details...
+                </Text>
+              </View>
+            ) : detail ? (
+              <View style={styles.modalBody}>
+                {has('gallery') &&
+                  (galleryImages.length > 0 ? (
+                    <SpeciesGallery images={galleryImages} />
+                  ) : (
+                    <View style={styles.noImageCard}>
+                      <Ionicons name="images-outline" size={28} color="#94A3B8" />
+                      <Text style={styles.noImageText}>No image data available</Text>
+                    </View>
+                  ))}
+
+                {infoBlocks.length > 0 && (
+                  <View style={styles.infoSection}>
+                    {infoBlocks.map((block, i) => (
+                      <React.Fragment key={i}>
+                        {i > 0 && <View style={styles.infoSectionDivider} />}
+                        {block}
+                      </React.Fragment>
+                    ))}
+                  </View>
+                )}
+
+                {has('taxonomy') && (
+                  <TaxonomyTree
+                    taxonomy={detail?.taxonomy}
+                    source={detail?.taxonomy_source}
+                  />
+                )}
+              </View>
+            ) : (
+              <View style={styles.noImageCard}>
+                <Ionicons name="leaf-outline" size={28} color="#94A3B8" />
+                <Text style={styles.noImageText}>Species summary unavailable</Text>
+              </View>
+            )}
+          </Reanimated.ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 };
 
@@ -1513,50 +1604,96 @@ const styles = StyleSheet.create({
     color: TEXT_MUTED,
   },
 
-  readMore: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-    color: ACCENT_GOLD,
-  },
 
-  descSource: {
-    marginTop: 6,
-    fontSize: 10,
-    color: '#94A3B8',
-  },
 
-  descLoading: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
 
-  descLoadingText: {
-    fontSize: 12,
-    color: TEXT_MUTED,
-  },
 
   /* ---------- sections below the hero (from the old SpeciesSearch modal) ---------- */
-  sections: {
-    padding: 12,
-    gap: 14,
-    borderTopWidth: 1,
-    borderTopColor: BORDER_DEFAULT,
-  },
 
-  sectionLoading: {
-    paddingVertical: 28,
+
+
+  /* ---------- full-screen profile (from the old SpeciesSearch modal) ---------- */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#111827',
+    overflow: 'hidden',
+  },
+  modalScreen: { flex: 1, backgroundColor: '#111827' },
+  modalHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 68,
+    zIndex: 10,
+    elevation: 10,
+    backgroundColor: '#111827',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  stickyTitle: {
+    position: 'absolute',
+    left: 48,
+    right: 8,
+    top: 10,
+    alignItems: 'center',
+  },
+  modalHeaderLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#1E293B',
+  },
+  modalTitle: { color: '#F8FAFC', fontSize: 17, fontWeight: '700' },
+  modalScientific: {
+    marginTop: 3,
+    color: '#D4A574',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  detailTitle: {
+    position: 'relative',
+    alignItems: 'center',
+    paddingTop: 6,
+    paddingBottom: 14,
+    paddingHorizontal: 12,
+  },
+  detailBackButton: {
+    position: 'absolute',
+    top: 12,
+    left: 0,
+    zIndex: 1,
+  },
+  detailTitleCommon: {
+    color: '#F8FAFC',
+    fontSize: 21,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  detailTitleScientific: {
+    color: '#D4A574',
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  closeModalButton: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
   },
-
-  sectionLoadingText: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
+  modalContent: { flex: 1, zIndex: 0, elevation: 0 },
+  modalContentContainer: { padding: 12, paddingBottom: 16 },
+  modalBody: { gap: 14 },
+  descriptionText: { color: '#F8FAFC', fontSize: 12, lineHeight: 18 },
+  descriptionSource: { color: '#94A3B8', fontSize: 10, marginTop: 6 },
+  modalLoading: { paddingVertical: 40, justifyContent: 'center', alignItems: 'center' },
+  modalLoadingText: { marginTop: 12, color: '#94A3B8', fontSize: 12 },
 
   cardTitle: { color: '#F8FAFC', fontSize: 13, fontWeight: '700', marginBottom: 8 },
 
