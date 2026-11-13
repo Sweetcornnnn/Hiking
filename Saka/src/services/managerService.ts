@@ -172,10 +172,43 @@ function applyLocalGuideData(tips: MountainTips): MountainTips {
 
   return {
     ...tips,
-    transportation: localTips.transportation,
-    transportGuide: localTips.transportGuide,
-    trailTips: localTips.trailTips,
-    trailGuide: localTips.trailGuide,
+    preparation: localTips.preparation.length > 0 ? localTips.preparation : tips.preparation,
+    preparationGuide: localTips.preparationGuide ?? tips.preparationGuide,
+    safety: localTips.safety.length > 0
+      ? [...tips.safety, ...localTips.safety.filter((item) => !tips.safety.includes(item))]
+      : tips.safety,
+    safetyGuide: localTips.safetyGuide
+      ? { ...(tips.safetyGuide ?? {}), ...localTips.safetyGuide }
+      : tips.safetyGuide,
+    transportation: localTips.transportation.length > 0 ? localTips.transportation : tips.transportation,
+    transportGuide: localTips.transportGuide
+      ? {
+          ...(tips.transportGuide ?? {}),
+          ...localTips.transportGuide,
+          options: localTips.transportGuide.options.length > 0
+            ? localTips.transportGuide.options
+            : tips.transportGuide?.options ?? [],
+        }
+      : tips.transportGuide,
+    trailTips: localTips.trailTips.length > 0
+      ? [...tips.trailTips, ...localTips.trailTips.filter((item) => !tips.trailTips.includes(item))]
+      : tips.trailTips,
+    trailGuide: localTips.trailGuide
+      ? { ...(tips.trailGuide ?? {}), ...localTips.trailGuide }
+      : tips.trailGuide,
+    etiquette: localTips.etiquette.length > 0
+      ? [...tips.etiquette, ...localTips.etiquette.filter((item) => !tips.etiquette.includes(item))]
+      : tips.etiquette,
+    etiquetteGuide: localTips.etiquetteGuide
+      ? {
+          ...localTips.etiquetteGuide,
+          ...(tips.etiquetteGuide ?? {}),
+          note: tips.etiquetteGuide?.note && localTips.etiquetteGuide.note
+            && tips.etiquetteGuide.note !== localTips.etiquetteGuide.note
+            ? `${tips.etiquetteGuide.note}\n${localTips.etiquetteGuide.note}`
+            : localTips.etiquetteGuide.note ?? tips.etiquetteGuide?.note,
+        }
+      : tips.etiquetteGuide,
   };
 }
 

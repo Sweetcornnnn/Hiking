@@ -175,7 +175,7 @@ function EtiquetteDetail({ guide }: { guide: EtiquetteGuide }) {
 }
 
 export default function EtiquetteSection({ items, guide }: EtiquetteSectionProps) {
-  const hasGuide = Boolean(guide && (guide.rules?.length || guide.local));
+  const hasGuide = Boolean(guide && (guide.rules?.length || guide.local || guide.note));
 
   return (
     <InfoSection
