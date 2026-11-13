@@ -71,7 +71,6 @@ export const GBIFService = {
       conservation_status: item.taxonomicStatus,
       is_endemic: false,
       is_native: false,
-      occurrence_count: item.numDescendants ?? item.usageKey ?? undefined,
       habitat: item.kingdom,
       description: item.taxonomicStatus || `${item.rank || 'Species'} within ${item.kingdom || 'the tree of life'}`,
     }));
@@ -79,10 +78,11 @@ export const GBIFService = {
 
   async getSpeciesDetails(gbifId: number): Promise<SpeciesDetails | null> {
     try {
-      const [speciesData, vernacularData, occurrenceData] = await Promise.all([
+      const [speciesData, vernacularData, occurrenceData, descriptionData] = await Promise.all([
         safeJsonFetch<any>(`${BASE_URL}/species/${gbifId}`),
         safeJsonFetch<any>(`${BASE_URL}/species/${gbifId}/vernacularNames`),
         safeJsonFetch<any>(`${BASE_URL}/occurrence/search?taxonKey=${gbifId}&limit=12&hasCoordinate=true`),
+        safeJsonFetch<{ results?: any[] }>(`${BASE_URL}/species/${gbifId}/descriptions`),
       ]);
 
       if (!speciesData) return null;
@@ -90,6 +90,10 @@ export const GBIFService = {
       const vernacularNames = ((vernacularData?.results || []) as any[])
         .map((item: any) => item.vernacularName)
         .filter(Boolean);
+      const descriptions = (descriptionData?.results || [])
+        .filter((item: any) => typeof item.description === 'string' && item.description.trim());
+      const description = descriptions.find((item: any) => item.language?.toLowerCase().startsWith('en'))
+        || descriptions[0];
       const occurrences = (occurrenceData?.results || []) as any[];
       const sortedObservations = [...occurrences].sort((a: any, b: any) => {
         const aDate = new Date(a.eventDate || a.created || 0).getTime();
@@ -114,6 +118,8 @@ export const GBIFService = {
         taxon_rank: speciesData.rank,
         category: inferCategoryFromRank(speciesData.rank, speciesData.family, speciesData.genus),
         taxonomy: mapTaxonomy(speciesData),
+        description: description?.description,
+        description_source: description ? 'GBIF' : undefined,
         image_url: undefined,
         conservation_status: speciesData.taxonomicStatus,
         is_endemic: false,

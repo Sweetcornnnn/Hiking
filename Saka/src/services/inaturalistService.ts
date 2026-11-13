@@ -108,7 +108,8 @@ export const INaturalistService = {
       occurrence_count: taxon.observations_count,
       last_observed: taxon.last_observation_at,
       observation_sources: [taxon.iconic_taxon_name].filter(Boolean),
-      description: taxon.wikipedia_url ? `More information available at ${taxon.wikipedia_url}` : undefined,
+      description: taxon.wikipedia_summary || undefined,
+      description_source: taxon.wikipedia_summary ? 'iNaturalist' : undefined,
       distribution_notes: taxon.native ? 'Native species' : 'Introduced or unknown origin',
     };
   },
@@ -128,8 +129,6 @@ export const INaturalistService = {
       elevation: item.taxon?.elevation || item.location_accuracy,
       country: item.place_guess,
       locality: item.location_guess,
-      dataset: item.site_id?.toString(),
-      habitat: item.taxon?.preferred_common_name,
       confidence: item.quality_grade,
       imageUrl: item.photos?.[0]?.url,
     }));

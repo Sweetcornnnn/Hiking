@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Modal,
   ActivityIndicator,
   Image,
+  LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,6 +20,8 @@ import { useWildTrackStore, Species } from '../../store/wildtrackStore';
 import { SpeciesCarousel } from '../../components/wildtrack/SpeciesCarousel';
 import { ProgressCard } from '../../components/wildtrack/ProgressCard';
 import { mountainService, Mountain } from '../../services/mountainService';
+import { getSpeciesByMountain } from '../../data/curatedSpecies';
+import Toast, { ToastHandle } from '../../components/Toast';
 
 const C = {
   bg: '#09111F',
@@ -36,6 +39,19 @@ const C = {
   greenBorder: 'rgba(34,197,94,0.22)',
 };
 
+const MOUNTAIN_DESCRIPTION_PREVIEW_LENGTH = 180;
+
+const getMountainDescriptionPreview = (description: string): string => {
+  if (description.length <= MOUNTAIN_DESCRIPTION_PREVIEW_LENGTH) return description;
+
+  const preview = description.slice(0, MOUNTAIN_DESCRIPTION_PREVIEW_LENGTH);
+  const lastSpace = preview.lastIndexOf(' ');
+  return `${preview.slice(0, lastSpace > 120 ? lastSpace : preview.length).trimEnd()}…`;
+};
+
+const normalizeMountainName = (name: string): string =>
+  name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 export default function WildTrackScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -48,26 +64,33 @@ export default function WildTrackScreen() {
     selectedMountainId,
     setSelectedMountainId,
     featuredSpecies,
+    discoveries,
     stats,
     isLoading,
     fetchFeaturedSpecies,
-    fetchMountainSpecies,
+    fetchDiscoveries,
     fetchStats,
     fetchMountainBiodiversity,
-    mountainBiodiversity,
+    mountainBiodiversityById,
     createDiscovery,
+    removeDiscovery,
   } = useWildTrackStore();
 
   const [selectedSpecies, setSelectedSpecies] = useState<Species | null>(null);
   const [showLockedModal, setShowLockedModal] = useState(false);
-  const [showMountainInfo, setShowMountainInfo] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [isDiscoveryActionLoading, setIsDiscoveryActionLoading] = useState(false);
+  const toastRef = useRef<ToastHandle>(null);
+  const [expandedDescriptionMountainId, setExpandedDescriptionMountainId] = useState<string | null>(null);
+  const [loadedMountainInfoId, setLoadedMountainInfoId] = useState<string | null>(null);
   const [mountains, setMountains] = useState<Mountain[]>(() =>
     mountainService.getCachedMountains()
   );
 
   const currentMountain =
     mountains.find((m) => m.id === selectedMountainId) || mountains[0];
+  const selectedMountainBiodiversity = mountainBiodiversityById[selectedMountainId];
 
   useEffect(() => {
     let mounted = true;
@@ -95,32 +118,107 @@ export default function WildTrackScreen() {
     if (selectedMountainId) loadWildTrackData();
   }, [selectedMountainId]);
 
+  useEffect(() => {
+    if (!selectedMountainId) return;
+
+    let active = true;
+    if (selectedMountainBiodiversity) {
+      setLoadedMountainInfoId(selectedMountainId);
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoadedMountainInfoId(null);
+    fetchMountainBiodiversity(selectedMountainId).finally(() => {
+      if (active) setLoadedMountainInfoId(selectedMountainId);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedMountainId, selectedMountainBiodiversity, fetchMountainBiodiversity]);
+
   const loadWildTrackData = async () => {
     await Promise.all([
       fetchFeaturedSpecies(selectedMountainId),
-      fetchMountainSpecies(selectedMountainId),
+      fetchDiscoveries(selectedMountainId),
       fetchStats(selectedMountainId),
-      fetchMountainBiodiversity(selectedMountainId),
     ]);
   };
 
   const handleSpeciesPress = (species: Species) => {
     setImageError(false);
-    setSelectedSpecies(species);
+    setDiscoveryError(null);
+    const normalizeName = (name?: string) => name?.trim().toLowerCase();
+    const curatedSpecies = getSpeciesByMountain(selectedMountainId).find(
+      (candidate) =>
+        normalizeName(candidate.scientific_name) === normalizeName(species.scientific_name) ||
+        normalizeName(candidate.common_name) === normalizeName(species.common_name),
+    );
+    setSelectedSpecies({
+      ...species,
+      description: species.description?.trim() || curatedSpecies?.description,
+    });
     setShowLockedModal(true);
   };
 
   const handleDiscoverSpecies = async () => {
     if (!selectedSpecies) return;
-    const { error } = await createDiscovery(selectedSpecies.id, selectedMountainId);
-    if (!error) {
-      setShowLockedModal(false);
-      setSelectedSpecies(null);
+    const speciesName = selectedSpecies.common_name || selectedSpecies.scientific_name;
+    setIsDiscoveryActionLoading(true);
+    try {
+      if (selectedSpecies.discovered) {
+        const discovery = discoveries.find(
+          (item) =>
+            item.species_id === selectedSpecies.id &&
+            item.mountain_id === selectedMountainId,
+        );
+        if (!discovery) {
+          setDiscoveryError('Could not find this discovery to remove. Please try again.');
+          await fetchDiscoveries(selectedMountainId);
+          return;
+        }
+
+        const { error } = await removeDiscovery(discovery.id);
+        if (error) {
+          setDiscoveryError(error);
+          return;
+        }
+
+        setDiscoveryError(null);
+        setShowLockedModal(false);
+        setSelectedSpecies(null);
+        toastRef.current?.show({
+          type: 'success',
+          title: 'Discovery removed',
+          message: `${speciesName} removed from your discoveries.`,
+        });
+      } else {
+        const { error } = await createDiscovery(selectedSpecies.id, selectedMountainId);
+        if (error) {
+          setDiscoveryError(error);
+          return;
+        }
+
+        setDiscoveryError(null);
+        setShowLockedModal(false);
+        setSelectedSpecies(null);
+        toastRef.current?.show({
+          type: 'success',
+          title: 'Discovery recorded',
+          message: `${speciesName} added to your discoveries.`,
+        });
+      }
+
       await loadWildTrackData();
+    } finally {
+      setIsDiscoveryActionLoading(false);
     }
   };
 
   const displayMountainInfo = useMemo(() => {
+    const mountainBiodiversity = selectedMountainBiodiversity;
     if (!mountainBiodiversity) return null;
     const info: any = mountainBiodiversity;
     return {
@@ -129,15 +227,37 @@ export default function WildTrackScreen() {
       endemic_species_count: info.endemic_species_count || info.endemicSpeciesCount || 0,
       conservation_status: info.conservation_status || info.conservationStatus || '',
     };
-  }, [mountainBiodiversity]);
+  }, [selectedMountainBiodiversity]);
+  const isMountainInfoLoading =
+    !!selectedMountainId &&
+    loadedMountainInfoId !== selectedMountainId &&
+    !selectedMountainBiodiversity;
+  const mountainDescription =
+    isMountainInfoLoading
+      ? 'Loading biodiversity information…'
+      : displayMountainInfo?.description ||
+        currentMountain?.description ||
+        'Biodiversity information is not available yet.';
+  const normalizedMountainName = normalizeMountainName(currentMountain?.name || '');
+  const canExpandMountainDescription =
+    (normalizedMountainName.includes('nantud') || normalizedMountainName.includes('nangtud')) &&
+    mountainDescription.length > MOUNTAIN_DESCRIPTION_PREVIEW_LENGTH;
+  const isMountainDescriptionExpanded =
+    currentMountain?.id != null && expandedDescriptionMountainId === currentMountain.id;
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[styles.scrollContent, { paddingTop: headerTopPadding + 8 }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: headerTopPadding + 8,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.pageContent}>
         {/* TOP NAV */}
         <View style={styles.navRow}>
           <TouchableOpacity
@@ -149,9 +269,9 @@ export default function WildTrackScreen() {
           </TouchableOpacity>
 
           <View style={styles.navTitleBlock}>
-            <View style={styles.badge}>
-              <Ionicons name="leaf" size={12} color={C.accent} />
-              <Text style={styles.badgeText}>WILDTRACK</Text>
+            <View style={styles.navBrandRow}>
+              <Ionicons name="leaf" size={28} color={C.accent} />
+              <Text style={styles.navBrand}>WILDTRACK</Text>
             </View>
             <Text style={styles.navTitle}>Biodiversity Tracker</Text>
           </View>
@@ -170,14 +290,22 @@ export default function WildTrackScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.selectorContent}
+            contentContainerStyle={[
+              styles.selectorContent,
+              { minWidth: '100%', justifyContent: 'center' },
+            ]}
           >
             {mountains.map((m) => {
               const active = selectedMountainId === m.id;
               return (
                 <TouchableOpacity
                   key={m.id}
-                  onPress={() => setSelectedMountainId(m.id)}
+                  onPress={() => {
+                    if (m.id !== selectedMountainId) {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setSelectedMountainId(m.id);
+                    }
+                  }}
                   style={[styles.chip, active && styles.chipActive]}
                   activeOpacity={0.85}
                 >
@@ -191,11 +319,7 @@ export default function WildTrackScreen() {
 
           <View style={styles.heroRow}>
             {/* LEFT: mountain info */}
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => setShowMountainInfo(!showMountainInfo)}
-              style={styles.infoCard}
-            >
+            <View style={styles.infoCard}>
               <View style={styles.infoHeader}>
                 <View style={styles.infoTitleBlock}>
                   <Text style={styles.infoEyebrow}>CURRENT MOUNTAIN</Text>
@@ -203,34 +327,46 @@ export default function WildTrackScreen() {
                     {currentMountain?.name || 'Loading...'}
                   </Text>
                 </View>
-                <Ionicons
-                  name={showMountainInfo ? 'chevron-up' : 'chevron-down'}
-                  size={16}
-                  color={C.textSecondary}
-                />
               </View>
 
-              {showMountainInfo && (
-                <>
-                  <Text style={styles.infoDescription} numberOfLines={6}>
-                    {displayMountainInfo?.description ||
-                      currentMountain?.description ||
-                      'Biodiversity information is not available yet.'}
+              <Text
+                style={styles.infoDescription}
+                numberOfLines={
+                  isMountainInfoLoading
+                    ? 2
+                    : canExpandMountainDescription && !isMountainDescriptionExpanded
+                      ? 3
+                      : undefined
+                }
+              >
+                {isMountainInfoLoading
+                  ? mountainDescription
+                  : canExpandMountainDescription && !isMountainDescriptionExpanded
+                  ? getMountainDescriptionPreview(mountainDescription)
+                  : mountainDescription}
+              </Text>
+              {!isMountainInfoLoading && canExpandMountainDescription && (
+                <TouchableOpacity
+                  onPress={() => setExpandedDescriptionMountainId(
+                    isMountainDescriptionExpanded ? null : currentMountain?.id || null
+                  )}
+                  style={styles.descriptionToggle}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.descriptionToggleText}>
+                    {isMountainDescriptionExpanded ? 'Show less' : 'Read more'}
                   </Text>
-                  <View style={styles.infoMetaRow}>
-                    <Text style={styles.infoMetaText} numberOfLines={2}>
-                      {displayMountainInfo?.ecosystem ||
-                        currentMountain?.difficulty ||
-                        'Habitat pending'}
-                    </Text>
-                    <Text style={styles.infoMetaText} numberOfLines={2}>
-                      {displayMountainInfo?.conservation_status ||
-                        'Conservation status pending'}
-                    </Text>
-                  </View>
-                </>
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
+              <View style={styles.infoMetaRow}>
+                <Text style={styles.infoMetaText} numberOfLines={2}>
+                  Ecosystem: {displayMountainInfo?.ecosystem || 'Habitat pending'}
+                </Text>
+                <Text style={styles.infoMetaText} numberOfLines={2}>
+                  Conservation: {displayMountainInfo?.conservation_status || 'Status pending'}
+                </Text>
+              </View>
+            </View>
 
             {/* RIGHT: your discoveries */}
             <View style={styles.progressWrap}>
@@ -273,6 +409,7 @@ export default function WildTrackScreen() {
           )}
         </View>
 
+        </View>
       </ScrollView>
 
       {/* SPECIES DETAIL — floating centered modal, tap the backdrop to close */}
@@ -327,19 +464,37 @@ export default function WildTrackScreen() {
                   </Text>
                   <Text style={styles.modalDescription} numberOfLines={3}>
                     {selectedSpecies.description ||
-                      'Record this species as discovered on this mountain?'}
+                      'No species description is available yet.'}
                   </Text>
 
                   {selectedSpecies.discovered ? (
-                    <View style={styles.discoveredBadge}>
-                      <Ionicons name="checkmark-circle" size={15} color={C.green} />
-                      <Text style={styles.discoveredText}>Discovered</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity onPress={handleDiscoverSpecies} style={styles.discoverBtn}>
-                      <Ionicons name="leaf" size={15} color="#FFF" />
-                      <Text style={styles.discoverBtnText}>Mark discovered</Text>
+                    <TouchableOpacity
+                      onPress={handleDiscoverSpecies}
+                      style={styles.undiscoverBtn}
+                      disabled={isDiscoveryActionLoading}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="close-circle-outline" size={15} color={C.green} />
+                      <Text style={styles.undiscoverBtnText}>
+                        {isDiscoveryActionLoading ? 'Updating...' : 'Undiscover'}
+                      </Text>
                     </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        onPress={handleDiscoverSpecies}
+                        style={styles.discoverBtn}
+                        disabled={isDiscoveryActionLoading}
+                      >
+                        <Ionicons name="leaf" size={15} color="#FFF" />
+                        <Text style={styles.discoverBtnText}>
+                          {isDiscoveryActionLoading ? 'Saving...' : 'Mark discovered'}
+                        </Text>
+                      </TouchableOpacity>
+                      {discoveryError && (
+                        <Text style={styles.discoveryError}>{discoveryError}</Text>
+                      )}
+                    </>
                   )}
                 </View>
               </>
@@ -347,6 +502,7 @@ export default function WildTrackScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      <Toast ref={toastRef} position="top" topOffset={insets.top + 10} />
     </SafeAreaView>
   );
 }
@@ -354,7 +510,8 @@ export default function WildTrackScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 28, gap: 12 },
+  scrollContent: { paddingBottom: 28 },
+  pageContent: { paddingHorizontal: 46, gap: 12 },
 
   navRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   navIconBtn: {
@@ -380,22 +537,12 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  navTitleBlock: { flex: 1, alignItems: 'center', gap: 5 },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: C.accentDim,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    gap: 5,
-    borderWidth: 1,
-    borderColor: C.accentDimBorder,
-  },
-  badgeText: { color: C.accent, fontSize: 13, fontWeight: '800', letterSpacing: 0.8 },
+  navTitleBlock: { flex: 1, alignItems: 'center', gap: 3 },
+  navBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  navBrand: { color: C.accent, fontSize: 27, fontWeight: '800', letterSpacing: 1.4 },
   navTitle: {
     color: C.textSecondary,
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.3,
   },
@@ -431,7 +578,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 12,
+    padding: 10,
   },
   infoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 },
   infoTitleBlock: { flex: 1 },
@@ -443,8 +590,10 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   infoTitle: { color: C.textPrimary, fontSize: 13, fontWeight: '700' },
-  infoDescription: { color: C.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 8 },
-  infoMetaRow: { flexDirection: 'column', gap: 4, marginTop: 8 },
+  infoDescription: { color: C.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 5 },
+  descriptionToggle: { alignSelf: 'flex-start', marginTop: 3 },
+  descriptionToggleText: { color: C.accent, fontSize: 10, fontWeight: '700' },
+  infoMetaRow: { flexDirection: 'column', gap: 2, marginTop: 5 },
   infoMetaText: { color: C.textMuted, fontSize: 10 },
 
   featuredCard: {
@@ -521,7 +670,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   discoverBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
-  discoveredBadge: {
+  discoveryError: { color: '#E07070', fontSize: 11, lineHeight: 15, marginTop: 6 },
+  undiscoverBtn: {
     marginTop: 14,
     backgroundColor: C.greenDim,
     borderRadius: 13,
@@ -533,5 +683,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.greenBorder,
   },
-  discoveredText: { color: C.green, fontSize: 13, fontWeight: '700' },
+  undiscoverBtnText: { color: C.green, fontSize: 13, fontWeight: '700' },
 });

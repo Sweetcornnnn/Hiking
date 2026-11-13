@@ -1,11 +1,23 @@
-import React, { useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
+  ActivityIndicator,
+  Animated,
+  Easing,
   Image,
+  Modal,
+  PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -17,33 +29,217 @@ import {
   ACCENT_GOLD,
   ACCENT_GREEN,
 } from '../../theme/designTokens';
+import { SpeciesGallery } from './SpeciesGallery';
+import { TaxonomyTree } from './TaxonomyTree';
+import { ObservationTimeline } from './ObservationTimeline';
+import { useSpeciesDetails } from '../../hooks/useSpeciesDetails';
+import { useOccurrenceData } from '../../hooks/useOccurrenceData';
+
+/**
+ * Extra sections the profile can show BELOW the image/description hero.
+ * Leave `detailSections` empty (the default) for the plain profile. Pass some
+ * of these for screens that need them (e.g. species search).
+ */
+export type SpeciesDetailSection =
+  | 'gallery'
+  | 'quickFacts'
+  | 'timeline'
+  | 'taxonomy';
 
 export interface SpeciesCardProps {
   species: any;
-  onPress: () => void;
+  /**
+   * @deprecated The view that opens when the card is pressed IS the profile
+   * (it loads its own details), so this is never called. Kept optional so
+   * existing usages don't break.
+   */
+  onPress?: () => void;
   isDiscovered?: boolean;
   showDiscoveryStatus?: boolean;
+  /** Fired when the gold bookmark is pulled all the way down. */
+  onDiscover?: () => void;
+  /** Fired when the green bookmark is pulled all the way down. */
+  onUndiscover?: () => void;
+  /**
+   * Extra sections shown below the profile hero. Default: none, which gives
+   * the plain profile (WildTrack, Discovery). SpeciesSearch passes
+   * ['gallery', 'timeline', 'taxonomy'].
+   */
+  detailSections?: SpeciesDetailSection[];
 }
 
 /**
- * IMAGE FIX
- * ----------
- * Photos come from an external API in unpredictable sizes/aspect ratios.
- * Instead of a fixed pixel height + resizeMode="contain" (which letterboxes
- * anything that doesn't match the box exactly), the image container uses a
- * fixed `aspectRatio` and resizeMode="cover". That means:
- *  - every card has the exact same frame, so grids line up cleanly
- *  - every photo fills that frame completely, no empty bars
- *  - a loading spinner covers the swap-in, and a leaf icon covers failures
+ * HOW THIS WORKS
+ * --------------
+ * Grid card : the original design, unchanged.
+ * Press it  : the profile opens (image LEFT, description RIGHT, bookmark).
+ *
+ * `detailSections` decides what else the profile shows:
+ *   []  (default)  plain profile only. Used by WildTrack and Discovery.
+ *   ['gallery','timeline','taxonomy']  adds those sections below the hero.
+ *                  Used by SpeciesSearch. Only then does the profile load
+ *                  species details (useSpeciesDetails + useOccurrenceData).
+ *
+ * BOOKMARK (shown only when showDiscoveryStatus is true):
+ *   GOLD = undiscovered, GREEN = discovered. Pull it down: a confirmation card
+ *   asks the question. Keep pulling to the end = yes, release early = no.
  */
+
+const RIBBON_BASE = 56; // resting ribbon length
+const RIBBON_PULL = 110; // extra length at a full pull (= "yes")
+const GREEN = '#16A34A';
+const RED = '#DC2626';
+
+/* ------------------------------ no-info copy ------------------------------ */
+
+type Kind =
+  | 'bird'
+  | 'mammal'
+  | 'reptile'
+  | 'amphibian'
+  | 'fish'
+  | 'insect'
+  | 'arachnid'
+  | 'plant'
+  | 'fungus'
+  | 'mollusk'
+  | 'other';
+
+const KIND_RULES: Array<[Kind, RegExp]> = [
+  ['bird', /\b(aves|bird|owl|eagle|hawk|falcon|sparrow|finch|parrot|duck|heron|kingfisher|pigeon|dove|crow|raven|warbler|thrush|swallow|kite|egret|tern|gull|shrike|bulbul|myna)/],
+  ['mammal', /\b(mammal|mammalia|bat|deer|monkey|macaque|cat|dog|boar|pig|squirrel|rat|mouse|civet|shrew|otter|dugong|whale|dolphin|carabao|buffalo)/],
+  ['amphibian', /\b(amphib|frog|toad|salamander|newt|caecilian)/],
+  ['reptile', /\b(reptil|squamata|snake|lizard|gecko|skink|turtle|tortoise|crocodile|monitor|serpent|python|cobra)/],
+  ['fish', /\b(fish|actinopterygii|chondrichthyes|osteichthyes|shark|ray|eel|grouper|goby|tuna|wrasse)/],
+  ['arachnid', /\b(arachnid|arachnida|spider|scorpion|mite|tick)/],
+  ['insect', /\b(insect|insecta|lepidoptera|coleoptera|diptera|hymenoptera|odonata|butterfly|moth|beetle|dragonfly|bee|wasp|ant|fly|cricket|grasshopper|cicada|mantis)/],
+  ['mollusk', /\b(mollus|gastropod|bivalve|snail|slug|clam|oyster|squid|octopus|cuttlefish|nudibranch)/],
+  ['fungus', /\b(fung|mushroom|mold|mould|lichen|yeast)/],
+  ['plant', /\b(plant|plantae|flower|tree|fern|palm|orchid|grass|shrub|vine|moss|herb|seagrass|mangrove)/],
+];
+
+const inferKind = (data: any): Kind => {
+  const taxonomy = [
+    data?.iconic_taxon_name,
+    data?.category,
+    data?.taxon_group,
+    data?.group,
+    data?.type,
+    data?.kingdom,
+    data?.phylum,
+    data?.class,
+    data?.class_name,
+    data?.order,
+    data?.family,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  // taxonomy fields first, common name only as a fallback
+  const name = String(data?.common_name ?? '').toLowerCase();
+  for (const hay of [taxonomy, name]) {
+    if (!hay) continue;
+    for (const [kind, rule] of KIND_RULES) {
+      if (rule.test(hay)) return kind;
+    }
+  }
+  return 'other';
+};
+
+const KIND_NOUN: Record<Kind, string> = {
+  bird: 'bird',
+  mammal: 'mammal',
+  reptile: 'reptile',
+  amphibian: 'amphibian',
+  fish: 'fish',
+  insect: 'bug',
+  arachnid: 'arachnid',
+  plant: 'plant',
+  fungus: 'fungus',
+  mollusk: 'mollusk',
+  other: 'species',
+};
+
+const KIND_SPECIAL: Record<Kind, string> = {
+  bird: 'No info yet. This bird is keeping its song to itself.',
+  mammal: 'No info yet, but this mammal is clearly a good one.',
+  reptile: 'No info yet, but this reptile is cold-blooded cool.',
+  amphibian: 'No info yet, but this one is a certified hopper.',
+  fish: 'No info yet, but something smells fishy. In a good way.',
+  insect: 'No info yet, but this bug has main-character energy.',
+  arachnid: 'No info yet, but eight legs of pure charisma.',
+  plant: 'No info yet, but this plant is rooting for you.',
+  fungus: 'No info yet, but this fungus is a fun-guy anyway.',
+  mollusk: 'No info yet, but this one is shell-ebrating anyway.',
+  other: "No info yet, but this one's pretty cool anyway.",
+};
+
+const noInfoLine = (data: any, seed: string) => {
+  const kind = inferKind(data);
+  const n = KIND_NOUN[kind];
+  const lines = [
+    `There's no info yet, but at least this ${n} is cool.`,
+    `Nothing written about this ${n} yet. Still looks like a legend.`,
+    KIND_SPECIAL[kind],
+  ];
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return lines[Math.abs(h) % lines.length];
+};
+
+// gentle looping 0 -> 1 -> 0 value used for the "pull me" wiggle
+const useWiggle = (value: Animated.Value, active: boolean) => {
+  useEffect(() => {
+    if (!active) {
+      value.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(1400),
+        Animated.timing(value, {
+          toValue: 1,
+          duration: 460,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: false,
+        }),
+        Animated.timing(value, {
+          toValue: 0,
+          duration: 460,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      value.setValue(0);
+    };
+  }, [active, value]);
+};
+
+/* ========================================================================== */
+/*  GRID CARD (original design)                                               */
+/* ========================================================================== */
+
 export const SpeciesCard: React.FC<SpeciesCardProps> = ({
   species,
-  onPress,
   isDiscovered = false,
   showDiscoveryStatus = true,
+  onDiscover,
+  onUndiscover,
+  detailSections,
 }) => {
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [discovered, setDiscovered] = useState(isDiscovered);
+
+  useEffect(() => {
+    setDiscovered(isDiscovered);
+  }, [isDiscovered]);
 
   const resolvedImage =
     typeof species?.image_url === 'number'
@@ -52,72 +248,978 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
 
   const hasImage = !!resolvedImage && !imageError;
 
+  const handleSetDiscovered = (next: boolean) => {
+    setDiscovered(next);
+    if (next) onDiscover?.();
+    else onUndiscover?.();
+  };
+
   return (
-    <Pressable
-      onPress={onPress}
-      android_ripple={{ color: '#1E293B' }}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-    >
-      {/* IMAGE */}
-      <View style={styles.imageContainer}>
-        {hasImage ? (
-          <>
-            <Image
-              source={{ uri: resolvedImage }}
-              style={styles.image}
-              resizeMode="cover"
-              onLoadStart={() => setImageLoading(true)}
-              onLoadEnd={() => setImageLoading(false)}
-              onError={() => {
-                setImageError(true);
-                setImageLoading(false);
-              }}
-            />
+    <>
+      <Pressable
+        onPress={() => setDetailOpen(true)}
+        android_ripple={{ color: '#1E293B' }}
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      >
+        {/* IMAGE */}
+        <View style={styles.imageContainer}>
+          {hasImage ? (
+            <>
+              <Image
+                source={{ uri: resolvedImage }}
+                style={styles.image}
+                resizeMode="cover"
+                onLoadStart={() => setImageLoading(true)}
+                onLoadEnd={() => setImageLoading(false)}
+                onError={() => {
+                  setImageError(true);
+                  setImageLoading(false);
+                }}
+              />
 
-            {imageLoading && (
-              <View style={styles.imageLoadingOverlay}>
-                <ActivityIndicator size="small" color={ACCENT_GOLD} />
-              </View>
-            )}
-          </>
-        ) : (
-          <View style={styles.imageFallback}>
-            <Ionicons name="leaf-outline" size={28} color="#64748B" />
-          </View>
-        )}
+              {imageLoading && (
+                <View style={styles.imageLoadingOverlay}>
+                  <ActivityIndicator size="small" color={ACCENT_GOLD} />
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.imageFallback}>
+              <Ionicons name="leaf-outline" size={28} color="#64748B" />
+            </View>
+          )}
 
-        {showDiscoveryStatus && isDiscovered && (
-          <View style={styles.topBadge}>
-            <Ionicons name="checkmark-circle" size={11} color={ACCENT_GREEN} />
-            <Text style={styles.topBadgeText} numberOfLines={1}>
-              Discovered
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* CONTENT */}
-      <View style={styles.content}>
-        <Text style={styles.commonName} numberOfLines={1}>
-          {species?.common_name || 'Unknown species'}
-        </Text>
-
-        {!!species?.scientific_name && (
-          <Text style={styles.scientificName} numberOfLines={1}>
-            {species.scientific_name}
-          </Text>
-        )}
-
-        <View style={styles.footerRow}>
-          <Text style={styles.detailLink}>View profile</Text>
-          <Ionicons name="arrow-forward" size={12} color={ACCENT_GOLD} />
+          {showDiscoveryStatus && discovered && (
+            <View style={styles.topBadge}>
+              <Ionicons name="checkmark-circle" size={11} color={ACCENT_GREEN} />
+              <Text style={styles.topBadgeText} numberOfLines={1}>
+                Discovered
+              </Text>
+            </View>
+          )}
         </View>
-      </View>
-    </Pressable>
+
+        {/* CONTENT */}
+        <View style={styles.content}>
+          <Text style={styles.commonName} numberOfLines={1}>
+            {species?.common_name || 'Unknown species'}
+          </Text>
+
+          {!!species?.scientific_name && (
+            <Text style={styles.scientificName} numberOfLines={1}>
+              {species.scientific_name}
+            </Text>
+          )}
+
+          <View style={styles.footerRow}>
+            <Text style={styles.detailLink}>View profile</Text>
+            <Ionicons name="arrow-forward" size={12} color={ACCENT_GOLD} />
+          </View>
+        </View>
+      </Pressable>
+
+      {detailOpen &&
+        (detailSections && detailSections.length > 0 ? (
+          <SpeciesDetailWithData
+            species={species}
+            imageUri={resolvedImage}
+            discovered={discovered}
+            showStatus={showDiscoveryStatus}
+            sections={detailSections}
+            onSetDiscovered={handleSetDiscovered}
+            onClose={() => setDetailOpen(false)}
+          />
+        ) : (
+          <SpeciesDetail
+            species={species}
+            imageUri={resolvedImage}
+            discovered={discovered}
+            showStatus={showDiscoveryStatus}
+            sections={[]}
+            onSetDiscovered={handleSetDiscovered}
+            onClose={() => setDetailOpen(false)}
+          />
+        ))}
+    </>
   );
 };
 
+/* ========================================================================== */
+/*  PROFILE (opens when the card is pressed)                                  */
+/* ========================================================================== */
+
+interface DetailData {
+  detail: any;
+  records: any[];
+  loading: boolean;
+}
+
+interface SpeciesDetailProps {
+  species: any;
+  imageUri?: string;
+  discovered: boolean;
+  showStatus: boolean;
+  sections: SpeciesDetailSection[];
+  data?: DetailData;
+  onSetDiscovered: (next: boolean) => void;
+  onClose: () => void;
+}
+
+interface DoneToast {
+  text: string;
+  theme: 'gold' | 'red';
+}
+
+const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
+  species,
+  imageUri,
+  discovered,
+  showStatus,
+  sections,
+  data,
+  onSetDiscovered,
+  onClose,
+}) => {
+  const { width, height } = useWindowDimensions();
+  const cardWidth = Math.min(width - 32, 460);
+  const promptWidth = Math.min(cardWidth - 64, 236); // never overflows
+  const maxSheetHeight = height * 0.88;
+
+  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [done, setDone] = useState<DoneToast | null>(null);
+  const [scrollLocked, setScrollLocked] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const hasImage = !!imageUri && !imageError;
+
+  // details/observations are provided by SpeciesDetailWithData, and only for
+  // screens that asked for extra sections
+  const hasSections = sections.length > 0;
+  const detail = data?.detail;
+  const records: any[] = data?.records ?? [];
+  const loadingDetail = hasSections ? data?.loading ?? true : false;
+
+  const galleryImages = useMemo(() => {
+    const images =
+      detail?.gallery_images ||
+      species?.gallery_images ||
+      (imageUri ? [imageUri] : []);
+    return (images || []).filter(Boolean);
+  }, [detail, species, imageUri]);
+
+  const commonName =
+    detail?.common_name || species?.common_name || 'Unknown species';
+  const scientificName: string | undefined =
+    detail?.scientific_name || species?.scientific_name;
+
+  const detailDescription = String(detail?.description ?? '').trim();
+  const apiDescription: string =
+    detailDescription ||
+    String(species?.description || species?.summary || '').trim();
+  const hasDescription = apiDescription.length > 0;
+  const descriptionSource: string | undefined = detailDescription
+    ? detail?.description_source
+    : undefined;
+  const noInfoMode = !hasDescription && !loadingDetail;
+  const canExpand = hasSections && apiDescription.length > 220;
+
+  const descriptionText = useMemo(
+    () =>
+      hasDescription
+        ? apiDescription
+        : noInfoLine(
+            { ...species, ...(detail?.taxonomy ?? {}) },
+            `${commonName}${scientificName ?? ''}`,
+          ),
+    [hasDescription, apiDescription, species, detail, commonName, scientificName],
+  );
+
+  // ---------------------------------------------------------------- animation
+  // native-driven
+  const entry = useRef(new Animated.Value(0)).current;
+  const flashLight = useRef(new Animated.Value(0)).current;
+  const flashDark = useRef(new Animated.Value(0)).current;
+  const doneAnim = useRef(new Animated.Value(0)).current;
+  const ribbonScale = useRef(new Animated.Value(1)).current;
+  // JS-driven (they drive layout / colour props)
+  const ribbonPull = useRef(new Animated.Value(0)).current; // 0..1, 1 = "yes"
+  const ribbonHint = useRef(new Animated.Value(0)).current; // wiggle
+  const tone = useRef(new Animated.Value(discovered ? 1 : 0)).current; // 0 gold,1 green,2 red,3 gold
+  const promptVis = useRef(new Animated.Value(1)).current; // hides prompt on commit
+
+  const busy = useRef(false);
+  const committed = useRef(false);
+  const alive = useRef(true);
+
+  // latest props/callbacks, so gesture handlers never go stale
+  const discoveredRef = useRef(discovered);
+  discoveredRef.current = discovered;
+  const setDiscoveredRef = useRef(onSetDiscovered);
+  setDiscoveredRef.current = onSetDiscovered;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    alive.current = true;
+    Animated.spring(entry, {
+      toValue: 1,
+      friction: 9,
+      tension: 60,
+      useNativeDriver: true,
+    }).start();
+    return () => {
+      alive.current = false;
+    };
+  }, [entry]);
+
+  useWiggle(ribbonHint, showStatus);
+
+  // keep colour in sync if the parent changes the state from outside
+  useEffect(() => {
+    if (!busy.current) tone.setValue(discovered ? 1 : 0);
+  }, [discovered, tone]);
+
+  // ribbon eases (no bounce) whenever the state flips, not on first mount
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    ribbonScale.setValue(1.12);
+    Animated.timing(ribbonScale, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [discovered, ribbonScale]);
+
+  const showDone = useCallback(
+    (text: string, theme: DoneToast['theme']) => {
+      setDone({ text, theme });
+      doneAnim.setValue(0);
+      Animated.sequence([
+        Animated.timing(doneAnim, {
+          toValue: 1,
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.delay(1500),
+        Animated.timing(doneAnim, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        if (alive.current) setDone(null);
+      });
+    },
+    [doneAnim],
+  );
+
+  const dismiss = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
+    Animated.timing(entry, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.in(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => closeRef.current());
+  }, [entry]);
+
+  // ---- bookmark: pull to the end = yes, release early = no ------------------
+  const releaseRibbon = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(ribbonPull, {
+        toValue: 0,
+        friction: 9,
+        tension: 55,
+        useNativeDriver: false,
+      }),
+      Animated.timing(tone, {
+        toValue: discoveredRef.current ? 1 : 0,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [ribbonPull, tone]);
+
+  const commitRibbon = useCallback(() => {
+    if (committed.current) return;
+    committed.current = true;
+    busy.current = true;
+    const wasDiscovered = discoveredRef.current;
+
+    Animated.timing(promptVis, {
+      toValue: 0,
+      duration: 100,
+      useNativeDriver: false,
+    }).start();
+
+    Animated.timing(ribbonPull, {
+      toValue: 1,
+      duration: 120,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start(() => {
+      if (wasDiscovered) {
+        // YES: remove the discovery. Red blends back to gold.
+        setDiscoveredRef.current(false);
+        Animated.timing(tone, {
+          toValue: 3,
+          duration: 520,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false,
+        }).start(() => tone.setValue(0));
+        flashDark.setValue(0.3);
+        Animated.timing(flashDark, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+        showDone('Removed from discovered', 'red');
+      } else {
+        // YES: mark as discovered. Gold blends into green.
+        setDiscoveredRef.current(true);
+        Animated.timing(tone, {
+          toValue: 1,
+          duration: 520,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false,
+        }).start();
+        flashLight.setValue(0.28);
+        Animated.timing(flashLight, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+        showDone('Marked as discovered', 'gold');
+      }
+
+      // ribbon glides back to its resting length
+      Animated.timing(ribbonPull, {
+        toValue: 0,
+        duration: 620,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start(() => {
+        promptVis.setValue(1);
+        committed.current = false;
+        busy.current = false;
+      });
+    });
+  }, [ribbonPull, tone, promptVis, flashLight, flashDark, showDone]);
+
+  const ribbonResponder = useMemo(() => {
+    const canStart = () => showStatus && !busy.current;
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: canStart,
+      onMoveShouldSetPanResponder: canStart,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        setScrollLocked(true); // the page must not scroll while pulling
+        ribbonPull.stopAnimation();
+        tone.stopAnimation();
+      },
+      onPanResponderMove: (_, g) => {
+        if (committed.current) return;
+        const p = Math.min(Math.max(g.dy / RIBBON_PULL, 0), 1);
+        ribbonPull.setValue(p);
+        // a discovered ribbon blends green -> red as the question appears
+        if (discoveredRef.current) {
+          tone.setValue(1 + Math.min(Math.max((p - 0.2) / 0.3, 0), 1));
+        }
+        if (p >= 0.98) commitRibbon(); // kept pulling to the end = yes
+      },
+      onPanResponderRelease: () => {
+        setScrollLocked(false);
+        if (!committed.current) releaseRibbon(); // released early = no
+      },
+      onPanResponderTerminate: () => {
+        setScrollLocked(false);
+        if (!committed.current) releaseRibbon();
+      },
+    });
+  }, [showStatus, ribbonPull, tone, commitRibbon, releaseRibbon]);
+
+  // ----------------------------------------------------------- derived values
+  const ribbonWiggle = Animated.multiply(
+    ribbonHint.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }),
+    ribbonPull.interpolate({
+      inputRange: [0, 0.15],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    }),
+  );
+  const ribbonH = Animated.add(
+    ribbonPull.interpolate({
+      inputRange: [0, 1],
+      outputRange: [RIBBON_BASE, RIBBON_BASE + RIBBON_PULL],
+    }),
+    ribbonWiggle,
+  );
+  const ribbonHandleH = Animated.add(ribbonH, 28);
+
+  const ribbonColor = tone.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [ACCENT_GOLD, GREEN, RED, ACCENT_GOLD],
+  });
+
+  // icons blend with the same tone value, so nothing ever "pops"
+  const restFactor = ribbonPull.interpolate({
+    inputRange: [0.3, 0.5],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const yesFactor = ribbonPull.interpolate({
+    inputRange: [0.3, 0.5],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+  const goldPresence = tone.interpolate({
+    inputRange: [0, 0.4, 2.6, 3],
+    outputRange: [1, 0, 0, 1],
+  });
+  const iconBookmark = Animated.multiply(goldPresence, restFactor);
+  const iconGoldCheck = Animated.multiply(goldPresence, yesFactor);
+  const iconGreenCheck = tone.interpolate({
+    inputRange: [0.4, 0.8, 1.2, 1.6],
+    outputRange: [0, 1, 1, 0],
+    extrapolate: 'clamp',
+  });
+  const iconTrash = tone.interpolate({
+    inputRange: [1.3, 1.7, 2.4, 2.8],
+    outputRange: [0, 1, 1, 0],
+    extrapolate: 'clamp',
+  });
+
+  // confirmation card: eases in beside the ribbon as you pull
+  const promptOpacity = Animated.multiply(
+    ribbonPull.interpolate({
+      inputRange: [0.12, 0.3],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    }),
+    promptVis,
+  );
+  const promptX = ribbonPull.interpolate({
+    inputRange: [0.12, 0.34],
+    outputRange: [-14, 0],
+    extrapolate: 'clamp',
+  });
+  const progressWidth = ribbonPull.interpolate({
+    inputRange: [0.3, 1],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
+
+  const theme = discovered ? themes.red : themes.gold;
+  const question = discovered
+    ? 'Remove this discovery?'
+    : 'Did you discover this species?';
+
+  // quick-facts occurrence text (same wording as the old modal)
+  const occurrenceText =
+    detail?.occurrence_count != null
+      ? `${detail.occurrence_count.toLocaleString()} ${
+          detail.occurrence_count === 1 ? 'record' : 'records'
+        }`
+      : `${(records?.length ?? 0).toLocaleString()} ${
+          (records?.length ?? 0) === 1 ? 'record' : 'records'
+        } in this timeline`;
+
+  // ------------------------------------------------------------------- render
+  return (
+    <Modal
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={dismiss}
+    >
+      <View style={styles.overlayRoot}>
+        {/* backdrop */}
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: entry }]}>
+          <Pressable style={styles.backdrop} onPress={dismiss} />
+        </Animated.View>
+
+        {/* wrapper (not clipped, so the prompt can sit over the card edge) */}
+        <Animated.View
+          style={{
+            width: cardWidth,
+            opacity: entry,
+            transform: [
+              {
+                translateY: entry.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [28, 0],
+                }),
+              },
+              {
+                scale: entry.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.94, 1],
+                }),
+              },
+            ],
+          }}
+        >
+          <View style={[styles.sheet, { maxHeight: maxSheetHeight }]}>
+            <ScrollView
+              style={styles.scroll}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+              scrollEnabled={!scrollLocked}
+            >
+              {/* ================= HERO: image LEFT, description RIGHT ================= */}
+              <View style={styles.hero}>
+                <View style={styles.sheetImagePanel}>
+                  {hasImage ? (
+                    <>
+                      <Image
+                        source={{ uri: imageUri }}
+                        style={StyleSheet.absoluteFill}
+                        resizeMode="cover"
+                        onLoadStart={() => setImageLoading(true)}
+                        onLoadEnd={() => setImageLoading(false)}
+                        onError={() => {
+                          setImageError(true);
+                          setImageLoading(false);
+                        }}
+                      />
+                      {imageLoading && (
+                        <View style={styles.sheetImageLoading}>
+                          <ActivityIndicator size="small" color={ACCENT_GOLD} />
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.sheetImageFallback}>
+                      <Ionicons name="leaf-outline" size={34} color="#64748B" />
+                    </View>
+                  )}
+
+                  {/* soft light / dark wash on a state change */}
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[styles.washLight, { opacity: flashLight }]}
+                  />
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[styles.washDark, { opacity: flashDark }]}
+                  />
+
+                  {/* BOOKMARK: the only status control */}
+                  {showStatus && (
+                    <>
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          styles.ribbonWrap,
+                          { transform: [{ scale: ribbonScale }] },
+                        ]}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.ribbonBody,
+                            { height: ribbonH, backgroundColor: ribbonColor },
+                          ]}
+                        >
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconBookmark }]}
+                          >
+                            <Ionicons
+                              name="bookmark-outline"
+                              size={14}
+                              color="#1C1917"
+                            />
+                          </Animated.View>
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconGoldCheck }]}
+                          >
+                            <Ionicons name="checkmark" size={15} color="#1C1917" />
+                          </Animated.View>
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconGreenCheck }]}
+                          >
+                            <Ionicons name="checkmark" size={15} color="#F0FDF4" />
+                          </Animated.View>
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconTrash }]}
+                          >
+                            <Ionicons name="trash" size={14} color="#FEF2F2" />
+                          </Animated.View>
+                        </Animated.View>
+                        <Animated.View
+                          style={[styles.ribbonTip, { borderTopColor: ribbonColor }]}
+                        />
+                      </Animated.View>
+
+                      <Animated.View
+                        style={[styles.ribbonHandle, { height: ribbonHandleH }]}
+                        accessible
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          discovered
+                            ? `Remove ${commonName} from discovered`
+                            : `Mark ${commonName} as discovered`
+                        }
+                        accessibilityHint="Pull down to confirm"
+                        onAccessibilityTap={commitRibbon}
+                        {...ribbonResponder.panHandlers}
+                      />
+                    </>
+                  )}
+                </View>
+
+                <View
+                  style={[
+                    styles.sheetInfoPanel,
+                    noInfoMode && styles.sheetInfoPanelCentered,
+                  ]}
+                >
+                  <View style={styles.infoTop}>
+                    <Text
+                      style={[styles.sheetName, noInfoMode && styles.sheetNameBig]}
+                      numberOfLines={3}
+                    >
+                      {commonName}
+                    </Text>
+                    {!!scientificName && (
+                      <Text
+                        style={[styles.sheetSci, noInfoMode && styles.sheetSciBig]}
+                        numberOfLines={2}
+                      >
+                        {scientificName}
+                      </Text>
+                    )}
+
+                    {!hasDescription && loadingDetail ? (
+                      <View style={styles.descLoading}>
+                        <ActivityIndicator size="small" color={ACCENT_GOLD} />
+                        <Text style={styles.descLoadingText}>Loading details</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Text
+                          style={[
+                            styles.sheetDescription,
+                            !hasDescription && styles.sheetDescriptionEmpty,
+                          ]}
+                          numberOfLines={
+                            hasDescription ? (descExpanded ? undefined : 6) : 3
+                          }
+                        >
+                          {descriptionText}
+                        </Text>
+                        {hasDescription && canExpand && (
+                          <Pressable
+                            onPress={() => setDescExpanded((v) => !v)}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                          >
+                            <Text style={styles.readMore}>
+                              {descExpanded ? 'Show less' : 'Read more'}
+                            </Text>
+                          </Pressable>
+                        )}
+                        {!!descriptionSource && (
+                          <Text style={styles.descSource}>
+                            Source: {descriptionSource}
+                          </Text>
+                        )}
+                      </>
+                    )}
+
+                    {!hasSections &&
+                      (!!species?.family || !!species?.conservation_status) && (
+                        <View style={styles.chipRow}>
+                          {!!species?.family && (
+                            <View style={styles.chip}>
+                              <Text style={styles.chipText} numberOfLines={1}>
+                                {species.family}
+                              </Text>
+                            </View>
+                          )}
+                          {!!species?.conservation_status && (
+                            <View style={styles.chip}>
+                              <Text style={styles.chipText} numberOfLines={1}>
+                                {species.conservation_status}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                  </View>
+                </View>
+              </View>
+
+              {/* ===== EXTRA SECTIONS (only when detailSections is passed) ===== */}
+              {hasSections && (
+                <View style={styles.sections}>
+                  {loadingDetail ? (
+                    <View style={styles.sectionLoading}>
+                      <ActivityIndicator size="small" color={ACCENT_GOLD} />
+                      <Text style={styles.sectionLoadingText}>
+                        Loading species details...
+                      </Text>
+                    </View>
+                  ) : detail ? (
+                    <>
+                      {sections.includes('gallery') &&
+                        (galleryImages.length > 0 ? (
+                          <SpeciesGallery images={galleryImages} />
+                        ) : (
+                          <View style={styles.noImageCard}>
+                            <Ionicons
+                              name="images-outline"
+                              size={28}
+                              color="#94A3B8"
+                            />
+                            <Text style={styles.noImageText}>
+                              No image data available
+                            </Text>
+                          </View>
+                        ))}
+
+                      {(sections.includes('quickFacts') ||
+                        sections.includes('timeline')) && (
+                        <View style={styles.infoSection}>
+                          {sections.includes('quickFacts') && (
+                            <>
+                              <Text style={styles.cardTitle}>Quick facts</Text>
+                              <View style={styles.quickFactsGrid}>
+                                <View style={styles.factRow}>
+                                  <Text style={styles.factLabel}>Status</Text>
+                                  <Text style={styles.factText}>
+                                    {detail?.conservation_status || 'Not listed'}
+                                  </Text>
+                                </View>
+
+                                <View style={styles.factRow}>
+                                  <Text style={styles.factLabel}>Habitat</Text>
+                                  <Text style={styles.factText}>
+                                    {detail?.habitat || 'Mountain ecosystem'}
+                                  </Text>
+                                </View>
+
+                                <View style={styles.factRow}>
+                                  <Text style={styles.factLabel}>Native</Text>
+                                  <Text style={styles.factText}>
+                                    {detail?.is_native === false
+                                      ? 'Introduced'
+                                      : 'Native'}
+                                  </Text>
+                                </View>
+
+                                <View style={styles.factRow}>
+                                  <Text style={styles.factLabel}>Occurrence</Text>
+                                  <Text style={styles.factText}>
+                                    {occurrenceText}
+                                  </Text>
+                                </View>
+                              </View>
+                            </>
+                          )}
+
+                          {sections.includes('quickFacts') &&
+                            sections.includes('timeline') && (
+                              <View style={styles.infoSectionDivider} />
+                            )}
+
+                          {sections.includes('timeline') && (
+                            <ObservationTimeline
+                              observations={records || []}
+                              embedded
+                            />
+                          )}
+                        </View>
+                      )}
+
+                      {sections.includes('taxonomy') && (
+                        <TaxonomyTree
+                          taxonomy={detail?.taxonomy}
+                          source={detail?.taxonomy_source}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.noImageCard}>
+                      <Ionicons name="leaf-outline" size={28} color="#94A3B8" />
+                      <Text style={styles.noImageText}>
+                        Species summary unavailable
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+          </View>
+
+          {/* close button stays visible while the profile scrolls */}
+          <Pressable
+            onPress={dismiss}
+            hitSlop={10}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <Ionicons name="close" size={16} color={TEXT_MUTED} />
+          </Pressable>
+
+          {/* ===== confirmation card: fixed spot beside the ribbon ===== */}
+          {showStatus && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.prompt,
+                theme.box,
+                {
+                  width: promptWidth,
+                  opacity: promptOpacity,
+                  transform: [{ translateX: promptX }],
+                },
+              ]}
+            >
+              <Text style={[styles.promptTitle, theme.title]} numberOfLines={2}>
+                {question}
+              </Text>
+              <Text style={styles.promptSub}>
+                Keep pulling to confirm. Release to cancel.
+              </Text>
+              <View style={styles.track}>
+                <Animated.View
+                  style={[styles.trackFill, theme.fill, { width: progressWidth }]}
+                />
+              </View>
+              <View style={[styles.tail, theme.tail]} />
+            </Animated.View>
+          )}
+
+          {/* ===== result toast ===== */}
+          {!!done && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.toast,
+                done.theme === 'red' ? themes.red.box : themes.gold.box,
+                {
+                  opacity: doneAnim,
+                  transform: [
+                    {
+                      translateX: doneAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-10, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Ionicons
+                name={done.theme === 'red' ? 'remove-circle' : 'checkmark-circle'}
+                size={16}
+                color={done.theme === 'red' ? '#EF4444' : ACCENT_GOLD}
+              />
+              <Text
+                style={[
+                  styles.toastText,
+                  done.theme === 'red' ? themes.red.title : themes.gold.title,
+                ]}
+              >
+                {done.text}
+              </Text>
+            </Animated.View>
+          )}
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+};
+
+/* ========================================================================== */
+/*  PROFILE + DATA (only used when detailSections is passed)                  */
+/* ========================================================================== */
+
+const SpeciesDetailWithData: React.FC<Omit<SpeciesDetailProps, 'data'>> = (
+  props,
+) => {
+  const { species } = props;
+  const {
+    detail,
+    isLoading: detailLoading,
+    loadSpeciesDetails,
+    clearSpeciesDetails,
+  } = useSpeciesDetails();
+  const { records, loadOccurrenceData } = useOccurrenceData();
+  const [settled, setSettled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadSpeciesDetails(species);
+      } catch (error) {
+        console.log('Species detail fetch failed:', error);
+      } finally {
+        if (!cancelled) setSettled(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      clearSpeciesDetails();
+    };
+    // load once per open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!detail) return;
+    loadOccurrenceData(detail.gbif_id, detail.inaturalist_id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail]);
+
+  return (
+    <SpeciesDetail
+      {...props}
+      data={{
+        detail,
+        records: records || [],
+        loading: detailLoading || !settled,
+      }}
+    />
+  );
+};
+
+/* ========================================================================== */
+/*  STYLES                                                                    */
+/* ========================================================================== */
+
+// black base with a gold (discover) or red (remove) accent
+const themes = {
+  gold: StyleSheet.create({
+    box: { backgroundColor: '#0A0A0A', borderColor: ACCENT_GOLD },
+    title: { color: ACCENT_GOLD },
+    fill: { backgroundColor: ACCENT_GOLD },
+    tail: { backgroundColor: '#0A0A0A', borderColor: ACCENT_GOLD },
+  }),
+  red: StyleSheet.create({
+    box: { backgroundColor: '#0A0A0A', borderColor: '#EF4444' },
+    title: { color: '#FCA5A5' },
+    fill: { backgroundColor: '#EF4444' },
+    tail: { backgroundColor: '#0A0A0A', borderColor: '#EF4444' },
+  }),
+};
+
 const styles = StyleSheet.create({
+  /* ---------- original grid card (unchanged) ---------- */
   card: {
     flex: 1,
     minHeight: 148,
@@ -133,8 +1235,6 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.99 }],
   },
 
-  // Fixed aspect ratio (not a fixed height) — every photo, whatever size it
-  // arrives at from the API, fills this exact frame with resizeMode="cover".
   imageContainer: {
     width: '100%',
     aspectRatio: 1.55,
@@ -149,7 +1249,7 @@ const styles = StyleSheet.create({
   },
 
   imageLoadingOverlay: {
-    ...StyleSheet.absoluteFill,
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0F172A',
@@ -215,5 +1315,367 @@ const styles = StyleSheet.create({
     color: ACCENT_GOLD,
     fontWeight: '600',
     fontSize: 8.5,
+  },
+
+  /* ---------- profile ---------- */
+  overlayRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.72)',
+  },
+
+  sheet: {
+    backgroundColor: BG_PANEL,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
+  },
+
+  scroll: {
+    flexGrow: 0,
+  },
+
+  // hero: image LEFT, description RIGHT
+  hero: {
+    flexDirection: 'row',
+    minHeight: 260,
+  },
+
+  sheetImagePanel: {
+    width: '40%',
+    backgroundColor: '#0F172A',
+    overflow: 'hidden',
+    borderRightWidth: 1,
+    borderRightColor: BORDER_DEFAULT,
+  },
+
+  sheetImageLoading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F172A',
+  },
+
+  sheetImageFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BG_SUBTLE,
+  },
+
+  washLight: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
+  },
+
+  washDark: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
+  },
+
+  // bookmark ribbon (top-left)
+  ribbonWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    width: 26,
+    alignItems: 'center',
+  },
+
+  ribbonBody: {
+    width: 26,
+    overflow: 'hidden',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+
+  ribbonTip: {
+    width: 0,
+    height: 0,
+    borderStyle: 'solid',
+    borderLeftWidth: 13,
+    borderRightWidth: 13,
+    borderTopWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+
+  ribbonIcon: {
+    position: 'absolute',
+    top: 9,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+
+  ribbonHandle: {
+    position: 'absolute',
+    top: 0,
+    left: 8,
+    width: 42,
+  },
+
+  // right panel (description)
+  sheetInfoPanel: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+
+  sheetInfoPanelCentered: {
+    justifyContent: 'center',
+  },
+
+  closeBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BG_SUBTLE,
+    zIndex: 5,
+  },
+
+  infoTop: {
+    gap: 3,
+    paddingRight: 22,
+  },
+
+  sheetName: {
+    fontSize: 19,
+    lineHeight: 23,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+  },
+
+  // no description: the title and subtitle become the focus
+  sheetNameBig: {
+    fontSize: 26,
+    lineHeight: 31,
+    letterSpacing: -0.2,
+  },
+
+  sheetSci: {
+    fontSize: 12.5,
+    color: TEXT_MUTED,
+    fontStyle: 'italic',
+  },
+
+  sheetSciBig: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+
+  sheetDescription: {
+    marginTop: 8,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: TEXT_MUTED,
+  },
+
+  sheetDescriptionEmpty: {
+    marginTop: 12,
+    fontSize: 12,
+    lineHeight: 17,
+    fontStyle: 'italic',
+  },
+
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+
+  chip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: BG_SUBTLE,
+    borderWidth: 1,
+    borderColor: BORDER_DEFAULT,
+    maxWidth: '100%',
+  },
+
+  chipText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: TEXT_MUTED,
+  },
+
+  readMore: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: ACCENT_GOLD,
+  },
+
+  descSource: {
+    marginTop: 6,
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+
+  descLoading: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  descLoadingText: {
+    fontSize: 12,
+    color: TEXT_MUTED,
+  },
+
+  /* ---------- sections below the hero (from the old SpeciesSearch modal) ---------- */
+  sections: {
+    padding: 12,
+    gap: 14,
+    borderTopWidth: 1,
+    borderTopColor: BORDER_DEFAULT,
+  },
+
+  sectionLoading: {
+    paddingVertical: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+
+  sectionLoadingText: {
+    color: '#94A3B8',
+    fontSize: 12,
+  },
+
+  cardTitle: { color: '#F8FAFC', fontSize: 13, fontWeight: '700', marginBottom: 8 },
+
+  quickFactsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 12,
+    columnGap: 20,
+  },
+  factRow: { flexBasis: '45%', flexGrow: 1 },
+  factLabel: {
+    color: '#64748B',
+    fontSize: 9,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  factText: { marginTop: 4, color: '#F8FAFC', fontSize: 13, fontWeight: '600' },
+
+  infoSection: {
+    backgroundColor: '#172033',
+    borderRadius: 20,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#233047',
+  },
+  infoSectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#233047',
+    marginVertical: 12,
+  },
+
+  noImageCard: {
+    aspectRatio: 16 / 10,
+    borderRadius: 20,
+    backgroundColor: '#172033',
+    borderWidth: 1,
+    borderColor: '#233047',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+  },
+  noImageText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
+
+  /* ---------- confirmation card (single column, auto height, fixed position) ---------- */
+  prompt: {
+    position: 'absolute',
+    left: 52,
+    top: 14,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+
+  promptTitle: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+
+  promptSub: {
+    marginTop: 3,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: '#A1A1AA',
+  },
+
+  track: {
+    height: 3,
+    marginTop: 12,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    overflow: 'hidden',
+  },
+
+  trackFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+
+  // small pointer toward the ribbon
+  tail: {
+    position: 'absolute',
+    left: -6,
+    top: 18,
+    width: 10,
+    height: 10,
+    borderLeftWidth: 1,
+    borderBottomWidth: 1,
+    transform: [{ rotate: '45deg' }],
+  },
+
+  // result toast
+  toast: {
+    position: 'absolute',
+    left: 52,
+    top: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+
+  toastText: {
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });

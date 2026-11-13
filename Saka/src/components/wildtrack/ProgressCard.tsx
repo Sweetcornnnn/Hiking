@@ -104,7 +104,6 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
         <View style={styles.categoryStats}>
           {stats.by_category.slice(0, 4).map((cat, index) => (
             <View key={index} style={styles.categoryItem}>
-              <View style={styles.categoryDot} />
               <Text style={styles.categoryText} numberOfLines={1}>
                 {cat.category}: {cat.count}
               </Text>
@@ -118,6 +117,7 @@ export const ProgressCard: React.FC<ProgressCardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     backgroundColor: BG_PANEL,
     borderRadius: RADIUS_CARD,
     borderWidth: 1,
@@ -215,22 +215,25 @@ const styles = StyleSheet.create({
   categoryStats: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    paddingTop: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    columnGap: 12,
+    rowGap: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: BORDER_DEFAULT,
   },
   categoryItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: BG_SUBTLE,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
+    justifyContent: 'center',
     maxWidth: '48%',
   },
-  categoryDot: { width: 7, height: 7, borderRadius: 999, backgroundColor: ACCENT_GOLD, marginRight: 7 },
-  categoryText: { fontSize: 10, color: TEXT_PRIMARY, fontWeight: '500' },
+  categoryText: {
+    fontSize: 10,
+    color: TEXT_PRIMARY,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
 });

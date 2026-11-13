@@ -61,6 +61,7 @@ interface WildTrackState {
   mountainSpecies: Species[];
   stats: WildTrackStats | null;
   mountainBiodiversity: MountainBiodiversity | null;
+  mountainBiodiversityById: Record<string, MountainBiodiversity>;
   selectedMountainId: string;
   isLoading: boolean;
   isDemoMode: boolean;
@@ -92,6 +93,7 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
   mountainSpecies: [],
   stats: null,
   mountainBiodiversity: null,
+  mountainBiodiversityById: {},
   selectedMountainId: '',
   isLoading: false,
   isDemoMode: false,
@@ -235,16 +237,17 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
   },
 
   fetchFeaturedSpecies: async (mountainId) => {
+    const targetMountainId = mountainId || get().selectedMountainId;
     set({ isLoading: true });
 
     try {
-      const species = await wildTrackSupabase.fetchMountainSpecies(mountainId || get().selectedMountainId);
+      const species = await wildTrackSupabase.fetchMountainSpecies(targetMountainId);
 
       const speciesWithRealImages = await Promise.all(
         species.map(async (species: Species) => {
-          let finalImageUrl: string | undefined;
+          let finalImageUrl: string | undefined = species.image_url;
           
-          if (species.inaturalist_id || species.gbif_id) {
+          if (!finalImageUrl && (species.inaturalist_id || species.gbif_id)) {
             try {
               const realImage = await WildTrackAPI.getSpeciesImage(
                 species.inaturalist_id, 
@@ -267,12 +270,16 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         })
       );
 
-      set({ featuredSpecies: speciesWithRealImages });
+      if (get().selectedMountainId === targetMountainId) {
+        set({ featuredSpecies: speciesWithRealImages });
+      }
     } catch (error) {
       console.error('Network error fetching featured species:', error);
+    } finally {
+      if (get().selectedMountainId === targetMountainId) {
+        set({ isLoading: false });
+      }
     }
-    
-    set({ isLoading: false });
   },
 
   fetchMountainSpecies: async (mountainId) => {
@@ -424,7 +431,13 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
     try {
       const info = await wildTrackSupabase.fetchMountainBiodiversity(mountainId);
       if (info) {
-        set({ mountainBiodiversity: info });
+        set((state) => ({
+          mountainBiodiversity: info,
+          mountainBiodiversityById: {
+            ...state.mountainBiodiversityById,
+            [mountainId]: info,
+          },
+        }));
       }
     } catch (error) {
       console.error('[WildTrack] Network error fetching mountain biodiversity:', error);

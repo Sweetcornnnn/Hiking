@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -23,17 +23,22 @@ export const SpeciesCarousel: React.FC<SpeciesCarouselProps> = ({
   discoveredSpecies = new Set(),
 }) => {
   const { width } = useWindowDimensions();
-  const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [carouselWidth, setCarouselWidth] = useState(0);
 
-  const itemSpacing = 12;
+  const itemSpacing = 10;
   // One card fully visible with a peek of the next — a familiar phone
   // carousel pattern instead of a fixed desktop card width.
-  const cardWidth = Math.min(230, width * 0.6);
+  const viewportWidth = carouselWidth || width;
+  const cardWidth = Math.min(220, viewportWidth * 0.55);
   const snapInterval = cardWidth + itemSpacing;
+  const trailingPadding = Math.max(0, viewportWidth - cardWidth - 2);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const index = Math.round(event.nativeEvent.contentOffset.x / snapInterval);
+    const index = Math.min(
+      species.length - 1,
+      Math.round(event.nativeEvent.contentOffset.x / snapInterval),
+    );
     if (index !== activeIndex) setActiveIndex(index);
   };
 
@@ -44,7 +49,6 @@ export const SpeciesCarousel: React.FC<SpeciesCarouselProps> = ({
   return (
     <View style={styles.container}>
       <ScrollView
-        ref={scrollRef}
         horizontal
         nestedScrollEnabled
         bounces={false}
@@ -54,12 +58,16 @@ export const SpeciesCarousel: React.FC<SpeciesCarouselProps> = ({
         decelerationRate="fast"
         scrollEventThrottle={16}
         onScroll={handleScroll}
-        contentContainerStyle={styles.scrollContent}
+        onLayout={(event) => {
+          const nextWidth = event.nativeEvent.layout.width;
+          if (nextWidth !== carouselWidth) setCarouselWidth(nextWidth);
+        }}
+        contentContainerStyle={[styles.scrollContent, { paddingRight: trailingPadding }]}
       >
-        {species.map((item) => (
+        {species.map((item, index) => (
           <View
             key={item.id}
-            style={{ width: cardWidth, marginRight: itemSpacing }}
+            style={{ width: cardWidth, marginRight: index < species.length - 1 ? itemSpacing : 0 }}
           >
             <SpeciesCard
               species={item}

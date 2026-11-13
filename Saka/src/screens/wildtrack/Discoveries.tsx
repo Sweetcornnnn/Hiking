@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim'
 
 import { useWildTrackStore } from '../../store/wildtrackStore';
 import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
+import Toast, { ToastHandle } from '../../components/Toast';
 
 import {
   BG_CARD,
@@ -43,6 +44,8 @@ export default function DiscoveriesScreen() {
 
   const [selectedDiscovery, setSelectedDiscovery] = useState<any | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
 
   useEffect(() => {
     fetchDiscoveries(selectedMountainId);
@@ -54,9 +57,25 @@ export default function DiscoveriesScreen() {
     if (!selectedDiscovery) return;
 
     setRemoving(true);
-    const { error } = await removeDiscovery(selectedDiscovery.id);
-    if (!error) setSelectedDiscovery(null);
-    setRemoving(false);
+    setRemoveError(null);
+    try {
+      const { error } = await removeDiscovery(selectedDiscovery.id);
+      if (error) {
+        setRemoveError(error);
+        return;
+      }
+
+      const removedName =
+        selectedDiscovery.common_name || selectedDiscovery.scientific_name || 'Species';
+      setSelectedDiscovery(null);
+      toastRef.current?.show({
+        type: 'success',
+        title: 'Discovery removed',
+        message: `${removedName} removed from your discoveries.`,
+      });
+    } finally {
+      setRemoving(false);
+    }
   };
 
   return (
@@ -97,7 +116,10 @@ export default function DiscoveriesScreen() {
                 image_url: item.image_url,
                 discovered: true,
               }}
-              onPress={() => setSelectedDiscovery(item)}
+              onPress={() => {
+                setRemoveError(null);
+                setSelectedDiscovery(item);
+              }}
               isDiscovered
             />
           </View>
@@ -200,6 +222,9 @@ export default function DiscoveriesScreen() {
                       </>
                     )}
                   </TouchableOpacity>
+                  {removeError && (
+                    <Text style={styles.removeError}>{removeError}</Text>
+                  )}
 
                 </View>
               </>
@@ -207,6 +232,7 @@ export default function DiscoveriesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      <Toast ref={toastRef} position="top" topOffset={insets.top + 10} />
     </SafeAreaView>
   );
 }
@@ -356,4 +382,5 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   removeButtonText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  removeError: { color: '#E07070', fontSize: 11, lineHeight: 15, marginTop: 6 },
 });

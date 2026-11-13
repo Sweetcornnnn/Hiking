@@ -11,12 +11,14 @@ import {
 
 interface TaxonomyTreeProps {
   taxonomy?: TaxonomyNode;
+  source?: 'GBIF' | 'iNaturalist';
+  embedded?: boolean;
 }
 
-export const TaxonomyTree: React.FC<TaxonomyTreeProps> = ({ taxonomy }) => {
+export const TaxonomyTree: React.FC<TaxonomyTreeProps> = ({ taxonomy, source, embedded = false }) => {
   const [expanded, setExpanded] = useState(true);
 
-  if (!taxonomy) {
+  if (!taxonomy || !source) {
     return null;
   }
 
@@ -28,14 +30,18 @@ export const TaxonomyTree: React.FC<TaxonomyTreeProps> = ({ taxonomy }) => {
     { label: 'Family', value: taxonomy.family },
     { label: 'Genus', value: taxonomy.genus },
     { label: 'Species', value: taxonomy.species },
-  ];
+  ].filter((entry) => Boolean(entry.value?.trim()));
+
+  if (entries.length === 0) {
+    return null;
+  }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, embedded && styles.embeddedContainer]}>
       <Pressable style={styles.header} onPress={() => setExpanded((prev) => !prev)}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>Taxonomic classification</Text>
-          <Text style={styles.subtitle}>Scientific hierarchy for mountain species</Text>
+          <Text style={styles.subtitle}>Source: {source}</Text>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color="#0F172A" />
       </Pressable>
@@ -45,7 +51,7 @@ export const TaxonomyTree: React.FC<TaxonomyTreeProps> = ({ taxonomy }) => {
           {entries.map((entry) => (
             <View key={entry.label} style={styles.entryRow}>
               <Text style={styles.rank}>{entry.label}</Text>
-              <Text style={styles.value}>{entry.value || 'Unknown'}</Text>
+              <Text style={styles.value}>{entry.value}</Text>
             </View>
           ))}
         </View>
@@ -61,6 +67,12 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: BORDER_DEFAULT,
+  },
+  embeddedContainer: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderRadius: 0,
+    padding: 0,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   titleRow: { flex: 1, paddingRight: 10 },

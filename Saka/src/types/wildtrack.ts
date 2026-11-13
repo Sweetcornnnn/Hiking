@@ -53,8 +53,10 @@ export interface SpeciesSearchResult {
 
 export interface SpeciesDetails extends SpeciesSearchResult {
   scientific_description?: string;
+  description_source?: 'GBIF' | 'iNaturalist';
   vernacular_names?: string[];
   taxonomy?: TaxonomyNode;
+  taxonomy_source?: 'GBIF' | 'iNaturalist';
   gallery_images?: string[];
   distribution_notes?: string;
   elevation_range?: string;

@@ -1,10 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import {
-  ActivityIndicator,
   FlatList,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -14,119 +11,53 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
 import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
-import { TaxonomyTree } from '../../components/wildtrack/TaxonomyTree';
-import { DistributionMap } from '../../components/wildtrack/DistributionMap';
-import { ObservationTimeline } from '../../components/wildtrack/ObservationTimeline';
-import { SpeciesGallery } from '../../components/wildtrack/SpeciesGallery';
 
 import { useSpeciesSearch } from '../../hooks/useSpeciesSearch';
-import { useSpeciesDetails } from '../../hooks/useSpeciesDetails';
-import { useOccurrenceData } from '../../hooks/useOccurrenceData';
-import { useWildTrackStore } from '../../store/wildtrackStore';
 
 const COLUMNS = 4;
 const GRID_GAP = 10;
-const H_PADDING = 10;
+const PAGE_GUTTER = 12;
+const HEADER_RIGHT_GUTTER = 45;
 
 export default function SpeciesSearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
-  const { selectedMountainId, createDiscovery, cacheSpecies } = useWildTrackStore();
-
   const { query, setQuery, results, isFetching, hasMore, expandResults } = useSpeciesSearch();
 
-  const {
-    detail,
-    isLoading: detailLoading,
-    loadSpeciesDetails,
-    clearSpeciesDetails,
-  } = useSpeciesDetails();
-
-  const { records, loadOccurrenceData } = useOccurrenceData();
-
-  const [selectedSpecies, setSelectedSpecies] = useState<any | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [marking, setMarking] = useState(false);
-
-  const cardWidth = (width - H_PADDING * 2 - GRID_GAP * (COLUMNS - 1)) / COLUMNS;
-
-  const displayData = useMemo(() => detail || selectedSpecies, [detail, selectedSpecies]);
-
-  const galleryImages = useMemo(() => {
-    const images =
-      detail?.gallery_images ||
-      displayData?.gallery_images ||
-      (displayData?.image_url ? [displayData.image_url] : []);
-
-    return (images || []).filter(Boolean);
-  }, [detail, displayData]);
-
-  useEffect(() => {
-    if (!detail) return;
-    loadOccurrenceData(detail.gbif_id, detail.inaturalist_id);
-  }, [detail]);
-
-  const handleSelectSpecies = async (item: any) => {
-    setSelectedSpecies(item);
-    setModalOpen(true);
-
-    try {
-      await loadSpeciesDetails(item);
-    } catch (error) {
-      console.log('Species detail fetch failed:', error);
-    }
-  };
-
-  const handleMarkDiscovered = async () => {
-    if (!selectedSpecies) return;
-
-    setMarking(true);
-
-    try {
-      const speciesId =
-        typeof selectedSpecies.id === 'number'
-          ? selectedSpecies.id
-          : selectedSpecies.gbif_id || selectedSpecies.inaturalist_id;
-
-      const { error } = await createDiscovery(speciesId, selectedMountainId);
-      if (!error) await cacheSpecies(selectedSpecies);
-    } catch (error) {
-      console.log('Mark discovery failed:', error);
-    }
-
-    setMarking(false);
-    handleCloseModal();
-  };
-
-  const handleCloseModal = () => {
-    setModalOpen(false);
-    setSelectedSpecies(null);
-    clearSpeciesDetails();
-  };
+  const horizontalInsets = insets.left + insets.right + PAGE_GUTTER * 2;
+  const cardWidth =
+    (width - horizontalInsets - GRID_GAP * (COLUMNS - 1)) / COLUMNS;
 
   const renderSkeleton = () => (
     <View style={styles.skeletonGrid}>
       {Array.from({ length: 6 }).map((_, index) => (
-        <View key={index} style={styles.skeletonCard} />
+        <View key={index} style={[styles.skeletonCard, { width: cardWidth }]} />
       ))}
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
       {/* HEADER */}
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingLeft: insets.left + PAGE_GUTTER,
+            paddingRight: insets.right + HEADER_RIGHT_GUTTER,
+          },
+        ]}
+      >
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={22} color="#D4A574" />
         </Pressable>
 
         <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={16} color="#64748B" style={styles.searchIcon} />
+          <Ionicons name="search-outline" size={16} color="#64748B" />
 
           <TextInput
             style={styles.searchInput}
@@ -137,7 +68,7 @@ export default function SpeciesSearchScreen() {
           />
 
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery('')} style={styles.clearButton}>
+            <Pressable onPress={() => setQuery('')}>
               <Ionicons name="close-circle" size={18} color="#64748B" />
             </Pressable>
           )}
@@ -145,7 +76,15 @@ export default function SpeciesSearchScreen() {
       </View>
 
       {/* RESULTS */}
-      <View style={styles.resultsContainer}>
+      <View
+        style={[
+          styles.resultsContainer,
+          {
+            paddingLeft: insets.left + PAGE_GUTTER,
+            paddingRight: insets.right + PAGE_GUTTER,
+          },
+        ]}
+      >
         {isFetching ? (
           renderSkeleton()
         ) : (
@@ -159,11 +98,11 @@ export default function SpeciesSearchScreen() {
             columnWrapperStyle={styles.columnWrapper}
             contentContainerStyle={styles.resultsContent}
             renderItem={({ item }) => (
-              <View style={{ width: cardWidth, marginBottom: GRID_GAP }}>
+              <View style={[styles.speciesCell, { width: cardWidth }]}>
                 <SpeciesCard
                   species={item}
-                  onPress={() => handleSelectSpecies(item)}
                   showDiscoveryStatus={false}
+                  detailSections={['gallery', 'timeline', 'taxonomy']}
                 />
               </View>
             )}
@@ -190,141 +129,6 @@ export default function SpeciesSearchScreen() {
           />
         )}
       </View>
-
-      {/* SPECIES DETAIL — centered floating card with a dimmed backdrop,
-          sized to roughly the same footprint as before but presented as an
-          actual modal rather than an edge-to-edge screen. */}
-      <Modal
-        {...FULLSCREEN_MODAL_PROPS}
-        visible={modalOpen}
-        animationType="fade"
-        onRequestClose={handleCloseModal}
-      >
-        <View
-          style={[
-            styles.modalBackdrop,
-            {
-              paddingLeft: insets.left,
-              paddingRight: insets.right,
-              paddingTop: insets.top,
-              paddingBottom: insets.bottom,
-            },
-          ]}
-        >
-          <ModalScrim color="rgba(0,0,0,0.6)" />
-          <Pressable style={styles.backdropTap} onPress={handleCloseModal} />
-
-          <View style={styles.modalCard}>
-            <View style={styles.modalScreen}>
-          {/* HEADER */}
-          <View style={styles.modalHeader}>
-            <View style={styles.modalTitleWrapper}>
-              <Text style={styles.modalTitle} numberOfLines={2}>
-                {displayData?.common_name || displayData?.scientific_name || 'Unknown Species'}
-              </Text>
-              <Text style={styles.modalScientific} numberOfLines={1}>
-                {displayData?.scientific_name || '—'}
-              </Text>
-            </View>
-
-            <Pressable
-              style={styles.markDiscoveredInline}
-              onPress={handleMarkDiscovered}
-              disabled={marking}
-              hitSlop={8}
-            >
-              {marking ? (
-                <ActivityIndicator size="small" color="#D4A574" />
-              ) : (
-                <>
-                  <Ionicons name="heart-outline" size={16} color="#D4A574" />
-                  <Text style={styles.markDiscoveredText} numberOfLines={1}>Mark Discovered</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-
-          {/* CONTENT */}
-          <ScrollView
-            style={styles.modalContent}
-            contentContainerStyle={styles.modalContentContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            {detailLoading ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color="#D4A574" />
-                <Text style={styles.modalLoadingText}>Loading species details...</Text>
-              </View>
-            ) : detail ? (
-              <View style={styles.modalBody}>
-                {galleryImages.length > 0 ? (
-                  <SpeciesGallery images={galleryImages} />
-                ) : (
-                  <View style={styles.noImageCard}>
-                    <Ionicons name="images-outline" size={28} color="#94A3B8" />
-                    <Text style={styles.noImageText}>No image data available</Text>
-                  </View>
-                )}
-
-                <View style={styles.quickFactsCard}>
-                  <Text style={styles.cardTitle}>Quick facts</Text>
-
-                  <View style={styles.factRow}>
-                    <Text style={styles.factLabel}>Status</Text>
-                    <Text style={styles.factText}>
-                      {detail?.conservation_status || 'Not listed'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.factRow}>
-                    <Text style={styles.factLabel}>Habitat</Text>
-                    <Text style={styles.factText}>
-                      {detail?.habitat || 'Mountain ecosystem'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.factRow}>
-                    <Text style={styles.factLabel}>Native</Text>
-                    <Text style={styles.factText}>
-                      {detail?.is_native === false ? 'Introduced' : 'Native'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.factRow}>
-                    <Text style={styles.factLabel}>Occurrence</Text>
-                    <Text style={styles.factText}>
-                      {detail?.occurrence_count || records?.length || 0} records
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.infoSection}>
-                  <TaxonomyTree taxonomy={detail?.taxonomy} />
-                </View>
-
-                <View style={styles.infoSection}>
-                  <DistributionMap occurrences={records || []} />
-                </View>
-
-                <View style={styles.infoSection}>
-                  <ObservationTimeline observations={records || []} />
-                </View>
-              </View>
-            ) : displayData ? (
-              <View style={styles.noImageCard}>
-                <Ionicons name="leaf-outline" size={28} color="#94A3B8" />
-                <Text style={styles.noImageText}>Species summary unavailable</Text>
-              </View>
-            ) : (
-              <View style={styles.modalLoading}>
-                <Text style={styles.modalLoadingText}>Unable to load species data.</Text>
-              </View>
-            )}
-          </ScrollView>
-          </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -335,8 +139,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     gap: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
@@ -359,30 +162,30 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: '#233047',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     height: 40,
   },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, color: '#F8FAFC', fontSize: 13, fontWeight: '600' },
-  clearButton: { padding: 4 },
+  searchInput: { flex: 1, color: '#F8FAFC', fontSize: 13, fontWeight: '600', padding: 0 },
 
-  resultsContainer: { flex: 1, paddingHorizontal: 8, paddingTop: 8 },
-  resultsContent: { paddingBottom: 20 },
+  resultsContainer: {
+    flex: 1,
+    paddingTop: 8,
+  },
+  resultsContent: { paddingBottom: 16 },
   columnWrapper: {
     justifyContent: 'flex-start',
     gap: GRID_GAP,
-    marginBottom: GRID_GAP,
   },
+  speciesCell: { marginBottom: GRID_GAP },
 
   skeletonGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
+    gap: GRID_GAP,
   },
-  skeletonCard: { width: '31%', height: 165, backgroundColor: '#172033', borderRadius: 16, marginBottom: 10 },
+  skeletonCard: { height: 165, backgroundColor: '#172033', borderRadius: 16, marginBottom: GRID_GAP },
 
-  emptyState: { marginTop: 80, alignItems: 'center', paddingHorizontal: 20 },
+  emptyState: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 12 },
   emptyIconWrapper: {
     width: 72,
     height: 72,
@@ -391,9 +194,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  emptyTitle: { marginTop: 18, color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
+  emptyTitle: { marginTop: 16, color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
   emptyText: {
-    marginTop: 10,
+    marginTop: 8,
     color: '#94A3B8',
     fontSize: 12,
     textAlign: 'center',
@@ -406,77 +209,114 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#D4A574',
     borderRadius: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   loadMoreText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backdropTap: { ...StyleSheet.absoluteFill },
-  modalCard: {
-    width: '95%',
-    height: '92%',
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#1E293B',
     backgroundColor: '#111827',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 12,
+    overflow: 'hidden',
   },
   modalScreen: { flex: 1, backgroundColor: '#111827' },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 68,
+    zIndex: 10,
+    elevation: 10,
+    backgroundColor: '#111827',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
   },
-  modalTitleWrapper: { flex: 1, paddingRight: 12 },
+  stickyTitle: {
+    position: 'absolute',
+    left: 48,
+    right: 8,
+    top: 10,
+    alignItems: 'center',
+  },
+  modalHeaderLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#1E293B',
+  },
   modalTitle: { color: '#F8FAFC', fontSize: 17, fontWeight: '700' },
-  modalScientific: { marginTop: 4, color: '#D4A574', fontSize: 12, fontStyle: 'italic' },
-  markDiscoveredInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 0,
-    gap: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
+  modalScientific: {
+    marginTop: 3,
+    color: '#D4A574',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
-  markDiscoveredText: { color: '#D4A574', fontSize: 11, fontWeight: '700' },
+  detailTitle: {
+    position: 'relative',
+    alignItems: 'center',
+    paddingTop: 6,
+    paddingBottom: 14,
+    paddingHorizontal: 12,
+  },
+  detailBackButton: {
+    position: 'absolute',
+    top: 12,
+    left: 0,
+    zIndex: 1,
+  },
+  detailTitleCommon: {
+    color: '#F8FAFC',
+    fontSize: 21,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  detailTitleScientific: {
+    color: '#D4A574',
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  closeModalButton: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  modalContent: { flex: 1 },
-  modalContentContainer: { padding: 14, paddingBottom: 20 },
+  modalContent: { flex: 1, zIndex: 0, elevation: 0 },
+  modalContentContainer: { padding: 12, paddingBottom: 16 },
   modalBody: { gap: 14 },
 
-  quickFactsCard: {
-    backgroundColor: '#172033',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#233047',
-  },
   cardTitle: { color: '#F8FAFC', fontSize: 13, fontWeight: '700', marginBottom: 8 },
-  factRow: { marginTop: 12 },
+  quickFactsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 12,
+    columnGap: 20,
+  },
+  factRow: { flexBasis: '45%', flexGrow: 1 },
   factLabel: { color: '#64748B', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.8 },
   factText: { marginTop: 4, color: '#F8FAFC', fontSize: 13, fontWeight: '600' },
+  descriptionText: { color: '#F8FAFC', fontSize: 12, lineHeight: 18 },
+  descriptionSource: { color: '#94A3B8', fontSize: 10, marginTop: 6 },
 
   infoSection: {
     backgroundColor: '#172033',
     borderRadius: 20,
-    overflow: 'hidden',
+    padding: 12,
     borderWidth: 1,
     borderColor: '#233047',
+  },
+  infoSectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#233047',
+    marginVertical: 12,
   },
 
   noImageCard: {
@@ -491,6 +331,6 @@ const styles = StyleSheet.create({
   },
   noImageText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
 
-  modalLoading: { paddingVertical: 60, justifyContent: 'center', alignItems: 'center' },
+  modalLoading: { paddingVertical: 40, justifyContent: 'center', alignItems: 'center' },
   modalLoadingText: { marginTop: 12, color: '#94A3B8', fontSize: 12 },
 });
