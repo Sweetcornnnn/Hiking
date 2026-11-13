@@ -46,6 +46,7 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
   const { signUp, isLoading } = useAuthStore();
 
@@ -95,7 +96,7 @@ export default function SignupScreen() {
       return;
     }
     try {
-      const { error } = await signUp(email, password, name, phone.trim());
+      const { error, needsEmailConfirmation: confirmationRequired } = await signUp(email, password, name, phone.trim());
       if (error) {
         if (isConnectionError(error)) {
           setOfflineModalVisible(true);
@@ -108,6 +109,7 @@ export default function SignupScreen() {
         }
       } else {
         setOfflineModalVisible(false);
+        setNeedsEmailConfirmation(confirmationRequired === true);
         setShowSuccessModal(true);
       }
     } catch (error) {
@@ -269,9 +271,13 @@ export default function SignupScreen() {
                 <Ionicons name="checkmark" size={26} color={AUTH.green} />
               </View>
             </View>
-            <Text style={styles.successTitle} accessibilityRole="header">Account created</Text>
+            <Text style={styles.successTitle} accessibilityRole="header">
+              {needsEmailConfirmation ? 'Check your email' : 'Account created'}
+            </Text>
             <Text style={styles.successMessage}>
-              Your account has been created successfully. Please sign in to continue.
+              {needsEmailConfirmation
+                ? `We sent a confirmation link to ${email.trim()}. Open it to verify your email before signing in. Check your spam or junk folder if it is not in your inbox.`
+                : 'Your account has been created successfully. Please sign in to continue.'}
             </Text>
             <Pressable
               onPress={() => {
