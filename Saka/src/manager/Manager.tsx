@@ -65,6 +65,8 @@ type ToastType = 'success' | 'error' | 'warning';
 export default function ManagerScreen() {
   const router = useRouter();
   const { user, profile, isLoading: authLoading, signOut } = useAuthStore();
+  const userId = user?.id;
+  const profileRole = profile?.role;
   const [activeTab, setActiveTab] = useState<Tab>('mountain');
   const [activeLogisticsTab, setActiveLogisticsTab] = useState<LogisticsTab>('transportation');
   const [mountains, setMountains] = useState<Mountain[]>([]);
@@ -158,16 +160,16 @@ export default function ManagerScreen() {
   // ── Data ──
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
+    if (!userId) {
       router.replace('/Login');
       return;
     }
-    if (!profile || profile.role !== 'manager') {
+    if (profileRole !== 'manager') {
       router.replace('/Home');
       return;
     }
     let active = true;
-    void managerService.fetchAssignedMountains(user.id)
+    void managerService.fetchAssignedMountains(userId)
       .then((rows) => {
         if (!active) return;
         setMountains(rows);
@@ -176,10 +178,10 @@ export default function ManagerScreen() {
       .catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : 'Unable to load manager dashboard.'))
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [authLoading, profile, router, user]);
+  }, [authLoading, profileRole, router, userId]);
 
   useEffect(() => {
-    if (!selectedMountain || !user) return;
+    if (!selectedMountain || !userId) return;
     let active = true;
     setError(null);
     setContent(null);
@@ -201,7 +203,7 @@ export default function ManagerScreen() {
       if (active) setError(loadError instanceof Error ? loadError.message : 'Unable to load mountain details.');
     });
     return () => { active = false; };
-  }, [selectedMountain, user]);
+  }, [selectedMountain, userId]);
 
   const updateViewpoint = (field: Exclude<keyof ManagedViewpoint, 'tags' | 'features' | 'trail_notes'>, value: string) => {
     if (!selectedViewpoint) return;
@@ -425,7 +427,7 @@ export default function ManagerScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={ss.screen} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={ss.screen} edges={['top']}>
         <View style={ss.emptyState}>
           <Ionicons name="hourglass-outline" size={20} color={TEXT_MUTED} />
           <Text style={ss.emptySubtitle}>Loading manager dashboard…</Text>
@@ -468,7 +470,7 @@ export default function ManagerScreen() {
       )}
 
       {/* MAIN SHELL — same as Admin */}
-      <SafeAreaView style={ss.screen} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={ss.screen} edges={['top']}>
         <View style={ss.shell}>
           {/* ── SIDEBAR (rail) ── */}
           <View style={ss.sidebar}>
@@ -1762,7 +1764,7 @@ function parseAlerts(value: string): Alert[] {
 const ss = StyleSheet.create({
   // Shell
   screen: { flex: 1, backgroundColor: CHAT_BG },
-  shell: { flex: 1, flexDirection: 'row', backgroundColor: CHAT_BG },
+  shell: { flex: 1, flexDirection: 'row', marginHorizontal: 16, backgroundColor: CHAT_BG },
 
   // Sidebar (icon rail)
   sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: CHAT_BORDER, backgroundColor: CHAT_BG },

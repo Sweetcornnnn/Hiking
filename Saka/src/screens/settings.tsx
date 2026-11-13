@@ -564,7 +564,7 @@ export default function SettingsScreen() {
         </>,
       )}
 
-      <SafeAreaView style={ss.screen} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={ss.screen} edges={['top']}>
         <View style={ss.shell}>
           {/* ── SIDEBAR ── */}
           <View style={ss.sidebar}>
@@ -679,7 +679,7 @@ export default function SettingsScreen() {
 const ss = StyleSheet.create({
   // Shell
   screen: { flex: 1, backgroundColor: CHAT_BG },
-  shell: { flex: 1, flexDirection: 'row', backgroundColor: CHAT_BG },
+  shell: { flex: 1, flexDirection: 'row', marginHorizontal: 16, backgroundColor: CHAT_BG },
 
   // Sidebar
   sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: CHAT_BORDER, backgroundColor: CHAT_BG },

@@ -819,7 +819,7 @@ export default function AdminRoute() {
       </AdminModal>
 
       {/* MAIN SHELL — ChatScreen-style */}
-      <SafeAreaView style={ss.screen} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={ss.screen} edges={['top']}>
         <View style={ss.shell}>
           {/* ── SIDEBAR (rail) ── */}
           <View style={ss.sidebar}>
@@ -1550,7 +1550,7 @@ function SafetyRow({
 const ss = StyleSheet.create({
   // Shell
   screen: { flex: 1, backgroundColor: CHAT_BG },
-  shell: { flex: 1, flexDirection: 'row', backgroundColor: CHAT_BG },
+  shell: { flex: 1, flexDirection: 'row', marginHorizontal: 24, backgroundColor: CHAT_BG },
 
   // Sidebar (icon rail)
   sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: CHAT_BORDER, backgroundColor: CHAT_BG },
@@ -1594,7 +1594,7 @@ const ss = StyleSheet.create({
   main: { flex: 1, minWidth: 0, backgroundColor: CHAT_BG },
   panelHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    height: 52, paddingHorizontal: 16,
+    height: 60, paddingHorizontal: 20,
     borderBottomWidth: 1, borderBottomColor: CHAT_BORDER,
   },
   panelTitle: { color: TEXT_PRIMARY, fontSize: 14, fontWeight: '700', letterSpacing: -0.1 },
@@ -1608,10 +1608,10 @@ const ss = StyleSheet.create({
   },
   headerPillText: { color: TEXT_MUTED, fontSize: 10, fontWeight: '600' },
 
-  mainContent: { padding: 14, gap: 8 },
+  mainContent: { padding: 20, gap: 12 },
 
   // Search & chips
-  searchRow: { paddingHorizontal: 14, paddingTop: 12 },
+  searchRow: { paddingHorizontal: 20, paddingTop: 16 },
   searchBox: {
     height: 32, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10,
     borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.04)',
@@ -1619,7 +1619,7 @@ const ss = StyleSheet.create({
   },
   searchInput: { flex: 1, color: TEXT_PRIMARY, fontSize: 12, paddingVertical: 0 },
 
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 10 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, paddingTop: 14 },
   chip: {
     height: 24, paddingHorizontal: 9, borderRadius: 8, justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
