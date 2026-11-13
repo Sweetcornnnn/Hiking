@@ -32,7 +32,7 @@ import {
 
 const COLUMNS = 3;
 const GRID_GAP = 10;
-const H_PADDING = 10;
+const H_PADDING = 16;
 
 export default function DiscoveriesScreen() {
   const router = useRouter();
@@ -51,7 +51,13 @@ export default function DiscoveriesScreen() {
     fetchDiscoveries(selectedMountainId);
   }, [selectedMountainId]);
 
-  const cardWidth = (width - H_PADDING * 2 - GRID_GAP * (COLUMNS - 1)) / COLUMNS;
+  const cardWidth =
+    (width -
+      insets.left -
+      insets.right -
+      H_PADDING * 2 -
+      GRID_GAP * (COLUMNS - 1)) /
+    COLUMNS;
 
   const handleRemoveDiscovery = async () => {
     if (!selectedDiscovery) return;
@@ -79,16 +85,24 @@ export default function DiscoveriesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* HEADER */}
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingLeft: insets.left + H_PADDING,
+            paddingRight: insets.right + H_PADDING,
+          },
+        ]}
+      >
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={20} color={TEXT_PRIMARY} />
         </TouchableOpacity>
 
         <View style={styles.headerTextContainer}>
           <Text style={styles.title}>My Discoveries</Text>
-          <Text style={styles.subtitle}>{discoveries.length} species discovered</Text>
+          <Text style={styles.subtitle}>Your trail-side collection of wild little wonders.</Text>
         </View>
 
         <View style={styles.discoveryBadge}>
@@ -103,7 +117,13 @@ export default function DiscoveriesScreen() {
         numColumns={COLUMNS}
         showsVerticalScrollIndicator={false}
         columnWrapperStyle={styles.columnWrapper}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingLeft: insets.left + H_PADDING,
+            paddingRight: insets.right + H_PADDING,
+          },
+        ]}
         renderItem={({ item }) => (
           <View style={{ width: cardWidth }}>
             <SpeciesCard
@@ -260,9 +280,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  headerTextContainer: { flex: 1 },
-  title: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY },
-  subtitle: { fontSize: 11, color: TEXT_MUTED, marginTop: 2 },
+  headerTextContainer: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  title: { fontSize: 19, fontWeight: '800', color: TEXT_PRIMARY, textAlign: 'center' },
+  subtitle: { fontSize: 11, color: TEXT_MUTED, marginTop: 2, textAlign: 'center' },
   discoveryBadge: {
     width: 40,
     height: 40,
