@@ -1,2 +1,2 @@
 // Routing file - re-exports screen from src/screens
-export { default } from '../src/screens/forgot';
+export { default } from '../src/screens/Forgot';

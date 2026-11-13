@@ -258,7 +258,7 @@ export default function MountainTopScreen() {
                   (viewpoint) => viewpoint.id === p.id
                 ) + 1;
                 router.push({
-                  pathname: '/viewpoint',
+                  pathname: '/Viewpoint',
                   params: {
                     viewpointId: p.id,
                     mountainId,

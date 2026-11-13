@@ -1,4 +1,4 @@
-import HomeScreen from '../src/screens/home';
+import HomeScreen from '../src/screens/Home';
 
 export default function HomeRoute() {
   return <HomeScreen />;
