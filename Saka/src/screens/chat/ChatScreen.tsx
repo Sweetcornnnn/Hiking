@@ -80,7 +80,10 @@ export default function ChatScreen() {
   // ── Landscape: split layout (Sidebar + Main Content) ──
   if (isLandscape) {
     return (
-      <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
+      <SafeAreaView
+        style={styles.container}
+        edges={['top', 'bottom']}
+      >
         <View style={styles.shell}>
           <ChatSidebar
             active={active}
@@ -163,7 +166,10 @@ export default function ChatScreen() {
   // ── Portrait: original stacked layout with tabs ──
   return (
     <>
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <SafeAreaView
+        style={styles.container}
+        edges={['top', 'bottom']}
+      >
         <View style={styles.header}>
           <TouchableOpacity
             onPress={handleBack}
