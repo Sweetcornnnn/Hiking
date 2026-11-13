@@ -40,6 +40,7 @@ import {
   useChatNotifications,
 } from '../components/chat/ChatNotificationContext';
 import { mountainService, Mountain } from '../services/mountainService';
+import { eventService } from '../services/eventService';
 import { persistProfileAvatarLocally } from '../services/profileAvatarService';
 import { MOUNTAIN_VIDEOS } from '../services/homeVideoAssets';
 import { getUnreadMountainAlertCounts } from '../services/mountainAlertReadService';
@@ -54,6 +55,7 @@ import {
   TEXT_DANGER,
 } from '../theme/designTokens';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
+import { todayISO } from '../components/events/TrailKit';
 
 const DIFFICULTY_COLORS: Record<string, string> = {
   Easy: '#4CAF81',
@@ -85,10 +87,12 @@ const hapticTick = () => {
   try { void Haptics?.selectionAsync?.(); } catch {}
 };
 
-// TODO: connect this to your events service and return { [mountainId]: upcomingEventCount }.
-// The Events pill shows the number as soon as it returns a count above 0.
 async function fetchUpcomingEventCounts(): Promise<Record<string, number>> {
-  return {};
+  const events = await eventService.getPublicEvents({ dateFrom: todayISO() });
+  return events.reduce<Record<string, number>>((counts, event) => {
+    counts[event.mountain_id] = (counts[event.mountain_id] ?? 0) + 1;
+    return counts;
+  }, {});
 }
 
 function useReduceMotion() {
@@ -229,6 +233,264 @@ function MountainVideo({
   );
 }
 
+// ── Buttons that announce things ───────────────────────────
+// No badges. When a mountain has an alert or an upcoming event, the button
+// itself stretches open to show a short, light-hearted line, holds for a few
+// seconds, folds back, and peeks open again every so often while its slide is
+// the active one. With reduce-motion on, nothing animates.
+const ALERT_NOTES = ['Alert', 'Safety', 'Weather', 'Closure'];
+const EVENT_NOTES = ['Hike on!', 'Boots up!', 'Snack time!', 'Trail pals!'];
+
+// Same mountain always gets the same line, so it doesn't change on every render.
+const pickNote = (notes: string[], seed: string) => {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return notes[Math.abs(h) % notes.length];
+};
+
+// 0 = folded, 1 = fully open. Loops: open, hold, fold, rest.
+function useNoticePeek({
+  enabled,
+  active,
+  reduceMotion,
+  delay,
+  textWidth,
+}: {
+  enabled: boolean;
+  active: boolean;
+  reduceMotion: boolean;
+  delay: number;
+  textWidth: number;
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    progress.setValue(0);
+    if (!enabled || !active || reduceMotion || textWidth === 0) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(progress, {
+          toValue: 1,
+          duration: 520,
+          easing: Easing.out(Easing.back(1.3)),
+          useNativeDriver: false, // width can't run on the native driver
+        }),
+        Animated.delay(3600),
+        Animated.timing(progress, {
+          toValue: 0,
+          duration: 380,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: false,
+        }),
+        Animated.delay(7000),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [enabled, active, reduceMotion, textWidth, delay, progress]);
+
+  return progress;
+}
+
+// Invisible copy of the line, only here to measure how far the button has to stretch.
+function NoticeMeasure({ text, style, onWidth }: { text: string; style: any; onWidth: (w: number) => void }) {
+  return (
+    <View pointerEvents="none" style={styles.noticeMeasure}>
+      <Text style={style} onLayout={(e) => onWidth(Math.ceil(e.nativeEvent.layout.width))}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+const CLAMP = { extrapolate: 'clamp' as const };
+
+function GuideButton({
+  label,
+  alertCount,
+  note,
+  active,
+  reduceMotion,
+  onPress,
+}: {
+  label: string;
+  alertCount: number;
+  note: string;
+  active: boolean;
+  reduceMotion: boolean;
+  onPress: () => void;
+}) {
+  const [textWidth, setTextWidth] = useState(0);
+  const progress = useNoticePeek({ enabled: alertCount > 0, active, reduceMotion, delay: 1800, textWidth });
+  const alertPulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    alertPulse.setValue(0);
+    if (alertCount === 0 || !active || reduceMotion) return;
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(alertPulse, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.delay(450),
+        Animated.timing(alertPulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [alertCount, active, reduceMotion, alertPulse]);
+
+  const width = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [40, 40 + Math.min(textWidth, 40) + 12],
+  });
+  const pulseOpacity = alertPulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
+  const pulseScale = alertPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
+  const backgroundColor = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(0,0,0,0.35)', 'rgba(0,0,0,0.62)'],
+    ...CLAMP,
+  });
+  const borderColor = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(255,255,255,0.28)', TEXT_DANGER],
+    ...CLAMP,
+  });
+  const textOpacity = progress.interpolate({ inputRange: [0.25, 0.8], outputRange: [0, 1], ...CLAMP });
+
+  // The slot always takes up exactly 40x40 in the row, so the mountain name never
+  // moves. The button grows out of it to the right, floating over the empty space.
+  return (
+    <View style={styles.guideSlot}>
+      <TouchableOpacity
+        style={styles.guideTouch}
+        onPress={onPress}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        {alertCount > 0 && active && !reduceMotion ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.guideAlertPulse,
+              { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
+            ]}
+          />
+        ) : null}
+        {alertCount > 0 ? <NoticeMeasure text={note} style={styles.guideNoteText} onWidth={setTextWidth} /> : null}
+        <Animated.View style={[styles.guideButton, styles.guideButtonRow, { width, backgroundColor, borderColor }]}>
+          <View style={styles.guideIconSlot}>
+            <Ionicons name="information-circle-outline" size={22} color={ACCENT_GOLD} />
+          </View>
+          <Animated.Text numberOfLines={1} style={[styles.guideNoteText, { opacity: textOpacity }]}>
+            {note}
+          </Animated.Text>
+        </Animated.View>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function EventsPill({
+  label,
+  eventCount,
+  note,
+  active,
+  reduceMotion,
+  onPress,
+}: {
+  label: string;
+  eventCount: number;
+  note: string;
+  active: boolean;
+  reduceMotion: boolean;
+  onPress: () => void;
+}) {
+  const [textWidth, setTextWidth] = useState(0);
+  const progress = useNoticePeek({ enabled: eventCount > 0, active, reduceMotion, delay: 500, textWidth });
+  const eventPulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    eventPulse.setValue(0);
+    if (eventCount === 0 || !active || reduceMotion) return;
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(eventPulse, {
+          toValue: 1,
+          duration: 550,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(eventPulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(180),
+        Animated.timing(eventPulse, {
+          toValue: 1,
+          duration: 850,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.delay(700),
+        Animated.timing(eventPulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [eventCount, active, reduceMotion, eventPulse]);
+
+  const visibleNoteWidth = Math.min(textWidth + 2, 52);
+  const noteWidth = progress.interpolate({ inputRange: [0, 1], outputRange: [0, visibleNoteWidth] });
+  const pulseOpacity = eventPulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] });
+  const pulseScale = eventPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.65] });
+  // The pill has a 5px gap between children; cancel it while the note is folded away.
+  const noteMargin = progress.interpolate({ inputRange: [0, 1], outputRange: [-5, 0], ...CLAMP });
+  const backgroundColor = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(201,169,110,0.18)', 'rgba(201,169,110,0.34)'],
+    ...CLAMP,
+  });
+  const borderColor = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(201,169,110,0.55)', 'rgba(201,169,110,1)'],
+    ...CLAMP,
+  });
+  const textOpacity = progress.interpolate({ inputRange: [0.25, 0.8], outputRange: [0, 1], ...CLAMP });
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={label}>
+      {eventCount > 0 ? <NoticeMeasure text={note} style={styles.eventsNoteText} onWidth={setTextWidth} /> : null}
+      <Animated.View style={[styles.eventsPill, { backgroundColor, borderColor }]}>
+        {eventCount > 0 && active && !reduceMotion ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.eventsPulse,
+              { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
+            ]}
+          />
+        ) : null}
+        <Ionicons name="calendar-outline" size={11} color="#C9A96E" />
+        <Text style={styles.eventsPillText}>Events</Text>
+        <Animated.View style={{ width: noteWidth, marginLeft: noteMargin, overflow: 'hidden' }}>
+          <Animated.Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.eventsNoteText, { width: visibleNoteWidth, opacity: textOpacity }]}
+          >
+            {note}
+          </Animated.Text>
+        </Animated.View>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
 const MountainSlide = memo(function MountainSlide({
   mountain,
   shouldMountVideo,
@@ -329,25 +591,18 @@ const MountainSlide = memo(function MountainSlide({
             <Ionicons name="trending-up-outline" size={11} color="rgba(255,255,255,0.7)" />
             <Text style={styles.elevationText}>{mountain.elevationDisplay}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.eventsPill}
-            onPress={() => onEventsPress(mountain.id)}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel={
+          <EventsPill
+            label={
               eventCount > 0
                 ? `Events for ${mountain.name}, ${eventCount} upcoming`
                 : `Events for ${mountain.name}`
             }
-          >
-            <Ionicons name="calendar-outline" size={11} color="#C9A96E" />
-            <Text style={styles.eventsPillText}>Events</Text>
-            {eventCount > 0 ? (
-              <View style={styles.eventsCount}>
-                <Text style={styles.eventsCountText}>{eventCount > 9 ? '9+' : eventCount}</Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
+            eventCount={eventCount}
+            note={pickNote(EVENT_NOTES, mountain.id)}
+            active={isActive}
+            reduceMotion={reduceMotion}
+            onPress={() => onEventsPress(mountain.id)}
+          />
         </View>
         <View style={styles.mountainNameRow}>
           <Text
@@ -356,26 +611,18 @@ const MountainSlide = memo(function MountainSlide({
           >
             {mountain.name}
           </Text>
-          <TouchableOpacity
-            style={styles.guideButton}
-            onPress={() => onOpenTips(mountain)}
-            activeOpacity={0.75}
-            accessibilityRole="button"
-            accessibilityLabel={
+          <GuideButton
+            label={
               alertCount > 0
                 ? `Open ${mountain.name} tips and guide, ${alertCount} alerts`
                 : `Open ${mountain.name} tips and guide`
             }
-          >
-            <Ionicons name="information-circle-outline" size={22} color={ACCENT_GOLD} />
-            {alertCount > 0 ? (
-              <View style={styles.guideAlertBadge} pointerEvents="none">
-                <Text style={styles.guideAlertBadgeText}>
-                  {alertCount > 9 ? '9+' : alertCount}
-                </Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
+            alertCount={alertCount}
+            note={pickNote(ALERT_NOTES, mountain.id)}
+            active={isActive}
+            reduceMotion={reduceMotion}
+            onPress={() => onOpenTips(mountain)}
+          />
         </View>
         <Text style={styles.mountainDescription} numberOfLines={2}>
           {mountain.description}
@@ -485,13 +732,17 @@ function HomeContent() {
     }
   }, [mountains]);
 
-  useEffect(() => {
-    let alive = true;
-    fetchUpcomingEventCounts()
-      .then((counts) => { if (alive) setEventCounts(counts); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      fetchUpcomingEventCounts()
+        .then((counts) => { if (active) setEventCounts(counts); })
+        .catch((error) => {
+          console.warn('[Home] Failed to load upcoming events:', error);
+        });
+      return () => { active = false; };
+    }, [])
+  );
 
   // Pause every video while another screen (Tips, Events, MountainTop…) is on top.
   const [focused, setFocused] = useState(true);
@@ -827,7 +1078,7 @@ function HomeContent() {
             </TouchableOpacity>
           )}
 
-          {profile?.role === 'organization' && (
+          {(profile?.role === 'organization' || !!profile?.organization_id) && (
             <TouchableOpacity
               onPress={() => router.push('/organizations/Dashboard')}
               style={styles.chatButton}
@@ -1094,7 +1345,7 @@ const styles = StyleSheet.create({
   ctaRippleRing: {
     position: 'absolute',
     width: 118, height: 118, borderRadius: 59,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.7)',
   },
   logoImage: { width: 168, height: 168 },
@@ -1124,25 +1375,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
   },
-  guideAlertBadge: {
+  guideSlot: { width: 40, height: 40, zIndex: 5 },
+  guideTouch: { position: 'absolute', top: 0, left: 0 },
+  guideAlertPulse: {
     position: 'absolute',
-    top: 1,
-    right: 1,
-    minWidth: 16,
-    height: 16,
-    paddingHorizontal: 3,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: TEXT_DANGER,
-    borderWidth: 1.5,
-    borderColor: BG_CARD,
+    top: 0,
+    left: 0,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: TEXT_DANGER,
   },
-  guideAlertBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
-  },
+  guideButtonRow: { flexDirection: 'row', justifyContent: 'flex-start', overflow: 'hidden' },
+  guideIconSlot: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  guideNoteText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', letterSpacing: 0.3, flexShrink: 0 },
   elevationPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1166,17 +1413,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.55)',
   },
-  eventsPillText: { color: '#C9A96E', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
-  eventsCount: {
-    minWidth: 16,
-    height: 16,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#C9A96E',
+  eventsPulse: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#FFD166',
   },
-  eventsCountText: { color: '#0E1520', fontSize: 9, fontWeight: '800' },
+  eventsPillText: { color: '#C9A96E', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  eventsNoteText: { color: '#E8C98F', fontSize: 11, fontWeight: '700', letterSpacing: 0.3, flexShrink: 0 },
+  noticeMeasure: { position: 'absolute', top: 0, left: 0, width: 400, opacity: 0 },
   statusWrap: { alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 32 },
   statusText: { color: 'rgba(255,255,255,0.75)', fontSize: 13, textAlign: 'center', lineHeight: 19 },
   retryButton: {

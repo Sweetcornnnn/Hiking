@@ -89,6 +89,7 @@ interface ShellProps {
   onBack?: () => void;
   backLabel?: string;
   icon?: keyof typeof Ionicons.glyphMap;
+  titleIconInline?: boolean;
   eyebrow?: string;
   title: string;
   titleLines?: number;
@@ -108,6 +109,7 @@ export function OrgLandscapeShell({
   onBack,
   backLabel = 'Back',
   icon,
+  titleIconInline = false,
   eyebrow,
   title,
   titleLines = 3,
@@ -123,11 +125,12 @@ export function OrgLandscapeShell({
   const railWidth = Math.min(Math.max(Math.round(width * RAIL_WIDTH_RATIO), 188), 232);
 
   return (
-    <SafeAreaView style={s.screen} edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
-      <View style={[s.rail, { width: railWidth }]}>
+      <View style={s.shell}>
+        {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
+        <View style={[s.rail, { width: railWidth }]}>
         <ScrollView
           style={s.railScroll}
           contentContainerStyle={[
@@ -164,13 +167,22 @@ export function OrgLandscapeShell({
           ) : null}
 
           <View style={s.identity}>
-            {icon ? (
+            {icon && !titleIconInline ? (
               <View style={s.iconBox}>
                 <Ionicons name={icon} size={15} color={PC.gold} />
               </View>
             ) : null}
             {eyebrow ? <Text style={s.eyebrow} numberOfLines={1}>{eyebrow}</Text> : null}
-            <Text style={s.title} numberOfLines={titleLines}>{title}</Text>
+            {titleIconInline && icon ? (
+              <View style={s.titleRow}>
+                <View style={[s.iconBox, s.inlineIconBox]}>
+                  <Ionicons name={icon} size={15} color={PC.gold} />
+                </View>
+                <Text style={[s.title, s.inlineTitle]} numberOfLines={titleLines}>{title}</Text>
+              </View>
+            ) : (
+              <Text style={s.title} numberOfLines={titleLines}>{title}</Text>
+            )}
             {subtitle ? <Text style={s.subtitle}>{subtitle}</Text> : null}
             {badge ? <View style={s.badgeWrap}>{badge}</View> : null}
           </View>
@@ -188,31 +200,33 @@ export function OrgLandscapeShell({
             {railFooter}
           </View>
         ) : null}
-      </View>
+        </View>
 
-      {/* ── MAIN PANEL ──────────────────────────────────────────────────── */}
-      <KeyboardAvoidingView
-        style={s.panel}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
+        {/* ── MAIN PANEL ──────────────────────────────────────────────────── */}
+        <KeyboardAvoidingView
           style={s.panel}
-          contentContainerStyle={[
-            s.panelContent,
-            {
-              paddingRight: SP.md,
-              paddingTop: SP.md,
-              paddingBottom: SP.xl,
-            },
-          ]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets
-          refreshControl={refreshControl}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {children}
-        </ScrollView>
-      </KeyboardAvoidingView>
+          <ScrollView
+            style={s.panel}
+            contentContainerStyle={[
+              s.panelContent,
+              {
+                paddingLeft: SP.md,
+                paddingRight: SP.md,
+                paddingTop: SP.md,
+                paddingBottom: SP.xl,
+              },
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets
+            refreshControl={refreshControl}
+          >
+            {children}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -808,7 +822,8 @@ export function PickerModal({
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  screen: { flex: 1, flexDirection: 'row', backgroundColor: PC.bgScreen },
+  screen: { flex: 1, backgroundColor: PC.bgScreen },
+  shell: { flex: 1, flexDirection: 'row', marginHorizontal: 16, backgroundColor: PC.bgScreen },
 
   // Sidebar
   rail: {
@@ -847,6 +862,8 @@ const s = StyleSheet.create({
   },
 
   identity: { gap: 3 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: SP.sm },
+  inlineTitle: { flex: 1, minWidth: 0 },
   iconBox: {
     width: 30,
     height: 30,
@@ -858,6 +875,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 2,
   },
+  inlineIconBox: { marginBottom: 0, flexShrink: 0 },
   eyebrow: { color: PC.textFaint, fontSize: FS.small, fontWeight: '500', letterSpacing: 0.2 },
   title: { color: PC.textPrimary, fontSize: FS.title, fontWeight: '700', lineHeight: 18, letterSpacing: -0.1 },
   subtitle: { color: PC.textMuted, fontSize: FS.small, lineHeight: 14, marginTop: 2 },

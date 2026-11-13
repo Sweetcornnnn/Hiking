@@ -169,7 +169,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     try {
       set({ isLoading: true });
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       await SecureStore.deleteItemAsync('authToken');
       set({
         user: null,

@@ -1,3 +1,19 @@
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ *  Saka — Peaks Around Aklan: First Steps
+ *  Intro Screen
+ *
+ *  Credits / Owners:
+ *    Angel Lanorias
+ *    Joy Dagohoy
+ *    Renz Ibañez
+ *    Carlos Conanan
+ *    Jered Asuncion
+ *
+ *  All rights reserved by the owners listed above.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -6,6 +22,7 @@ import {
   Animated,
   Easing,
   Image,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -747,12 +764,221 @@ function Streak({
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Credits house (sits beside the mountain; tap it to open the credits)
+// ─────────────────────────────────────────────────────────────────────────
+const CREDITS_TITLE = 'Credits';
+const CREDITS_FOOTER = 'All rights reserved by the owners listed above.';
+const HOUSE_X = 352; // x position on the NEAR ridge (scene units), beside the mountain
+const HOUSE_H = 26;  // house height before screen scaling
+
+function HouseIcon({ height }: { height: number }) {
+  const width = (height * 30) / 26;
+  return (
+    <Svg width={width} height={height} viewBox="0 0 30 26">
+      <Rect x={21} y={3} width={3} height={7} fill={GOLD} />
+      <Path d="M2 13 L15 2 L28 13 Z" fill={GOLD} />
+      <Rect x={5} y={13} width={20} height={12} fill={GOLD} fillOpacity={0.9} />
+      <Rect x={13} y={17} width={5} height={8} rx={0.8} fill={INK} />
+      <Rect x={7.5} y={16} width={4} height={4} rx={0.6} fill="#FFF4D8" />
+      <Line x1={0.5} y1={25.2} x2={29.5} y2={25.2} stroke={GOLD} strokeWidth={1} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function CreditsHouse({ px, py, h, onPress }: { px: number; py: number; h: number; onPress: () => void }) {
+  const w = (h * 30) / 26;
+  return (
+    <View style={[styles.anchor, { left: px, top: py, zIndex: Math.round(py) }]}>
+      <Text pointerEvents="none" style={creditsStyles.houseLabel}>{CREDITS_TITLE}</Text>
+      <Pressable
+        onPress={onPress}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Show credits"
+        style={{ position: 'absolute', left: -w / 2, top: -h, width: w, height: h }}
+      >
+        <HouseIcon height={h} />
+      </Pressable>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Credits popup: layered gold frame, corner ornaments, staggered name reveal
+// ─────────────────────────────────────────────────────────────────────────
+function Corner({ style }: { style: object }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 18 18" style={[{ position: 'absolute' }, style]} pointerEvents="none">
+      <Path d="M1 17 L1 5 Q1 1 5 1 L17 1" stroke={GOLD} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+      <Circle cx={6} cy={6} r={1.2} fill={GOLD} />
+    </Svg>
+  );
+}
+
+function CreditsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [mounted, setMounted] = useState(visible);
+  const anim = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      anim.setValue(0);
+      Animated.timing(anim, { toValue: 1, duration: 750, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    } else {
+      Animated.timing(anim, { toValue: 0, duration: 200, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(
+        ({ finished }) => { if (finished) setMounted(false); }
+      );
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [mounted]);
+
+  const clamp = 'clamp' as const;
+  const backdropOpacity = anim.interpolate({ inputRange: [0, 0.35], outputRange: [0, 1], extrapolate: clamp });
+  const cardStyle = {
+    opacity: anim.interpolate({ inputRange: [0, 0.3], outputRange: [0, 1], extrapolate: clamp }),
+    transform: [
+      { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [26, 0], extrapolate: clamp }) },
+      { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1], extrapolate: clamp }) },
+    ],
+  };
+  const reveal = (i: number) => {
+    const start = 0.35 + i * 0.08;
+    return {
+      opacity: anim.interpolate({ inputRange: [0, start, start + 0.3], outputRange: [0, 0, 1], extrapolate: clamp }),
+      transform: [
+        { translateY: anim.interpolate({ inputRange: [0, start, start + 0.3], outputRange: [10, 10, 0], extrapolate: clamp }) },
+      ],
+    };
+  };
+
+  return (
+    <Modal visible={mounted} transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
+      <View style={creditsStyles.root}>
+        <Animated.View style={[StyleSheet.absoluteFill, creditsStyles.backdrop, { opacity: backdropOpacity }]} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close credits"
+        />
+
+        <Animated.View style={[creditsStyles.card, cardStyle]}>
+          {/* soft top-lit background */}
+          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Defs>
+              <LinearGradient id="creditsBg" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor="#14213A" />
+                <Stop offset="0.45" stopColor="#0C1523" />
+                <Stop offset="1" stopColor={INK} />
+              </LinearGradient>
+            </Defs>
+            <Rect x={0} y={0} width="100%" height="100%" fill="url(#creditsBg)" />
+          </Svg>
+
+          {/* thin inner frame + corner ornaments = double border */}
+          <View pointerEvents="none" style={creditsStyles.innerFrame} />
+          <Corner style={{ top: 13, left: 13 }} />
+          <Corner style={{ top: 13, right: 13, transform: [{ scaleX: -1 }] }} />
+          <Corner style={{ bottom: 13, left: 13, transform: [{ scaleY: -1 }] }} />
+          <Corner style={{ bottom: 13, right: 13, transform: [{ scaleX: -1 }, { scaleY: -1 }] }} />
+
+          <ScrollView
+            style={creditsStyles.cardScroll}
+            contentContainerStyle={creditsStyles.cardContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            <Animated.View style={[creditsStyles.header, reveal(-3)]}>
+              <Svg width={150} height={46} viewBox="0 0 150 46">
+                <Defs>
+                  <RadialGradient id="creditsSun" cx="50%" cy="50%" r="50%">
+                    <Stop offset="0%" stopColor="#F3DDA8" stopOpacity={0.55} />
+                    <Stop offset="100%" stopColor={GOLD} stopOpacity={0} />
+                  </RadialGradient>
+                </Defs>
+                <Circle cx={75} cy={20} r={22} fill="url(#creditsSun)" />
+                <Path
+                  d="M4 44 L40 22 L56 32 L75 8 L98 30 L112 22 L146 44 Z"
+                  fill={GOLD}
+                  fillOpacity={0.14}
+                  stroke={GOLD}
+                  strokeWidth={1.2}
+                  strokeLinejoin="round"
+                />
+                <Path d="M75 8 L68.5 18.5 L72.5 17 L75 20.5 L77.5 17 L81.5 18.5 Z" fill={GOLD} />
+                <Line x1={0} y1={44.6} x2={150} y2={44.6} stroke={GOLD} strokeOpacity={0.5} strokeWidth={0.8} strokeLinecap="round" />
+              </Svg>
+              <Animated.Text
+                style={[
+                  creditsStyles.spark,
+                  { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.2] }) }] },
+                ]}
+              >
+                ✦
+              </Animated.Text>
+            </Animated.View>
+
+            <Animated.View style={[{ alignItems: 'center' }, reveal(-2)]}>
+              <Text style={creditsStyles.title}>{CREDITS_TITLE}</Text>
+              <View style={creditsStyles.dividerRow}>
+                <View style={creditsStyles.dividerLine} />
+                <View style={creditsStyles.dividerDiamond} />
+                <View style={creditsStyles.dividerLine} />
+              </View>
+              <Text style={creditsStyles.app}>Saka</Text>
+              <Text style={creditsStyles.appSub}>{SUBTITLE}</Text>
+            </Animated.View>
+
+            <View style={creditsStyles.memberList}>
+              {MEMBERS.map((m, i) => (
+                <Animated.View
+                  key={m}
+                  style={[
+                    creditsStyles.memberRow,
+                    i < MEMBERS.length - 1 && creditsStyles.memberRowDivider,
+                    reveal(i),
+                  ]}
+                >
+                  <Text style={creditsStyles.name}>{m}</Text>
+                </Animated.View>
+              ))}
+            </View>
+
+            <Animated.View style={[{ alignItems: 'center' }, reveal(MEMBERS.length)]}>
+              <View style={[creditsStyles.dividerRow, { marginTop: 22, marginBottom: 12 }]}>
+                <View style={creditsStyles.dividerLine} />
+                <View style={creditsStyles.dividerDiamond} />
+                <View style={creditsStyles.dividerLine} />
+              </View>
+              <Text style={creditsStyles.footer}>{CREDITS_FOOTER}</Text>
+            </Animated.View>
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function IntroScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
 
   const [selected, setSelected] = useState<number | null>(null);
+  const [creditsOpen, setCreditsOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const [authRestored, setAuthRestored] = useState(false);
   const [brandH, setBrandH] = useState<number | null>(null);
@@ -1387,9 +1613,16 @@ export default function IntroScreen() {
             </Svg>
 
             {hikers}
+            <CreditsHouse
+              px={HOUSE_X * scale}
+              py={ridgeY(NEAR, HOUSE_X) * scale}
+              h={HOUSE_H * figureScale}
+              onPress={() => setCreditsOpen(true)}
+            />
           </Animated.View>
         </View>
       </ScrollView>
+      <CreditsModal visible={creditsOpen} onClose={() => setCreditsOpen(false)} />
 
     </View>
   );
@@ -1521,5 +1754,134 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderTopColor: 'rgba(201, 169, 110, 0.6)',
+  },
+});
+
+const creditsStyles = StyleSheet.create({
+  houseLabel: {
+    position: 'absolute',
+    left: -30,
+    top: -46,
+    width: 60,
+    textAlign: 'center',
+    color: GOLD,
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  root: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  backdrop: {
+    backgroundColor: 'rgba(3, 6, 10, 0.84)',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    maxHeight: '90%',
+    borderRadius: 28,
+    backgroundColor: INK,
+    borderWidth: 1.5,
+    borderColor: GOLD,
+    overflow: 'hidden',
+    shadowColor: GOLD,
+    shadowOpacity: 0.35,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 24,
+  },
+  innerFrame: {
+    position: 'absolute',
+    top: 7,
+    left: 7,
+    right: 7,
+    bottom: 7,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(201, 169, 110, 0.28)',
+  },
+  cardScroll: { flexGrow: 0 },
+  cardContent: { alignItems: 'center', paddingTop: 34, paddingBottom: 32, paddingHorizontal: 30 },
+  header: { alignItems: 'center', marginBottom: 14 },
+  spark: { position: 'absolute', top: 0, right: 8, color: '#F3DDA8', fontSize: 14 },
+  title: {
+    color: GOLD,
+    fontSize: 10,
+    fontWeight: '500',
+    letterSpacing: 9,
+    marginRight: -9,
+    textTransform: 'uppercase',
+  },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 14 },
+  dividerLine: { width: 44, height: 1, backgroundColor: 'rgba(201, 169, 110, 0.55)' },
+  dividerDiamond: {
+    width: 5,
+    height: 5,
+    marginHorizontal: 9,
+    backgroundColor: GOLD,
+    transform: [{ rotate: '45deg' }],
+  },
+  app: {
+    color: '#F2E8D5',
+    fontSize: 28,
+    fontWeight: '200',
+    letterSpacing: 12,
+    marginRight: -12,
+    textTransform: 'uppercase',
+  },
+  appSub: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 8,
+    fontWeight: '400',
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  memberList: {
+    width: '100%',
+    marginTop: 10,
+    paddingHorizontal: 6,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(201, 169, 110, 0.18)',
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+  },
+  memberRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(201, 169, 110, 0.14)',
+  },
+  memberMark: {
+    width: 4,
+    height: 4,
+    marginHorizontal: 12,
+    backgroundColor: GOLD,
+    opacity: 0.75,
+    transform: [{ rotate: '45deg' }],
+  },
+  name: {
+    color: 'rgba(242, 232, 213, 0.92)',
+    fontSize: 12,
+    fontWeight: '300',
+    letterSpacing: 3.5,
+    marginRight: -3.5,
+    textTransform: 'uppercase',
+  },
+  footer: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 9,
+    fontWeight: '300',
+    letterSpacing: 1.2,
+    lineHeight: 15,
+    textAlign: 'center',
   },
 });

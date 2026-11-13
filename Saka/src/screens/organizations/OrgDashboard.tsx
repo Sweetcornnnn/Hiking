@@ -115,6 +115,7 @@ export default function OrgDashboard() {
     <>
       <OrgLandscapeShell
         icon="business-outline"
+        titleIconInline
         eyebrow="Organizer dashboard"
         title={org.name}
         badge={
@@ -131,37 +132,28 @@ export default function OrgDashboard() {
             />
           )
         }
-        headerActions={
-          <>
-            <RailIconButton
-              icon="person-circle-outline"
-              color="#F4E7C5"
-              label="Organization profile"
-              onPress={() => router.push('/organizations/Profile')}
-            />
-            <RailIconButton
-              icon="compass-outline"
-              color={PC.green}
-              label="Browse as hiker"
-              onPress={() => router.push('/Home')}
-            />
-            <RailIconButton
-              icon="log-out-outline"
-              color={PC.danger}
-              label="Sign out"
-              onPress={handleSignOut}
-            />
-          </>
-        }
-        rail={
-          <Grid columns={3} gap={6}>
-            <StatCard label="Upcoming" value={stats?.upcomingCount ?? 0} />
-            <StatCard label="Attendees" value={stats?.totalAttendees ?? 0} />
-            <StatCard label="Drafts" value={stats?.draftCount ?? 0} />
-          </Grid>
-        }
         railFooter={
           <>
+            <View style={styles.utilityActions}>
+              <RailIconButton
+                icon="person-circle-outline"
+                color="#F4E7C5"
+                label="Organization profile"
+                onPress={() => router.push('/organizations/Profile')}
+              />
+              <RailIconButton
+                icon="compass-outline"
+                color={PC.green}
+                label="Browse as hiker"
+                onPress={() => router.push('/Home')}
+              />
+              <RailIconButton
+                icon="log-out-outline"
+                color={PC.danger}
+                label="Sign out"
+                onPress={handleSignOut}
+              />
+            </View>
             <RailButton
               icon="add-circle-outline"
               label="Create event"
@@ -175,6 +167,13 @@ export default function OrgDashboard() {
               onPress={() => router.push('/organizations/Events')}
             />
           </>
+        }
+        rail={
+          <Grid columns={3} gap={6}>
+            <StatCard label="Upcoming" value={stats?.upcomingCount ?? 0} />
+            <StatCard label="Attendees" value={stats?.totalAttendees ?? 0} />
+            <StatCard label="Drafts" value={stats?.draftCount ?? 0} />
+          </Grid>
         }
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.gold} />
@@ -308,6 +307,7 @@ export default function OrgDashboard() {
 }
 
 const styles = StyleSheet.create({
+  utilityActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 8 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { color: PC.textPrimary, fontSize: FS.title - 1, fontWeight: '700' },
   sectionCount: { color: PC.gold, fontWeight: '700', fontSize: FS.small },

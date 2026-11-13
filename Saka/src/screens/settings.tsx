@@ -48,7 +48,7 @@ const CONTENT_MAX_W = 760;
 const GREEN = '#6FAF8A';
 const RED = '#E07070';
 
-type Section = 'safety' | 'notifications' | 'offline' | 'privacy' | 'account' | 'about';
+type Section = 'safety' | 'notifications' | 'offline' | 'privacy' | 'account' | 'about' | 'credits';
 type ToastType = 'success' | 'error' | 'warning';
 
 const SECTIONS: { id: Section; label: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -58,6 +58,7 @@ const SECTIONS: { id: Section; label: string; subtitle: string; icon: keyof type
   { id: 'privacy', label: 'Privacy', subtitle: 'How your data is used', icon: 'lock-closed-outline' },
   { id: 'account', label: 'Account', subtitle: 'Password and sign out', icon: 'person-outline' },
   { id: 'about', label: 'About', subtitle: 'Version and app information', icon: 'information-circle-outline' },
+  { id: 'credits', label: 'Credits', subtitle: 'The people behind Saka', icon: 'ribbon-outline' },
 ];
 
 /* ─────────── Row: icon, text, trailing action (desktop list row) ─────────── */
@@ -518,6 +519,27 @@ export default function SettingsScreen() {
             </View>
           </View>
         );
+
+      case 'credits':
+        return (
+          <>
+            <View style={ss.card}>
+              <View style={[ss.cardPad, ss.cardPadBorder]}>
+                <Text style={ss.aboutTitle}>Saka</Text>
+                <Text style={[ss.rowDesc, { marginTop: 2 }]}>Peaks Around Aklan: First Steps</Text>
+              </View>
+              {['Angel Lanorias', 'Joy Dagohoy', 'Renz Ibañez', 'Carlos Conanan', 'Jered Asuncion'].map((owner, index, list) => (
+                <View key={owner} style={[ss.row, index === list.length - 1 && ss.rowLast]}>
+                  <View style={ss.avatar}>
+                    <Text style={ss.avatarText}>{owner[0]}</Text>
+                  </View>
+                  <Text style={ss.rowLabel}>{owner}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={ss.note}>All rights reserved by the owners listed above.</Text>
+          </>
+        );
     }
   };
 
@@ -564,7 +586,7 @@ export default function SettingsScreen() {
         </>,
       )}
 
-      <SafeAreaView style={ss.screen} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={ss.screen} edges={['top']}>
         <View style={ss.shell}>
           {/* ── SIDEBAR ── */}
           <View style={ss.sidebar}>
@@ -679,7 +701,7 @@ export default function SettingsScreen() {
 const ss = StyleSheet.create({
   // Shell
   screen: { flex: 1, backgroundColor: CHAT_BG },
-  shell: { flex: 1, flexDirection: 'row', backgroundColor: CHAT_BG },
+  shell: { flex: 1, flexDirection: 'row', marginHorizontal: 16, backgroundColor: CHAT_BG },
 
   // Sidebar
   sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: CHAT_BORDER, backgroundColor: CHAT_BG },

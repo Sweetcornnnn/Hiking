@@ -21,7 +21,7 @@ export function useRequireAuth() {
 /**
  * Redirects:
  *  - to /Login if not signed in
- *  - to /Home if signed in but role is not organization (admins are allowed)
+ *  - to /Home if signed in but has neither organization access nor admin access
  */
 export function useRequireOrganization() {
   const router = useRouter();
@@ -36,7 +36,7 @@ export function useRequireOrganization() {
     if (!profile) return; // profile still loading
 
     const role = profile.role ?? (profile.is_admin ? 'admin' : 'hiker');
-    if (role !== 'organization' && role !== 'admin') {
+    if (role !== 'organization' && role !== 'admin' && !profile.organization_id) {
       router.replace('/Home');
     }
   }, [user, profile, isLoading, router]);

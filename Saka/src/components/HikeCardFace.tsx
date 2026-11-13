@@ -67,7 +67,7 @@ export interface HikeCardFaceProps {
 /* ============================ ageing =============================== */
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-const clamp01 = (n: number) => clamp(n, 0, 1);
+export const clamp01 = (n: number) => clamp(n, 0, 1);
 
 const endOfLocalDay = (v: DateLike): Date | null => {
   if (v == null || v === '') return null;
@@ -100,7 +100,7 @@ const mix3 = (fresh: string, mid: string, old: string, t: number) =>
   t < 0.5 ? mix(fresh, mid, t * 2) : mix(mid, old, (t - 0.5) * 2);
 
 /** All the colours a stub uses at a given age. */
-const agePalette = (canEdit: boolean, t: number) => {
+export const agePalette = (canEdit: boolean, t: number) => {
   const labelRgb = canEdit ? '90,70,35' : '43,74,140';
   const labelAlpha = (canEdit ? 0.7 : 0.65) - 0.26 * t;
   return canEdit
@@ -168,7 +168,7 @@ const seeded = (start: number) => {
     return seed / 233280;
   };
 };
-const hashSeed = (id: string) => {
+export const hashSeed = (id: string) => {
   let h = 7;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 233280;
   return h || 1;
@@ -276,7 +276,7 @@ function Stain({
 }
 
 /** Everything that lies on the paper, under the writing. */
-function PaperUnderlay({ W, H, t, seed }: { W: number; H: number; t: number; seed: number }) {
+export function PaperUnderlay({ W, H, t, seed }: { W: number; H: number; t: number; seed: number }) {
   const g = useMemo(() => {
     const rnd = seeded(seed);
     const area = W * H;
@@ -433,7 +433,7 @@ function PaperUnderlay({ W, H, t, seed }: { W: number; H: number; t: number; see
 }
 
 /** Everything that happens on top of the writing: rubbed-off ink, nicks, tape, the folded corner. */
-function PaperOverlay({
+export function PaperOverlay({
   W,
   H,
   t,

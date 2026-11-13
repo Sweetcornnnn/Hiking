@@ -967,6 +967,8 @@ function SafetyRow({ row, onMarkSeen, onSetDuration }: { row: AdminSafetyRow; on
 /* ─────────── Styles ─────────── */
 const ss = StyleSheet.create({
   screen: { flex: 1, backgroundColor: CHAT_BG }, shell: { flex: 1, flexDirection: 'row', backgroundColor: CHAT_BG },
+
+  // Sidebar (icon rail)
   sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: CHAT_BORDER, backgroundColor: CHAT_BG },
   sidebarHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: CHAT_BORDER },
   backBtn: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
@@ -997,6 +999,7 @@ const ss = StyleSheet.create({
   searchInput: { flex: 1, color: TEXT_PRIMARY, fontSize: 12, paddingVertical: 0 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 10 },
   chip: { height: 24, paddingHorizontal: 9, borderRadius: 8, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+
   chipActive: { backgroundColor: 'rgba(201,169,110,0.12)', borderColor: 'rgba(201,169,110,0.35)' },
   chipText: { color: TEXT_MUTED, fontSize: 10.5, fontWeight: '600' },
   chipTextActive: { color: ACCENT_GOLD },
