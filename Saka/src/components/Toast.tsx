@@ -15,8 +15,11 @@ export interface ToastOptions {
 }
 
 interface ToastProps {
+  /** Kept so existing call sites don't break. The toast is always top-center now. */
   position?: 'top' | 'top-right';
   topOffset?: number;
+  /** Width as a share of the screen's width. Default 0.5 (half), made for landscape. */
+  widthRatio?: number;
 }
 
 export interface ToastHandle {
@@ -40,12 +43,12 @@ const THEME: Record<
 
 const HIDDEN_Y = -80;
 
-// Small top-anchored notification card, styled to match the app instead of
+// Small top-center notification card (half the screen's width by default), styled to match the app instead of
 // relying on the OS's default Alert dialog.
 // Usage: keep a ref, render <Toast ref={toastRef} /> once in the screen, then
 //   toastRef.current?.show({ type: 'warning', title: 'Low stock', message: '3 items left' })
 //   toastRef.current?.hide()   // e.g. to dismiss a 'loading' toast
-const Toast = forwardRef<ToastHandle, ToastProps>(({ position = 'top', topOffset = 14 }, ref) => {
+const Toast = forwardRef<ToastHandle, ToastProps>(({ topOffset = 14, widthRatio = 0.5 }, ref) => {
   const [content, setContent] = useState<ToastOptions | null>(null);
   const translateY = useRef(new Animated.Value(HIDDEN_Y)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -115,37 +118,39 @@ const Toast = forwardRef<ToastHandle, ToastProps>(({ position = 'top', topOffset
   const { color, icon } = THEME[type];
 
   return (
+    // Full-width strip that only exists to center the card; the card itself is
+    // `widthRatio` of the screen's width, so it sits top-center at about half width.
     <Animated.View
       pointerEvents="none"
       accessibilityRole="alert"
       accessibilityLiveRegion={type === 'error' || type === 'warning' ? 'assertive' : 'polite'}
-      style={[
-        styles.toast,
-        position === 'top' && styles.toastCentered,
-        position === 'top-right' && styles.toastTopRight,
-        {
-          borderColor: `${color}4D`, // ~30% alpha hairline
-          borderLeftColor: color, // solid edge = the at-a-glance severity cue
-          top: topOffset,
-          transform: [{ translateY }],
-          opacity,
-        },
-      ]}
+      style={[styles.anchor, { top: topOffset, transform: [{ translateY }], opacity }]}
     >
-      <View style={[styles.iconWrap, { backgroundColor: `${color}1F` }]}>
-        {type === 'loading' && !content.icon ? (
-          <ActivityIndicator size="small" color={color} />
-        ) : (
-          <Ionicons name={content.icon ?? icon} size={18} color={color} />
-        )}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.toastTitle}>{content.title}</Text>
-        {content.message ? (
-          <Text style={styles.toastMessage} numberOfLines={2}>
-            {content.message}
-          </Text>
-        ) : null}
+      <View
+        style={[
+          styles.toast,
+          {
+            width: `${Math.round(widthRatio * 100)}%`,
+            borderColor: `${color}4D`, // ~30% alpha hairline
+            borderLeftColor: color, // solid edge = the at-a-glance severity cue
+          },
+        ]}
+      >
+        <View style={[styles.iconWrap, { backgroundColor: `${color}1F` }]}>
+          {type === 'loading' && !content.icon ? (
+            <ActivityIndicator size="small" color={color} />
+          ) : (
+            <Ionicons name={content.icon ?? icon} size={18} color={color} />
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.toastTitle}>{content.title}</Text>
+          {content.message ? (
+            <Text style={styles.toastMessage} numberOfLines={2}>
+              {content.message}
+            </Text>
+          ) : null}
+        </View>
       </View>
     </Animated.View>
   );
@@ -154,11 +159,17 @@ const Toast = forwardRef<ToastHandle, ToastProps>(({ position = 'top', topOffset
 export default Toast;
 
 const styles = StyleSheet.create({
-  toast: {
+  anchor: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  toast: {
     flexDirection: 'row',
+    minWidth: 260, // stays readable if the screen is narrow (portrait)
+    maxWidth: 520,
     alignItems: 'flex-start',
     gap: 10,
     backgroundColor: '#0E1520',
@@ -171,18 +182,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 14,
     elevation: 14,
-    zIndex: 999,
-  },
-  toastTopRight: {
-    left: undefined,
-    width: '92%',
-    maxWidth: 360,
-  },
-  toastCentered: {
-    left: undefined,
-    right: undefined,
-    width: '50%',
-    alignSelf: 'center',
   },
   iconWrap: {
     width: 26,

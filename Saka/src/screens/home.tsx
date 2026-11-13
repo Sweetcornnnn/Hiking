@@ -329,16 +329,18 @@ function GuideButton({
     alertPulse.setValue(0);
     if (alertCount === 0 || !active || reduceMotion) return;
 
+    // JS-driven on purpose: the ring follows the button's animated width, and
+    // width can't run on the native driver.
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(alertPulse, {
           toValue: 1,
           duration: 1100,
           easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
+          useNativeDriver: false,
         }),
         Animated.delay(450),
-        Animated.timing(alertPulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.timing(alertPulse, { toValue: 0, duration: 0, useNativeDriver: false }),
       ])
     );
     loop.start();
@@ -349,8 +351,14 @@ function GuideButton({
     inputRange: [0, 1],
     outputRange: [40, 40 + Math.min(textWidth, 40) + 12],
   });
+  // The ring always has the same shape as the button: a circle while it is folded,
+  // the whole stretched-open pill once the note is showing. It grows 11px on every
+  // side and fades out, so the entire button pulses, not just the circle.
   const pulseOpacity = alertPulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
-  const pulseScale = alertPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
+  const ringOffset = alertPulse.interpolate({ inputRange: [0, 1], outputRange: [0, -11] });
+  const ringWidth = Animated.add(width, alertPulse.interpolate({ inputRange: [0, 1], outputRange: [0, 22] }));
+  const ringHeight = alertPulse.interpolate({ inputRange: [0, 1], outputRange: [40, 62] });
+  const ringRadius = alertPulse.interpolate({ inputRange: [0, 1], outputRange: [20, 31] });
   const backgroundColor = progress.interpolate({
     inputRange: [0, 1],
     outputRange: ['rgba(0,0,0,0.35)', 'rgba(0,0,0,0.62)'],
@@ -379,7 +387,14 @@ function GuideButton({
             pointerEvents="none"
             style={[
               styles.guideAlertPulse,
-              { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
+              {
+                top: ringOffset,
+                left: ringOffset,
+                width: ringWidth,
+                height: ringHeight,
+                borderRadius: ringRadius,
+                opacity: pulseOpacity,
+              },
             ]}
           />
         ) : null}
@@ -396,6 +411,54 @@ function GuideButton({
     </View>
   );
 }
+
+// ── Events pill: wiggle + a trail of fine dust ─────────────
+// The wiggle is a damped sine, sampled finely so the native interpolation reads
+// as one continuous motion instead of a series of jolts.
+const WIGGLE = Array.from({ length: 29 }, (_, k) => {
+  const t = k / 28;
+  const damp = Math.exp(-3.2 * t);
+  const s = Math.sin(t * Math.PI * 2 * 3.5);
+  return { t, rot: 7 * damp * s, x: 2.6 * damp * s, y: -1.4 * damp * Math.abs(s) };
+});
+const WIGGLE_T = WIGGLE.map((w) => w.t);
+const WIGGLE_ROT = WIGGLE.map((w) => `${w.rot.toFixed(2)}deg`);
+const WIGGLE_X = WIGGLE.map((w) => w.x);
+const WIGGLE_Y = WIGGLE.map((w) => w.y);
+
+// Fixed pseudo-random numbers, so the dust looks natural but never changes between renders.
+const seeded = (n: number) => {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+const DUST_COLORS = ['#FFF6D6', '#FFD166', '#E8C98F', '#FFFFFF', '#F5B942'];
+const ARC_U = [0, 0.2, 0.4, 0.6, 0.8, 1];
+const DUST_LIFE = 0.6; // fraction of the dust timeline one grain lives for
+
+// Fine grains. `f` is where along the pill's bottom edge a grain starts; `t0`
+// staggers them left to right so they trail the wiggle. Each grain pops up,
+// splashes outward from the pill's centre, falls, and fades, along a sampled arc.
+const DUST = Array.from({ length: 26 }, (_, i) => {
+  const f = 0.05 + (i / 25) * 0.9;
+  const side = f < 0.5 ? -1 : 1;
+  const t0 = f * 0.36 + seeded(i + 1) * 0.04;
+  const size = 1.6 + seeded(i + 7) * 2.2;
+  const dx = side * (4 + seeded(i + 13) * 18);
+  const rise = 7 + seeded(i + 19) * 14;
+  const fall = 4 + seeded(i + 29) * 12;
+  return {
+    f,
+    t0,
+    size,
+    color: DUST_COLORS[i % DUST_COLORS.length],
+    arcIn: ARC_U.map((u) => t0 + u * DUST_LIFE),
+    arcX: ARC_U.map((u) => dx * (1 - (1 - u) * (1 - u))),
+    arcY: ARC_U.map((u) => -4 * rise * u * (1 - u) + fall * u * u),
+  };
+});
+
+// Three soft puffs that bloom and fade under the grains, so it reads as a dust cloud.
+const PUFFS = [0.2, 0.5, 0.8].map((f) => ({ f, t0: f * 0.36 }));
 
 function EventsPill({
   label,
@@ -414,40 +477,44 @@ function EventsPill({
 }) {
   const [textWidth, setTextWidth] = useState(0);
   const progress = useNoticePeek({ enabled: eventCount > 0, active, reduceMotion, delay: 500, textWidth });
-  const eventPulse = useRef(new Animated.Value(0)).current;
+  const wiggle = useRef(new Animated.Value(0)).current; // 0..1 timeline of one wiggle
+  const dust = useRef(new Animated.Value(0)).current; // 0..1 timeline of one dust burst
 
   useEffect(() => {
-    eventPulse.setValue(0);
+    wiggle.setValue(0);
+    dust.setValue(0);
     if (eventCount === 0 || !active || reduceMotion) return;
 
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(eventPulse, {
-          toValue: 1,
-          duration: 550,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(eventPulse, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(180),
-        Animated.timing(eventPulse, {
-          toValue: 1,
-          duration: 850,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.delay(700),
-        Animated.timing(eventPulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(1000),
+        Animated.parallel([
+          Animated.timing(wiggle, {
+            toValue: 1,
+            duration: 950,
+            easing: Easing.linear, // the curve is already in the sampled values
+            useNativeDriver: true,
+          }),
+          Animated.timing(dust, {
+            toValue: 1,
+            duration: 1400,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(wiggle, { toValue: 0, duration: 0, useNativeDriver: true }),
+          Animated.timing(dust, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ]),
+        Animated.delay(1400),
       ])
     );
     loop.start();
     return () => loop.stop();
-  }, [eventCount, active, reduceMotion, eventPulse]);
+  }, [eventCount, active, reduceMotion, wiggle, dust]);
 
   const visibleNoteWidth = Math.min(textWidth + 2, 52);
   const noteWidth = progress.interpolate({ inputRange: [0, 1], outputRange: [0, visibleNoteWidth] });
-  const pulseOpacity = eventPulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] });
-  const pulseScale = eventPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.65] });
   // The pill has a 5px gap between children; cancel it while the note is folded away.
   const noteMargin = progress.interpolate({ inputRange: [0, 1], outputRange: [-5, 0], ...CLAMP });
   const backgroundColor = progress.interpolate({
@@ -462,31 +529,107 @@ function EventsPill({
   });
   const textOpacity = progress.interpolate({ inputRange: [0.25, 0.8], outputRange: [0, 1], ...CLAMP });
 
+  const wiggleStyle = {
+    transform: [
+      { translateX: wiggle.interpolate({ inputRange: WIGGLE_T, outputRange: WIGGLE_X }) },
+      { translateY: wiggle.interpolate({ inputRange: WIGGLE_T, outputRange: WIGGLE_Y }) },
+      { rotate: wiggle.interpolate({ inputRange: WIGGLE_T, outputRange: WIGGLE_ROT }) },
+    ],
+  };
+  const showDust = eventCount > 0 && active && !reduceMotion;
+
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={label}>
       {eventCount > 0 ? <NoticeMeasure text={note} style={styles.eventsNoteText} onWidth={setTextWidth} /> : null}
-      <Animated.View style={[styles.eventsPill, { backgroundColor, borderColor }]}>
-        {eventCount > 0 && active && !reduceMotion ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.eventsPulse,
-              { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
-            ]}
-          />
-        ) : null}
-        <Ionicons name="calendar-outline" size={11} color="#C9A96E" />
-        <Text style={styles.eventsPillText}>Events</Text>
-        <Animated.View style={{ width: noteWidth, marginLeft: noteMargin, overflow: 'hidden' }}>
-          <Animated.Text
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            style={[styles.eventsNoteText, { width: visibleNoteWidth, opacity: textOpacity }]}
-          >
-            {note}
-          </Animated.Text>
+      <View style={styles.eventsWrap}>
+        {/* native-driven wiggle on the outside, width/colour animation on the inside */}
+        <Animated.View style={wiggleStyle}>
+          <Animated.View style={[styles.eventsPill, { backgroundColor, borderColor }]}>
+            <Ionicons name="calendar-outline" size={11} color="#C9A96E" />
+            <Text style={styles.eventsPillText}>Events</Text>
+            <Animated.View style={{ width: noteWidth, marginLeft: noteMargin, overflow: 'hidden' }}>
+              <Animated.Text
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                style={[styles.eventsNoteText, { width: visibleNoteWidth, opacity: textOpacity }]}
+              >
+                {note}
+              </Animated.Text>
+            </Animated.View>
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+
+        {/* dust stays in place (it is not part of the wiggle), so it reads as a trail */}
+        {showDust ? (
+          <View pointerEvents="none" style={styles.eventsDustLayer}>
+            {PUFFS.map((p, i) => (
+              <Animated.View
+                key={`puff-${i}`}
+                style={[
+                  styles.eventsPuff,
+                  {
+                    left: `${p.f * 100}%`,
+                    opacity: dust.interpolate({
+                      inputRange: [p.t0, p.t0 + 0.12, p.t0 + 0.6],
+                      outputRange: [0, 0.55, 0],
+                      extrapolate: 'clamp',
+                    }),
+                    transform: [
+                      {
+                        translateY: dust.interpolate({
+                          inputRange: [p.t0, p.t0 + 0.6],
+                          outputRange: [0, -7],
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                      {
+                        scale: dust.interpolate({
+                          inputRange: [p.t0, p.t0 + 0.6],
+                          outputRange: [0.4, 2.6],
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            ))}
+            {DUST.map((p, i) => (
+              <Animated.View
+                key={`dust-${i}`}
+                style={[
+                  styles.eventsDust,
+                  {
+                    left: `${p.f * 100}%`,
+                    width: p.size,
+                    height: p.size,
+                    borderRadius: p.size / 2,
+                    backgroundColor: p.color,
+                    shadowColor: p.color,
+                    opacity: dust.interpolate({
+                      inputRange: [p.t0, p.t0 + 0.05, p.t0 + 0.24, p.t0 + DUST_LIFE],
+                      outputRange: [0, 1, 0.75, 0],
+                      extrapolate: 'clamp',
+                    }),
+                    transform: [
+                      { translateX: dust.interpolate({ inputRange: p.arcIn, outputRange: p.arcX, extrapolate: 'clamp' }) },
+                      { translateY: dust.interpolate({ inputRange: p.arcIn, outputRange: p.arcY, extrapolate: 'clamp' }) },
+                      {
+                        // twinkle: flares up, then shrinks away
+                        scale: dust.interpolate({
+                          inputRange: [p.t0, p.t0 + 0.15, p.t0 + DUST_LIFE],
+                          outputRange: [0.3, 1.3, 0.25],
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -1379,11 +1522,6 @@ const styles = StyleSheet.create({
   guideTouch: { position: 'absolute', top: 0, left: 0 },
   guideAlertPulse: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     borderWidth: 2,
     borderColor: TEXT_DANGER,
   },
@@ -1413,15 +1551,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.55)',
   },
-  eventsPulse: {
+  eventsWrap: { position: 'relative' },
+  // zero-height strip along the pill's bottom edge; the dust puffs hang off it
+  eventsDustLayer: { position: 'absolute', left: 8, right: 8, bottom: 0, height: 0 },
+  eventsDust: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#FFD166',
+    bottom: -1,
+    shadowOpacity: 0.9, // soft glow on iOS
+    shadowRadius: 2.5,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  eventsPuff: {
+    position: 'absolute',
+    bottom: -4,
+    width: 10,
+    height: 10,
+    marginLeft: -5,
+    borderRadius: 5,
+    backgroundColor: 'rgba(232,201,143,0.4)',
   },
   eventsPillText: { color: '#C9A96E', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   eventsNoteText: { color: '#E8C98F', fontSize: 11, fontWeight: '700', letterSpacing: 0.3, flexShrink: 0 },
