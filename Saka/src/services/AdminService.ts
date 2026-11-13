@@ -109,6 +109,7 @@ export interface AdminSosRow {
   altitude?: number | null;
   timestamp: string;
   user_id?: string | null;
+  user_name?: string | null;
 }
 
 export interface AdminEmergencyContactRow {
@@ -138,20 +139,14 @@ export interface AdminDiscoveryRow {
 
 const countOf = (res: { count: number | null }) => res.count ?? 0;
 
-async function safeCount(
+async function strictCount(
   build: () => PromiseLike<{ count: number | null; error: any }>,
 ): Promise<number> {
-  try {
-    const res = await build();
-    if (res.error) {
-      console.warn('[AdminService] count error:', res.error.message);
-      return 0;
-    }
-    return countOf(res);
-  } catch (e: any) {
-    console.warn('[AdminService] count exception:', e?.message);
-    return 0;
+  const res = await build();
+  if (res.error) {
+    throw new Error(res.error.message || JSON.stringify(res.error));
   }
+  return countOf(res);
 }
 
 /* ───────────────────────── global stats ───────────────────────── */
@@ -159,109 +154,60 @@ async function safeCount(
 export async function fetchGlobalStats(): Promise<GlobalStats> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [
-    totalHikes,
-    totalUsers,
-    totalOrgs,
-    verifiedOrgs,
-    pendingOrgs,
-    totalEvents,
-    publishedEvents,
-    draftEvents,
-    cancelledEvents,
-    upcomingEvents,
-    confirmedRsvps,
-    waitlistRsvps,
-    pendingHikeChecks,
-    pendingEventChecks,
-    sosRows,
-  ] = await Promise.all([
-    safeCount(() => supabase.from('hikes').select('*', { count: 'exact', head: true })),
-    safeCount(() => supabase.from('profiles').select('*', { count: 'exact', head: true })),
-    safeCount(() => supabase.from('organizations').select('*', { count: 'exact', head: true })),
-    safeCount(() =>
-      supabase.from('organizations').select('*', { count: 'exact', head: true }).eq('is_verified', true),
-    ),
-    safeCount(() =>
-      supabase.from('organizations').select('*', { count: 'exact', head: true }).eq('is_verified', false),
-    ),
-    safeCount(() => supabase.from('hiking_events').select('*', { count: 'exact', head: true })),
-    safeCount(() =>
-      supabase.from('hiking_events').select('*', { count: 'exact', head: true }).eq('status', 'published'),
-    ),
-    safeCount(() =>
-      supabase.from('hiking_events').select('*', { count: 'exact', head: true }).eq('status', 'draft'),
-    ),
-    safeCount(() =>
-      supabase.from('hiking_events').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
-    ),
-    safeCount(() =>
-      supabase
-        .from('hiking_events')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'published')
-        .gte('event_date', today),
-    ),
-    safeCount(() =>
-      supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('status', 'confirmed'),
-    ),
-    safeCount(() =>
-      supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('status', 'waitlist'),
-    ),
-    safeCount(() =>
-      supabase
-        .from('hike_safety_checks')
-        .select('*', { count: 'exact', head: true })
-        .eq('response_status', 'pending'),
-    ),
-    safeCount(() =>
-      supabase
-        .from('event_safety_checks')
-        .select('*', { count: 'exact', head: true })
-        .eq('response_status', 'pending'),
-    ),
-    getSOSAlerts().catch(() => []),
-  ]);
+  try {
+    const [
+      totalHikes, totalUsers, totalOrgs, verifiedOrgs, pendingOrgs,
+      totalEvents, publishedEvents, draftEvents, cancelledEvents, upcomingEvents,
+      confirmedRsvps, waitlistRsvps, pendingHikeChecks, pendingEventChecks,
+      activeAlertsCount, sosRows
+    ] = await Promise.all([
+      strictCount(() => supabase.from('hikes').select('*', { count: 'exact', head: true })),
+      strictCount(() => supabase.from('profiles').select('*', { count: 'exact', head: true })),
+      strictCount(() => supabase.from('organizations').select('*', { count: 'exact', head: true })),
+      strictCount(() => supabase.from('organizations').select('*', { count: 'exact', head: true }).eq('is_verified', true)),
+      strictCount(() => supabase.from('organizations').select('*', { count: 'exact', head: true }).eq('is_verified', false)),
+      strictCount(() => supabase.from('hiking_events').select('*', { count: 'exact', head: true })),
+      strictCount(() => supabase.from('hiking_events').select('*', { count: 'exact', head: true }).eq('status', 'published')),
+      strictCount(() => supabase.from('hiking_events').select('*', { count: 'exact', head: true }).eq('status', 'draft')),
+      strictCount(() => supabase.from('hiking_events').select('*', { count: 'exact', head: true }).eq('status', 'cancelled')),
+      strictCount(() => supabase.from('hiking_events').select('*', { count: 'exact', head: true }).eq('status', 'published').gte('event_date', today)),
+      strictCount(() => supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('status', 'confirmed')),
+      strictCount(() => supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('status', 'waitlist')),
+      strictCount(() => supabase.from('hike_safety_checks').select('*', { count: 'exact', head: true }).eq('response_status', 'pending')),
+      strictCount(() => supabase.from('event_safety_checks').select('*', { count: 'exact', head: true }).eq('response_status', 'pending')),
+      
+      (async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return 0;
+        const [alertsRes, seenRes] = await Promise.all([
+          supabase.from('admin_alerts').select('id'),
+          supabase.from('admin_alert_seen').select('alert_id').eq('admin_user_id', user.id),
+        ]);
+        if (alertsRes.error) throw alertsRes.error;
+        if (seenRes.error) throw seenRes.error;
 
-  // Active alerts = checks that have an active_alert_id and are not yet seen by this admin.
-  const activeAlerts = await (async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return 0;
-      const [{ data: hikeAlerts }, { data: eventAlerts }, { data: seen }] = await Promise.all([
-        supabase.from('hike_safety_checks').select('id').not('active_alert_id', 'is', null),
-        supabase.from('event_safety_checks').select('id').not('active_alert_id', 'is', null),
-        supabase.from('admin_alert_seen').select('alert_id').eq('admin_user_id', user.id),
-      ]);
-      const seenSet = new Set((seen ?? []).map((r: any) => r.alert_id));
-      const total = (hikeAlerts?.length ?? 0) + (eventAlerts?.length ?? 0);
-      const unseen = [...(hikeAlerts ?? []), ...(eventAlerts ?? [])].filter(
-        (r: any) => r.id && !seenSet.has(r.id),
-      ).length;
-      return unseen || total; // prefer unseen; fall back to total
-    } catch {
-      return 0;
-    }
-  })();
+        const seenSet = new Set((seenRes.data ?? []).map(r => r.alert_id));
+        return (alertsRes.data ?? []).filter((alert) => !seenSet.has(alert.id)).length;
+      })(),
 
-  return {
-    totalHikes,
-    totalUsers,
-    totalOrgs,
-    verifiedOrgs,
-    pendingOrgs,
-    totalEvents,
-    publishedEvents,
-    draftEvents,
-    cancelledEvents,
-    upcomingEvents,
-    totalRsvps: confirmedRsvps + waitlistRsvps,
-    confirmedRsvps,
-    waitlistRsvps,
-    pendingSafetyChecks: pendingHikeChecks + pendingEventChecks,
-    activeAlerts,
-    sosCount: sosRows.length,
-  };
+      getSOSAlerts().catch((err) => {
+        console.error('[AdminService] SOS fetch failed:', err);
+        return [];
+      })
+    ]);
+
+    return {
+      totalHikes, totalUsers, totalOrgs, verifiedOrgs, pendingOrgs,
+      totalEvents, publishedEvents, draftEvents, cancelledEvents, upcomingEvents,
+      totalRsvps: confirmedRsvps + waitlistRsvps, confirmedRsvps, waitlistRsvps,
+      pendingSafetyChecks: pendingHikeChecks + pendingEventChecks,
+      activeAlerts: activeAlertsCount,
+      sosCount: sosRows.length,
+    };
+  } catch (e: any) {
+    console.error('[AdminService] fetchGlobalStats failed:', e?.message || e);
+    throw e;
+  }
 }
 
 /* ───────────────────────── users ───────────────────────── */
@@ -269,15 +215,10 @@ export async function fetchGlobalStats(): Promise<GlobalStats> {
 export async function fetchAdminUsers(): Promise<AdminUserRow[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select(
-      'id, email, full_name, username, contact_number, is_admin, role, organization_id, is_verified, avatar_url, status, last_seen, created_at',
-    )
+    .select('id, email, full_name, username, contact_number, is_admin, role, organization_id, is_verified, avatar_url, status, last_seen, created_at')
     .order('created_at', { ascending: false });
 
-  if (error) {
-    console.warn('[AdminService] fetchAdminUsers error:', error.message);
-    return [];
-  }
+  if (error) throw new Error(error.message || 'Failed to fetch users');
 
   return (data ?? []).map((row: any) => ({
     id: row.id,
@@ -304,19 +245,12 @@ export async function fetchAdminOrgs(): Promise<AdminOrgRow[]> {
     .select('*')
     .order('created_at', { ascending: false });
 
-  if (error) {
-    console.warn('[AdminService] fetchAdminOrgs error:', error.message);
-    return [];
-  }
+  if (error) throw new Error(error.message || 'Failed to fetch orgs');
 
   const orgIds = (orgs ?? []).map((o: any) => o.id);
   const [memberCounts, eventCounts] = await Promise.all([
-    orgIds.length
-      ? supabase.from('organization_members').select('organization_id').in('organization_id', orgIds)
-      : Promise.resolve({ data: [], error: null } as any),
-    orgIds.length
-      ? supabase.from('hiking_events').select('organization_id').in('organization_id', orgIds)
-      : Promise.resolve({ data: [], error: null } as any),
+    orgIds.length ? supabase.from('organization_members').select('organization_id').in('organization_id', orgIds) : Promise.resolve({ data: [], error: null } as any),
+    orgIds.length ? supabase.from('hiking_events').select('organization_id').in('organization_id', orgIds) : Promise.resolve({ data: [], error: null } as any),
   ]);
 
   const memberMap = new Map<string, number>();
@@ -331,19 +265,9 @@ export async function fetchAdminOrgs(): Promise<AdminOrgRow[]> {
   }
 
   return (orgs ?? []).map((o: any) => ({
-    id: o.id,
-    name: o.name,
-    slug: o.slug,
-    description: o.description,
-    logo_url: o.logo_url,
-    website: o.website,
-    contact_email: o.contact_email,
-    contact_phone: o.contact_phone,
-    is_verified: !!o.is_verified,
-    created_at: o.created_at,
-    updated_at: o.updated_at,
-    member_count: memberMap.get(o.id) ?? 0,
-    event_count: eventMap.get(o.id) ?? 0,
+    id: o.id, name: o.name, slug: o.slug, description: o.description, logo_url: o.logo_url, website: o.website,
+    contact_email: o.contact_email, contact_phone: o.contact_phone, is_verified: !!o.is_verified, created_at: o.created_at, updated_at: o.updated_at,
+    member_count: memberMap.get(o.id) ?? 0, event_count: eventMap.get(o.id) ?? 0,
   }));
 }
 
@@ -355,20 +279,15 @@ export async function fetchAdminEvents(): Promise<AdminEventRow[]> {
     .select('*, organizations(id, name, is_verified)')
     .order('created_at', { ascending: false });
 
-  if (error) {
-    console.warn('[AdminService] fetchAdminEvents error:', error.message);
-    return [];
-  }
+  if (error) throw new Error(error.message || 'Failed to fetch events');
 
   const rows = (data ?? []) as any[];
   const eventIds = rows.map((r) => r.id);
 
   let rsvps: any[] = [];
   if (eventIds.length > 0) {
-    const { data: rsvpRows } = await supabase
-      .from('event_rsvps')
-      .select('event_id, status, guest_count')
-      .in('event_id', eventIds);
+    const { data: rsvpRows, error: rsvpError } = await supabase.from('event_rsvps').select('event_id, status, guest_count').in('event_id', eventIds);
+    if (rsvpError) throw new Error(rsvpError.message || 'Failed to fetch RSVPs');
     rsvps = rsvpRows ?? [];
   }
 
@@ -376,7 +295,7 @@ export async function fetchAdminEvents(): Promise<AdminEventRow[]> {
   for (const r of rsvps) {
     const bucket = countMap.get(r.event_id) ?? { confirmed: 0, waitlist: 0, total: 0 };
     const guests = r.guest_count ?? 1;
-    if (r.status === 'confirmed' || r.status === 'pending') bucket.confirmed += guests;
+    if (r.status === 'confirmed') bucket.confirmed += guests;
     else if (r.status === 'waitlist') bucket.waitlist += guests;
     bucket.total += guests;
     countMap.set(r.event_id, bucket);
@@ -386,67 +305,37 @@ export async function fetchAdminEvents(): Promise<AdminEventRow[]> {
     const c = countMap.get(r.id) ?? { confirmed: 0, waitlist: 0, total: 0 };
     const org = r.organizations ?? null;
     return {
-      id: r.id,
-      title: r.title,
-      organization_id: r.organization_id,
-      organization_name: org?.name ?? null,
-      organization_verified: org?.is_verified ?? null,
-      mountain_id: r.mountain_id,
-      event_date: r.event_date,
-      end_date: r.end_date ?? null,
-      start_time: r.start_time,
-      end_time: r.end_time ?? null,
-      duration_hours: r.duration_hours ?? null,
-      meeting_point: r.meeting_point,
-      difficulty: r.difficulty,
-      capacity: r.capacity,
-      is_public: !!r.is_public,
-      allow_walkins: !!r.allow_walkins,
-      status: r.status,
-      description: r.description,
-      safety_notes: r.safety_notes,
-      required_gear: r.required_gear,
-      created_by: r.created_by,
-      created_at: r.created_at,
-      rsvp_confirmed: c.confirmed,
-      rsvp_waitlist: c.waitlist,
-      rsvp_total: c.total,
+      id: r.id, title: r.title, organization_id: r.organization_id, organization_name: org?.name ?? null, organization_verified: org?.is_verified ?? null,
+      mountain_id: r.mountain_id, event_date: r.event_date, end_date: r.end_date ?? null, start_time: r.start_time, end_time: r.end_time ?? null,
+      duration_hours: r.duration_hours ?? null, meeting_point: r.meeting_point, difficulty: r.difficulty, capacity: r.capacity,
+      is_public: !!r.is_public, allow_walkins: !!r.allow_walkins, status: r.status, description: r.description, safety_notes: r.safety_notes,
+      required_gear: r.required_gear, created_by: r.created_by, created_at: r.created_at, rsvp_confirmed: c.confirmed, rsvp_waitlist: c.waitlist, rsvp_total: c.total,
     };
   });
 }
 
-/* ───────────────────────── journal ───────────────────────── */
+/* ───────────────────────── journal (Paginated) ───────────────────────── */
 
-export async function fetchAdminJournal(publicOnly = false): Promise<AdminJournalRow[]> {
-  let query = supabase
-    .from('hiking_journals')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200);
+export async function fetchAdminJournal(publicOnly = false, page = 0, limit = 100): Promise<AdminJournalRow[]> {
+  const from = page * limit;
+  const to = from + limit - 1;
+
+  let query = supabase.from('hiking_journals').select('*').order('created_at', { ascending: false }).range(from, to);
   if (publicOnly) query = query.eq('is_public', true);
 
   const { data, error } = await query;
-  if (error) {
-    console.warn('[AdminService] fetchAdminJournal error:', error.message);
-    return [];
-  }
+  if (error) throw new Error(error.message || 'Failed to fetch journals');
 
   const rows = (data ?? []) as any[];
   const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
   const entryIds = rows.map((r) => r.id);
 
   const [profilesRes, likesRes] = await Promise.all([
-    userIds.length
-      ? supabase.from('profiles').select('id, full_name, email').in('id', userIds)
-      : Promise.resolve({ data: [], error: null } as any),
-    entryIds.length
-      ? supabase.from('journal_entry_likes').select('journal_entry_id').in('journal_entry_id', entryIds)
-      : Promise.resolve({ data: [], error: null } as any),
+    userIds.length ? supabase.from('profiles').select('id, full_name, email').in('id', userIds) : Promise.resolve({ data: [], error: null } as any),
+    entryIds.length ? supabase.from('journal_entry_likes').select('journal_entry_id').in('journal_entry_id', entryIds) : Promise.resolve({ data: [], error: null } as any),
   ]);
 
-  const profileMap = new Map<string, any>(
-    (profilesRes.data ?? []).map((p: any) => [p.id, p]),
-  );
+  const profileMap = new Map<string, any>((profilesRes.data ?? []).map((p: any) => [p.id, p]));
   const likeMap = new Map<string, number>();
   for (const l of likesRes.data ?? []) {
     const id = (l as any).journal_entry_id;
@@ -456,42 +345,23 @@ export async function fetchAdminJournal(publicOnly = false): Promise<AdminJourna
   return rows.map((r) => {
     const p = profileMap.get(r.user_id);
     return {
-      id: r.id,
-      user_id: r.user_id,
-      author_name: p?.full_name ?? null,
-      author_email: p?.email ?? null,
-      mountain_id: r.mountain_id ?? null,
-      viewpoint_id: r.viewpoint_id ?? null,
-      title: r.title ?? '',
-      content: r.content ?? '',
-      images: Array.isArray(r.images) ? r.images : [],
-      rating: r.rating ?? null,
-      is_public: !!r.is_public,
-      like_count: likeMap.get(r.id) ?? 0,
-      created_at: r.created_at,
+      id: r.id, user_id: r.user_id, author_name: p?.full_name ?? null, author_email: p?.email ?? null, mountain_id: r.mountain_id ?? null,
+      viewpoint_id: r.viewpoint_id ?? null, title: r.title ?? '', content: r.content ?? '', images: Array.isArray(r.images) ? r.images : [],
+      rating: r.rating ?? null, is_public: !!r.is_public, like_count: likeMap.get(r.id) ?? 0, created_at: r.created_at,
     };
   });
 }
 
 export async function deleteAdminJournal(id: string): Promise<{ error: string | null }> {
-  // Best effort: remove any storage objects under this entry, then the row.
   try {
-    const { data: row } = await supabase
-      .from('hiking_journals')
-      .select('images')
-      .eq('id', id)
-      .maybeSingle();
+    const { data: row } = await supabase.from('hiking_journals').select('images').eq('id', id).maybeSingle();
     const images: string[] = Array.isArray(row?.images) ? row!.images : [];
-    const paths = images
-      .map((url) => {
-        const marker = '/storage/v1/object/public/journal-images/';
-        const idx = url.indexOf(marker);
-        return idx >= 0 ? decodeURIComponent(url.slice(idx + marker.length)) : null;
-      })
-      .filter((p): p is string => Boolean(p));
-    if (paths.length > 0) {
-      await supabase.storage.from('journal-images').remove(paths);
-    }
+    const paths = images.map((url) => {
+      const marker = '/storage/v1/object/public/journal-images/';
+      const idx = url.indexOf(marker);
+      return idx >= 0 ? decodeURIComponent(url.slice(idx + marker.length)) : null;
+    }).filter((p): p is string => Boolean(p));
+    if (paths.length > 0) await supabase.storage.from('journal-images').remove(paths);
     const { error } = await supabase.from('hiking_journals').delete().eq('id', id);
     return { error: error?.message ?? null };
   } catch (e: any) {
@@ -504,92 +374,179 @@ export async function deleteAdminJournal(id: string): Promise<{ error: string | 
 export async function fetchAdminSos(): Promise<AdminSosRow[]> {
   try {
     const rows = await getSOSAlerts();
+    if (rows.length === 0) return [];
+
+    const userIds = Array.from(new Set(rows.map((r: any) => r.user_id).filter(Boolean)));
+    let profilesMap = new Map();
+    
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds);
+      if (profiles) profiles.forEach(p => profilesMap.set(p.id, p));
+    }
+
     return rows.map((r: any, i: number) => ({
-      id: r.id ?? `sos-${i}`,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      accuracy: r.accuracy,
-      altitude: r.altitude ?? null,
-      timestamp: r.timestamp,
-      user_id: r.user_id ?? null,
+      id: r.id ?? `sos-${i}`, latitude: r.latitude, longitude: r.longitude, accuracy: r.accuracy, altitude: r.altitude ?? null,
+      timestamp: r.timestamp, user_id: r.user_id ?? null, user_name: r.user_id ? (profilesMap.get(r.user_id)?.full_name || profilesMap.get(r.user_id)?.email || null) : null,
     }));
   } catch (e: any) {
-    console.warn('[AdminService] fetchAdminSos error:', e?.message);
-    return [];
+    throw new Error(e?.message || 'Failed to fetch SOS alerts');
   }
 }
 
 export async function fetchAdminEmergencyContacts(): Promise<AdminEmergencyContactRow[]> {
-  const { data, error } = await supabase
-    .from('emergency_contact_lists')
-    .select('user_id, contacts, updated_at')
-    .order('updated_at', { ascending: false });
-
-  if (error) {
-    throw new Error(`Unable to load emergency contacts: ${error.message}`);
-  }
+  const { data, error } = await supabase.from('emergency_contact_lists').select('user_id, contacts, updated_at').order('updated_at', { ascending: false });
+  if (error) throw new Error(error.message || 'Failed to fetch emergency contacts');
 
   const rows = data ?? [];
   const userIds = rows.map((row) => row.user_id);
-  const { data: profiles, error: profilesError } = userIds.length
-    ? await supabase.from('profiles').select('id, full_name, email').in('id', userIds)
-    : { data: [], error: null };
+  const { data: profiles, error: profilesError } = userIds.length ? await supabase.from('profiles').select('id, full_name, email').in('id', userIds) : { data: [], error: null };
+  if (profilesError) throw new Error(profilesError.message || 'Failed to fetch owners');
 
-  if (profilesError) {
-    throw new Error(`Unable to load contact owners: ${profilesError.message}`);
-  }
-
-  const profilesById = new Map(
-    (profiles ?? []).map((profile) => [profile.id, profile]),
-  );
-
+  const profilesById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
   return rows.map((row) => {
     const owner = profilesById.get(row.user_id);
-    return {
-      user_id: row.user_id,
-      user_name: owner?.full_name ?? null,
-      user_email: owner?.email ?? null,
-      contacts: row.contacts ?? [],
-      updated_at: row.updated_at,
-    };
+    return { user_id: row.user_id, user_name: owner?.full_name ?? null, user_email: owner?.email ?? null, contacts: row.contacts ?? [], updated_at: row.updated_at };
   });
 }
 
-/* ───────────────────────── discoveries (view-only) ───────────────────────── */
+/* ───────────────────────── discoveries (Paginated) ───────────────────────── */
 
-export async function fetchAdminDiscoveries(): Promise<AdminDiscoveryRow[]> {
+export async function fetchAdminDiscoveries(page = 0, limit = 100): Promise<AdminDiscoveryRow[]> {
+  const from = page * limit;
+  const to = from + limit - 1;
+
   const { data, error } = await supabase
     .from('wildtrack_discoveries')
     .select('id, user_id, species_id, mountain_id, discovered_at, wildtrack_species(common_name, scientific_name)')
     .order('discovered_at', { ascending: false })
-    .limit(200);
+    .range(from, to);
 
-  if (error) {
-    console.warn('[AdminService] fetchAdminDiscoveries error:', error.message);
-    return [];
-  }
+  if (error) throw new Error(error.message || 'Failed to fetch discoveries');
 
   return (data ?? []).map((r: any) => ({
-    id: Number(r.id),
-    user_id: r.user_id,
-    species_id: Number(r.species_id),
-    species_name: r.wildtrack_species?.common_name ?? null,
-    species_scientific: r.wildtrack_species?.scientific_name ?? null,
-    mountain_id: r.mountain_id,
-    discovered_at: r.discovered_at,
+    id: Number(r.id), user_id: r.user_id, species_id: Number(r.species_id), species_name: r.wildtrack_species?.common_name ?? null,
+    species_scientific: r.wildtrack_species?.scientific_name ?? null, mountain_id: r.mountain_id, discovered_at: r.discovered_at,
   }));
 }
 
+/* ───────────────────────── Chat Reports ───────────────────────── */
+
+export async function fetchAdminChatReports(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('chat_reports')
+    .select(`
+      *,
+      chat_messages (content, user_id)
+    `)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message || 'Failed to fetch chat reports');
+
+  const rows = data ?? [];
+  const reporterIds = Array.from(new Set(rows.map((r) => r.reporter_id).filter(Boolean)));
+
+  let profilesMap = new Map();
+  if (reporterIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', reporterIds);
+
+    if (profiles) {
+      profiles.forEach((p) => profilesMap.set(p.id, p));
+    }
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    reporter: profilesMap.get(r.reporter_id) || null,
+  }));
+}
+
+/* ───────────────────────── Audit Log ───────────────────────── */
+
+export async function fetchAdminAuditLog(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('admin_audit_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) throw new Error(error.message || 'Failed to fetch audit log');
+
+  const rows = data ?? [];
+  const actorIds = Array.from(new Set(rows.map((r) => r.actor_id).filter(Boolean)));
+
+  let profilesMap = new Map();
+  if (actorIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', actorIds);
+
+    if (profiles) {
+      profiles.forEach((p) => profilesMap.set(p.id, p));
+    }
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    actor: profilesMap.get(r.actor_id) || null,
+  }));
+}
+
+/* ───────────────────────── System Health ───────────────────────── */
+
+export async function fetchSystemHealth() {
+  const health: Record<string, { status: 'ok' | 'error' | 'checking', message: string }> = {
+    database: { status: 'checking', message: 'Pinging...' },
+    auth: { status: 'checking', message: 'Pinging...' },
+    weatherApi: { status: 'checking', message: 'Pinging...' },
+    speciesApi: { status: 'checking', message: 'Pinging...' },
+  };
+
+  try {
+    const start = Date.now();
+    const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true }).limit(1);
+    if (error) throw error;
+    health.database = { status: 'ok', message: `Connected (${Date.now() - start}ms)` };
+  } catch (e: any) {
+    health.database = { status: 'error', message: e.message || 'Database offline' };
+  }
+
+  try {
+    const start = Date.now();
+    const { error } = await supabase.auth.getSession();
+    if (error) throw error;
+    health.auth = { status: 'ok', message: `Connected (${Date.now() - start}ms)` };
+  } catch (e: any) {
+    health.auth = { status: 'error', message: e.message || 'Auth offline' };
+  }
+
+  try {
+    const start = Date.now();
+    const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=14.5&longitude=121.0&current_weather=true');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    health.weatherApi = { status: 'ok', message: `Operational (${Date.now() - start}ms)` };
+  } catch (e: any) {
+    health.weatherApi = { status: 'error', message: e.message || 'Weather API unreachable' };
+  }
+
+  try {
+    const start = Date.now();
+    const res = await fetch('https://api.gbif.org/v1/species/1');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    health.speciesApi = { status: 'ok', message: `Operational (${Date.now() - start}ms)` };
+  } catch (e: any) {
+    health.speciesApi = { status: 'error', message: e.message || 'Species API unreachable' };
+  }
+
+  return health;
+}
+
 export const adminService = {
-  fetchGlobalStats,
-  fetchAdminUsers,
-  fetchAdminOrgs,
-  fetchAdminEvents,
-  fetchAdminJournal,
-  deleteAdminJournal,
-  fetchAdminSos,
-  fetchAdminEmergencyContacts,
-  fetchAdminDiscoveries,
+  fetchGlobalStats, fetchAdminUsers, fetchAdminOrgs, fetchAdminEvents, fetchAdminJournal, deleteAdminJournal,
+  fetchAdminSos, fetchAdminEmergencyContacts, fetchAdminDiscoveries, fetchAdminChatReports, fetchAdminAuditLog, fetchSystemHealth,
 };
 
 export default adminService;

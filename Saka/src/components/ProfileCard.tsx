@@ -189,7 +189,7 @@ export default function ProfileCard({
     } else if (screen === 'journal') {
       router.push({ pathname: '/journal', params: { fromProfile: '1' } });
     } else if (screen === 'weather') {
-      router.push('/Weather');
+      router.push('/weather');
     } else {
       router.push('/Location');
     }
@@ -566,7 +566,7 @@ export default function ProfileCard({
                 )}
                 <TouchableOpacity
                   style={styles.tabPaneBtn}
-                  onPress={() => { closeCard(); router.push('/Weather'); }}
+                  onPress={() => { closeCard(); router.push('/weather'); }}
                 >
                   <Text style={styles.tabPaneBtnText} maxFontSizeMultiplier={TIGHT_FONT_CAP}>Open Full Weather</Text>
                   <Ionicons name="arrow-forward" size={11} color="#C9A96E" />

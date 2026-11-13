@@ -205,6 +205,18 @@ const IMAGE_MAP: Record<string, ImageSourcePropType> = {
   'ng9-4': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 104114.png'),
   'ng9-5': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 105011.png'),
   'ng9-6': require('../../assets/Viewpoints/mt-nangtud/ng9/Screenshot 2026-10-27 105313.png'),
+  'm1-1': require('../../assets/Viewpoints/mt-m/m1/m1-1.jpg'),
+  'm2-1': require('../../assets/Viewpoints/mt-m/m2/m2-1.jpg'),
+  'm2-2': require('../../assets/Viewpoints/mt-m/m2/m2-2.jpg'),
+  'm3-1': require('../../assets/Viewpoints/mt-m/m3/m3-1.jpg'),
+  'm3-2': require('../../assets/Viewpoints/mt-m/m3/m3-2.jpg'),
+  'm4-1': require('../../assets/Viewpoints/mt-m/m4/m4-1.jpg'),
+  'm4-2': require('../../assets/Viewpoints/mt-m/m4/m4-2.jpg'),
+  'm5-1': require('../../assets/Viewpoints/mt-m/m5/m4-5.jpg'),
+  'm5-2': require('../../assets/Viewpoints/mt-m/m5/m5-5.jpg'),
+  'm6-1': require('../../assets/Viewpoints/mt-m/m6/m6-1.jpg'),
+  'm7-1': require('../../assets/Viewpoints/mt-m/m7/m7-1.jpg'),
+  'm7-2': require('../../assets/Viewpoints/mt-m/m7/m7-2.jpg'),
 };
 
 interface StatChipProps {
@@ -272,6 +284,16 @@ const NANGTUD_GALLERIES: Record<string, MediaItem[]> = {
   ng9: [1, 2, 3, 4, 5, 6].map((index) => ({ type: 'image', key: `ng9-${index}` })),
 };
 
+const MT_M_GALLERIES: Record<string, MediaItem[]> = {
+  m1: [{ type: 'image', key: 'm1-1' }],
+  m2: [1, 2].map((index) => ({ type: 'image', key: `m2-${index}` })),
+  m3: [1, 2].map((index) => ({ type: 'image', key: `m3-${index}` })),
+  m4: [1, 2].map((index) => ({ type: 'image', key: `m4-${index}` })),
+  m5: [1, 2].map((index) => ({ type: 'image', key: `m5-${index}` })),
+  m6: [{ type: 'image', key: 'm6-1' }],
+  m7: [1, 2].map((index) => ({ type: 'image', key: `m7-${index}` })),
+};
+
 /**
  * Resolves the gallery for a viewpoint. Shared by the hiker-facing screen below
  * and the manager's live editor so both always show the same media.
@@ -305,6 +327,20 @@ export function getViewpointMedia({
       ? viewpointNumber
       : fallbackNangtudNumber;
     const gallery = NANGTUD_GALLERIES[`ng${number}`];
+    if (gallery) {
+      return gallery;
+    }
+  }
+  const isMtM = /mt\.?\s*m\b/i.test(mountainName ?? '')
+    || mountainId === 'd39ff04a-069b-4d90-b448-f66e6ae05772';
+  const fallbackMtMNumber = Number(
+    data?.sort_order ?? /^m([1-7])$/i.exec(String(data?.id ?? ''))?.[1]
+  );
+  if (isMtM) {
+    const number = Number.isInteger(viewpointNumber) && viewpointNumber >= 1 && viewpointNumber <= 7
+      ? viewpointNumber
+      : fallbackMtMNumber;
+    const gallery = MT_M_GALLERIES[`m${number}`];
     if (gallery) {
       return gallery;
     }

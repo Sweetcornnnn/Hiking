@@ -99,7 +99,7 @@ export default function RootLayout() {
         {/* ...unchanged screens... */}
         <Stack.Screen name="Index" options={screenOptionsNoHeader} />
         <Stack.Screen name="Auth" options={screenOptionsNoHeader} />
-        <Stack.Screen name="Intro" options={screenOptionsNoHeader} />
+        <Stack.Screen name="intro" options={screenOptionsNoHeader} />
         <Stack.Screen name="Login" options={screenOptionsNoHeader} />
         <Stack.Screen name="Signup" options={screenOptionsNoHeader} />
         <Stack.Screen name="Forgot" options={screenOptionsNoHeader} />
@@ -110,8 +110,8 @@ export default function RootLayout() {
         <Stack.Screen name="manager/Manager" options={screenOptionsNoHeader} />
         <Stack.Screen name="wildtrack/WildTrack" options={screenOptionsNoHeader} />
         <Stack.Screen name="MountainTop" options={screenOptionsNoHeader} />
-        <Stack.Screen name="Viewpoint" options={screenOptionsNoHeader} />
-        <Stack.Screen name="Weather" options={screenOptionsNoHeader} />
+        <Stack.Screen name="viewpoint" options={screenOptionsNoHeader} />
+        <Stack.Screen name="weather" options={screenOptionsNoHeader} />
         <Stack.Screen name="Settings" options={screenOptionsNoHeader} />
         <Stack.Screen
           name="mountainInfo/TipsAndTricks"

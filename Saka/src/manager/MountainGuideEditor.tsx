@@ -17,7 +17,7 @@ import type {
   TransportKind,
   TransportOption,
 } from '../data/mountainTips';
-import { PC } from '../screens/Viewpoint';
+import { PC } from '../screens/viewpoint';
 
 type Props = {
   tips: MountainTips;
