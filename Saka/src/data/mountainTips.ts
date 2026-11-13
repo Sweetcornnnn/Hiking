@@ -33,6 +33,10 @@ export interface TransportOption {
 export interface TransportGuide {
   /** "Where to begin": the town, terminal or jump-off to head to first. */
   startPoint: string;
+  whereToAvail?: string;
+  nextStop?: string;
+  lastStop?: string;
+  faresNotes?: string;
   options: TransportOption[];
   /** Optional closing reminder, e.g. that prices change in peak season. */
   tip?: string;
@@ -49,6 +53,7 @@ export interface TrailStop {
 export interface TrailGuide {
   /** "Where to start": registration, jump-off or first point of the hike. */
   startPoint: string;
+  summitTrail?: string;
   /** Where a vehicle might drop you off. */
   dropOff?: string;
   /** Ordered points on the trail. The first four are shown. */
@@ -57,6 +62,7 @@ export interface TrailGuide {
   landmarks?: string[];
   /** Where to find water, and where not to count on it. */
   water?: string;
+  notes?: string;
   /** A closing note, or a "data pending" message. */
   tip?: string;
 }
@@ -114,3 +120,77 @@ export interface MountainTips {
   etiquetteGuide?: EtiquetteGuide;
   alerts: Alert[];
 }
+
+export const MOUNTAIN_TIPS_BY_ID: Record<string, MountainTips> = {
+  '2cd5666c-1deb-4499-812e-eb95a992ef68': {
+    id: '2cd5666c-1deb-4499-812e-eb95a992ef68',
+    mountainName: 'Mt. Balinsasayaw',
+    preparation: [],
+    safety: [],
+    transportation: [
+      'Hotel pick-up in Kalibo or Caticlan.',
+      'Usually direct tour transport; no next stop.',
+      'Return drop-off at your Kalibo or Caticlan hotel.',
+      'Full-day tour (8–9 hr): round-trip transport, entrance, guide, and lunch included. Public bus/jeepney fares unavailable. Tour: ~₱6,500+ per person.',
+    ],
+    transportGuide: {
+      startPoint: 'Hotel pick-up in Kalibo or Caticlan.',
+      whereToAvail: 'Book online: GetYourGuide, Pelago, Guide to the Philippines, Tripadvisor, or Lokalee. Operator: CTPH TOUR.',
+      nextStop: 'N/A (Usually a direct tour transport).',
+      lastStop: 'Return drop-off at your Kalibo or Caticlan hotel.',
+      faresNotes: 'Full-day tour (8–9 hr) includes round-trip transport, entrance, guide, and lunch. Public bus/jeepney fares unavailable. Tour: ~₱6,500+ per person.',
+      options: [],
+    },
+    trailTips: [
+      'Jump off at Barangay Mambusao; register at the Barangay Hall and arrange a local guide.',
+      'Accessible 45–60 minute hike, suitable for all ages.',
+      'Nearby tour stops: Katunggan It Ibajay (Mangrove Forest) and 50-meter Nawidwid Falls.',
+      'Tall grasses cover the exposed ridges. Elevation: ~830–846 m. Best light: early morning or late afternoon.',
+    ],
+    trailGuide: {
+      startPoint: 'Jump off at Barangay Mambusao; register at the Barangay Hall and arrange a local guide.',
+      summitTrail: 'Accessible 45–60 minute hike, suitable for all ages.',
+      landmarks: [
+        'Katunggan It Ibajay (Mangrove Forest)',
+        'Nawidwid Falls (50 meters high)',
+      ],
+      notes: 'Tall grasses cover the exposed ridges. Elevation: ~830–846 m. Best light: early morning or late afternoon.',
+    },
+    etiquette: [],
+    alerts: [],
+  },
+  'f2173971-80bf-40dd-96e9-c6b015be194b': {
+    id: 'f2173971-80bf-40dd-96e9-c6b015be194b',
+    mountainName: 'Pandan Hills',
+    preparation: [],
+    safety: [],
+    transportation: [
+      'From Kalibo town, take a tricycle to the Altavas jeepney terminal.',
+      'Take an Altavas-bound jeepney; request drop-off at the Barangay Bay-ang junction (~1 hr).',
+      'Charter a motorcycle from the junction to the jump-off.',
+      'Fares unavailable online. Solo travelers pay the full motorcycle charter; confirm the rate before departure.',
+    ],
+    transportGuide: {
+      startPoint: 'From Kalibo town, take a tricycle to the Altavas jeepney terminal.',
+      whereToAvail: 'DIY route; no tour packages currently listed online.',
+      nextStop: 'Take an Altavas-bound jeepney; request drop-off at the Barangay Bay-ang junction (~1 hr).',
+      lastStop: 'Charter a motorcycle from the junction to the jump-off.',
+      faresNotes: 'Fares unavailable online. Solo travelers pay the full motorcycle charter; confirm the rate before departure.',
+      options: [],
+    },
+    trailTips: [
+      'A short hike from the jump-off reaches the hills.',
+      'Straightforward trail; no guide needed.',
+      'Enjoy panoramic views of the surrounding landscape.',
+      'Transport rates vary. Kalibo tricycle contact: Kuya Rex, 09388216786.',
+    ],
+    trailGuide: {
+      startPoint: 'A short hike from the jump-off reaches the hills.',
+      summitTrail: 'Straightforward trail; no guide needed.',
+      landmarks: ['Panoramic views of the surrounding landscape.'],
+      notes: 'Transport rates vary. Kalibo tricycle contact: Kuya Rex, 09388216786.',
+    },
+    etiquette: [],
+    alerts: [],
+  },
+};

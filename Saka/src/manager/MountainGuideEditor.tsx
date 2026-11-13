@@ -350,6 +350,27 @@ export default function MountainGuideEditor({ tips, activeTab, updateTips }: Pro
               multiline
               inputStyle={styles.longTextInput}
             />
+            <GuideField
+              label="Where to avail"
+              value={tips.transportGuide?.whereToAvail ?? ''}
+              onChangeText={(value) => update({ transportGuide: { ...(tips.transportGuide ?? { startPoint: '', options: [] }), whereToAvail: value } })}
+              placeholder="Where hikers can book or arrange transport"
+              multiline
+            />
+            <GuideField
+              label="Next stop"
+              value={tips.transportGuide?.nextStop ?? ''}
+              onChangeText={(value) => update({ transportGuide: { ...(tips.transportGuide ?? { startPoint: '', options: [] }), nextStop: value } })}
+              placeholder="Enter the next stop"
+              multiline
+            />
+            <GuideField
+              label="Last stop / drop-off"
+              value={tips.transportGuide?.lastStop ?? ''}
+              onChangeText={(value) => update({ transportGuide: { ...(tips.transportGuide ?? { startPoint: '', options: [] }), lastStop: value } })}
+              placeholder="Enter the last stop or drop-off"
+              multiline
+            />
           </GuidePanel>
           <TransportOptions
             options={tips.transportGuide?.options ?? []}
@@ -362,7 +383,16 @@ export default function MountainGuideEditor({ tips, activeTab, updateTips }: Pro
             placeholder="Add a transportation tip"
             icon="navigate-outline"
           />
-          <GuidePanel title="Travel reminder" icon="alert-circle-outline">
+          <GuidePanel title="Fares / notes" icon="alert-circle-outline">
+            <GuideField
+              label="Fares and transport notes"
+              value={tips.transportGuide?.faresNotes ?? ''}
+              onChangeText={(value) => update({ transportGuide: { ...(tips.transportGuide ?? { startPoint: '', options: [] }), faresNotes: value } })}
+              placeholder="Add fare details and transport notes"
+              multiline
+            />
+          </GuidePanel>
+          <GuidePanel title="Legacy travel reminder" icon="alert-circle-outline">
             <GuideField
               label="Note for hikers"
               value={tips.transportGuide?.tip ?? ''}
@@ -477,6 +507,13 @@ export default function MountainGuideEditor({ tips, activeTab, updateTips }: Pro
               onChangeText={(value) => update({ trailGuide: { ...(tips.trailGuide ?? { startPoint: '' }), dropOff: value } })}
               placeholder="Where a vehicle can drop hikers"
             />
+            <GuideField
+              label="On the trail (summit trail)"
+              value={tips.trailGuide?.summitTrail ?? ''}
+              onChangeText={(value) => update({ trailGuide: { ...(tips.trailGuide ?? { startPoint: '' }), summitTrail: value } })}
+              placeholder="Describe the summit trail"
+              multiline
+            />
           </GuidePanel>
           <GuidePairList
             title="Trail stops"
@@ -498,6 +535,13 @@ export default function MountainGuideEditor({ tips, activeTab, updateTips }: Pro
               value={tips.trailGuide?.water ?? ''}
               onChangeText={(value) => update({ trailGuide: { ...(tips.trailGuide ?? { startPoint: '' }), water: value } })}
               placeholder="Where hikers can find water"
+              multiline
+            />
+            <GuideField
+              label="Notes"
+              value={tips.trailGuide?.notes ?? ''}
+              onChangeText={(value) => update({ trailGuide: { ...(tips.trailGuide ?? { startPoint: '' }), notes: value } })}
+              placeholder="Add trail notes"
               multiline
             />
             <GuideField
