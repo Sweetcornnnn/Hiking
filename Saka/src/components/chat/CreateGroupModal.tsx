@@ -32,6 +32,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useRouter } from 'expo-router';
 
+const NAME_MAX = 50;
+
 export default function CreateGroupModal({
   onClose,
 }: {
@@ -41,6 +43,8 @@ export default function CreateGroupModal({
   const [members, setMembers] = useState<any[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // UI-only: highlights the name field while it is focused
+  const [nameFocused, setNameFocused] = useState(false);
   const user = useAuthStore((state) => state.user);
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -197,42 +201,104 @@ export default function CreateGroupModal({
   const canCreate =
     name.trim().length > 0 && members.length > 0 && !creating && !!user;
 
+  // ───────── UI-only helpers (no business logic) ─────────
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
+
+  const memberCountLabel =
+    members.length === 0
+      ? null
+      : `${members.length} ${members.length === 1 ? 'person' : 'people'} added`;
+
+  // Tells the person exactly what is still missing before they can create
+  const nextStepHint = creating
+    ? null
+    : !name.trim()
+      ? 'Give your group a name to continue'
+      : members.length === 0
+        ? 'Add at least one person to continue'
+        : null;
+
   const listHeader = (
     <View style={styles.bodyContent}>
-      <Text style={styles.label}>GROUP NAME</Text>
-      <View style={styles.inputRow}>
-        <Ionicons
-          name="people-outline"
-          size={13}
-          color={TEXT_MUTED}
-          style={styles.inputIcon}
-        />
-        <TextInput
-          placeholder="e.g. Design Team"
-          placeholderTextColor="rgba(255,255,255,0.28)"
-          value={name}
-          onChangeText={setName}
-          maxLength={50}
-          style={styles.input}
-          returnKeyType="done"
-        />
+      {/* Group name, with a live preview avatar beside it */}
+      <View style={styles.nameRow}>
+        <View style={[styles.avatar, initials ? styles.avatarActive : null]}>
+          {initials ? (
+            <Text style={styles.avatarText}>{initials}</Text>
+          ) : (
+            <Ionicons name="people" size={20} color={TEXT_MUTED} />
+          )}
+        </View>
+
+        <View style={styles.nameCol}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Group name</Text>
+            <Text
+              style={[
+                styles.counter,
+                name.length >= NAME_MAX - 5 && styles.counterWarn,
+              ]}
+            >
+              {name.length}/{NAME_MAX}
+            </Text>
+          </View>
+          <View
+            style={[styles.inputRow, nameFocused && styles.inputRowFocused]}
+          >
+            <TextInput
+              placeholder="e.g. Design Team"
+              placeholderTextColor="rgba(255,255,255,0.32)"
+              value={name}
+              onChangeText={setName}
+              onFocus={() => setNameFocused(true)}
+              onBlur={() => setNameFocused(false)}
+              maxLength={NAME_MAX}
+              style={styles.input}
+              returnKeyType="done"
+              accessibilityLabel="Group name"
+            />
+            {name.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setName('')}
+                hitSlop={10}
+                style={styles.clearBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Clear group name"
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color="rgba(255,255,255,0.35)"
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
 
+      {/* Members */}
       <View style={styles.section}>
-        <Text style={styles.label}>ADD MEMBERS</Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>Add people</Text>
+          {memberCountLabel && (
+            <View style={styles.countPill}>
+              <Text style={styles.countPillText}>{memberCountLabel}</Text>
+            </View>
+          )}
+        </View>
         <UserSearch onSelect={addMember} />
       </View>
 
       {members.length > 0 && (
         <View style={styles.section}>
           <SelectedMembers members={members} onRemove={removeMember} />
-        </View>
-      )}
-
-      {error && (
-        <View style={styles.errorBanner}>
-          <Ionicons name="alert-circle-outline" size={12} color="#E07070" />
-          <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
     </View>
@@ -264,9 +330,10 @@ export default function CreateGroupModal({
             style={[
               styles.card,
               {
-                maxHeight: Math.min(
-                  520,
-                  windowHeight * 0.68 - insets.top - insets.bottom,
+                // Fixed height: the card never grows or shrinks
+                height: Math.min(
+                  540,
+                  windowHeight * 0.86 - insets.top - insets.bottom,
                 ),
               },
             ]}
@@ -275,67 +342,119 @@ export default function CreateGroupModal({
               <TouchableOpacity
                 onPress={onClose}
                 style={styles.headerBtn}
-                hitSlop={6}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
-                <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
+                <Ionicons name="close" size={18} color={TEXT_PRIMARY} />
               </TouchableOpacity>
-              <Text style={styles.title}>New Group</Text>
-              <View style={styles.headerBtn} />
+              <View style={styles.titleWrap}>
+                <Text style={styles.title}>New group</Text>
+                <Text style={styles.subtitle}>
+                  You'll be the admin. Add the people you want to chat with.
+                </Text>
+              </View>
+              <View style={styles.headerBtnSpacer} />
             </View>
 
+            {/* FlatList (not ScrollView) so the lists inside UserSearch /
+                SelectedMembers don't nest in a plain ScrollView */}
             <FlatList
               data={[]}
               keyExtractor={() => 'x'}
               renderItem={null as any}
               ListHeaderComponent={listHeader}
               style={styles.body}
-              contentContainerStyle={styles.bodyScrollContent}
+              scrollEnabled
+              nestedScrollEnabled
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             />
 
-            <View
-              style={[styles.footer, { paddingBottom: 12 }]}
-            >
-              <TouchableOpacity
-                onPress={onClose}
-                style={[styles.footerBtn, styles.footerCancel]}
-                disabled={creating}
-                activeOpacity={0.85}
+            <View style={styles.errorWrap}>
+            {error && (
+              <View
+                style={styles.errorBanner}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
               >
-                <Text style={styles.footerCancelText}>Cancel</Text>
-              </TouchableOpacity>
+                <Ionicons name="alert-circle" size={16} color="#E07070" />
+                <Text style={styles.errorText}>{error}</Text>
+                <TouchableOpacity
+                  onPress={() => setError(null)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss error"
+                >
+                  <Ionicons name="close" size={16} color="#E07070" />
+                </TouchableOpacity>
+              </View>
+            )}
+            </View>
 
-              <TouchableOpacity
-                onPress={createGroup}
-                style={[
-                  styles.footerBtn,
-                  styles.footerPrimary,
-                  !canCreate && styles.footerPrimaryDisabled,
-                ]}
-                disabled={!canCreate}
-                activeOpacity={0.85}
-              >
-                {creating ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="checkmark"
-                      size={13}
-                      color={canCreate ? CHAT_BG : 'rgba(255,255,255,0.4)'}
-                    />
-                    <Text
-                      style={[
-                        styles.footerPrimaryText,
-                        !canCreate && styles.footerPrimaryTextDisabled,
-                      ]}
-                    >
-                      Create
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
+            <View style={[styles.footer, { paddingBottom: 12 }]}>
+              {nextStepHint && (
+                <View style={styles.hintRow}>
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={15}
+                    color={TEXT_MUTED}
+                  />
+                  <Text style={styles.hintText}>{nextStepHint}</Text>
+                </View>
+              )}
+
+              <View style={styles.footerButtons}>
+                <TouchableOpacity
+                  onPress={onClose}
+                  style={[styles.footerBtn, styles.footerCancel]}
+                  disabled={creating}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                >
+                  <Text style={styles.footerCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={createGroup}
+                  style={[
+                    styles.footerBtn,
+                    styles.footerPrimary,
+                    !canCreate && styles.footerPrimaryDisabled,
+                  ]}
+                  disabled={!canCreate}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Create group"
+                  accessibilityState={{ disabled: !canCreate, busy: creating }}
+                >
+                  {creating ? (
+                    <>
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text style={styles.footerPrimaryTextDisabled}>
+                        Creating…
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="checkmark"
+                        size={16}
+                        color={canCreate ? CHAT_BG : 'rgba(255,255,255,0.4)'}
+                      />
+                      <Text
+                        style={[
+                          styles.footerPrimaryText,
+                          !canCreate && styles.footerPrimaryTextDisabled,
+                        ]}
+                      >
+                        Create group
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -359,8 +478,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 560,
-    maxHeight: '95%',
+    maxWidth: 420,
     alignSelf: 'center',
     backgroundColor: CHAT_PANEL,
     borderRadius: CHAT_RADIUS_MODAL,
@@ -368,33 +486,111 @@ const styles = StyleSheet.create({
     borderColor: CHAT_BORDER,
     overflow: 'hidden',
   },
+
+  // ── Header ──
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: CHAT_BORDER,
   },
   headerBtn: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 11,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+  },
+  headerBtnSpacer: { width: 34, height: 34 },
+  titleWrap: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  title: { fontSize: 16, fontWeight: '700', color: TEXT_PRIMARY },
+  subtitle: {
+    marginTop: 1,
+    fontSize: 11,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+  },
+
+  // ── Body ──
+  body: { flex: 1 },
+  errorWrap: { paddingHorizontal: 16 },
+  bodyContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+
+  nameRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  nameCol: { flex: 1 },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  title: { fontSize: 13, fontWeight: '700', color: TEXT_PRIMARY },
-  body: { flexGrow: 1, flexShrink: 1, minHeight: 120 },
-  bodyScrollContent: { flexGrow: 0 },
-  bodyContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14 },
-  footer: {
+  avatarActive: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: ACCENT_GOLD,
+  },
+  avatarText: { fontSize: 16, fontWeight: '700', color: ACCENT_GOLD },
+
+  labelRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  label: { fontSize: 12, fontWeight: '600', color: TEXT_PRIMARY },
+  counter: { fontSize: 11, color: TEXT_MUTED },
+  counterWarn: { color: '#E0B070' },
+  countPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  countPillText: { fontSize: 11, fontWeight: '600', color: ACCENT_GOLD },
+
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 42,
+    borderRadius: CHAT_RADIUS_BTN,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 12,
+  },
+  inputRowFocused: {
+    borderColor: ACCENT_GOLD,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  input: { flex: 1, fontSize: 14, color: TEXT_PRIMARY, paddingVertical: 0 },
+  clearBtn: { marginLeft: 6 },
+  section: { marginTop: 14 },
+
+  errorBanner: {
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: CHAT_RADIUS_BTN,
+    backgroundColor: 'rgba(224,112,112,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.25)',
+  },
+  errorText: { color: '#E07070', fontSize: 12, flex: 1, lineHeight: 18 },
+
+  // ── Footer ──
+  footer: {
     paddingHorizontal: 16,
     paddingTop: 10,
     gap: 8,
@@ -402,61 +598,39 @@ const styles = StyleSheet.create({
     borderTopColor: CHAT_BORDER,
     backgroundColor: CHAT_PANEL,
   },
-  footerBtn: {
-    minWidth: 88,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 14,
-    borderRadius: CHAT_RADIUS_BTN,
-  },
-  footerCancel: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  footerCancelText: { color: TEXT_MUTED, fontWeight: '600', fontSize: 12 },
-  footerPrimary: { backgroundColor: ACCENT_GOLD },
-  footerPrimaryDisabled: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  footerPrimaryText: { color: CHAT_BG, fontWeight: '700', fontSize: 12 },
-  footerPrimaryTextDisabled: { color: 'rgba(255,255,255,0.4)' },
-
-  label: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.9,
-    color: TEXT_MUTED,
-    opacity: 0.75,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 36,
-    borderRadius: CHAT_RADIUS_BTN,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    paddingLeft: 34,
-    paddingRight: 12,
-  },
-  inputIcon: { position: 'absolute', left: 11 },
-  input: { flex: 1, fontSize: 12, color: TEXT_PRIMARY, paddingVertical: 0 },
-  section: { marginTop: 16 },
-  errorBanner: {
-    marginTop: 12,
+  hintRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: CHAT_RADIUS_BTN,
-    backgroundColor: 'rgba(224,112,112,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.22)',
   },
-  errorText: { color: '#E07070', fontSize: 11, flex: 1 },
+  hintText: { fontSize: 12, color: TEXT_MUTED, flex: 1 },
+  footerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  footerBtn: {
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 16,
+    borderRadius: CHAT_RADIUS_BTN,
+  },
+  footerCancel: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  footerCancelText: { color: TEXT_PRIMARY, fontWeight: '600', fontSize: 14 },
+  footerPrimary: { flex: 1.6, backgroundColor: ACCENT_GOLD },
+  footerPrimaryDisabled: { backgroundColor: 'rgba(255,255,255,0.07)' },
+  footerPrimaryText: { color: CHAT_BG, fontWeight: '700', fontSize: 14 },
+  footerPrimaryTextDisabled: {
+    color: 'rgba(255,255,255,0.45)',
+    fontWeight: '600',
+    fontSize: 14,
+  },
 });
