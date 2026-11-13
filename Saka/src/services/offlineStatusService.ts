@@ -29,6 +29,7 @@ const QUEUE_KEYS: Array<{ key: string; label: string }> = [
   { key: 'saka.chat.textQueue.v1', label: 'Text messages' },
   { key: 'saka.profile.writeQueue.v1', label: 'Profile changes' },
   { key: 'HIKING_LOCATION_UPLOAD_QUEUE', label: 'GPS track points' },
+  { key: 'saka.safety.respQueue.v1', label: 'Safety check responses' }, // <-- ADDED
 ];
 
 export async function checkInternetConnection(): Promise<boolean> {
