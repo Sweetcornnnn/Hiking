@@ -29,7 +29,7 @@ import { mountainService, type Mountain } from '../services/mountainService';
 import MountainGuideEditor from './MountainGuideEditor';
 import AdminModal from '../admin/AdminModal';
 // Reused from the hiker-facing screen so the manager edits exactly what hikers see.
-import { VerticalMediaCarousel, getViewpointMedia, PC, type MediaItem } from '../screens/Viewpoint';
+import { VerticalMediaCarousel, getViewpointMedia, PC, type MediaItem } from '../screens/viewpoint';
 import {
   CHAT_BG,
   CHAT_ONLINE,
