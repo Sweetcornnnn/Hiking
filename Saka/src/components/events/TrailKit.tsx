@@ -81,7 +81,7 @@ export const formatTime = (t: string) => {
 // ── Frame ────────────────────────────────────────────────
 export function Screen({ children }: { children: React.ReactNode }) {
   return (
-    <SafeAreaView style={k.screen} edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView style={k.screen} edges={['top', 'bottom']}>
       {children}
     </SafeAreaView>
   );
@@ -165,14 +165,16 @@ export function SearchBox({
   value,
   onChangeText,
   placeholder,
+  compact = false,
 }: {
   value: string;
   onChangeText: (t: string) => void;
   placeholder: string;
+  compact?: boolean;
 }) {
   return (
-    <View style={k.field}>
-      <Ionicons name="search" size={16} color={T.faint} />
+    <View style={[k.field, compact && k.fieldCompact]}>
+      <Ionicons name="search" size={compact ? 14 : 16} color={T.faint} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -249,18 +251,28 @@ export function Chip({
   );
 }
 
-export function FilterButton({ count, onPress }: { count: number; onPress: () => void }) {
+export function FilterButton({
+  count,
+  onPress,
+  compact = false,
+}: {
+  count: number;
+  onPress: () => void;
+  compact?: boolean;
+}) {
   const on = count > 0;
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
-      style={[k.filterBtn, on && k.fieldActive]}
+      style={[k.filterBtn, compact && k.filterBtnCompact, on && k.fieldActive]}
       accessibilityRole="button"
       accessibilityLabel={on ? `Filters, ${count} active` : 'Filters'}
     >
-      <Ionicons name="options-outline" size={16} color={on ? T.gold : T.body} />
-      <Text style={[k.filterText, on && { color: T.gold }]}>Filters</Text>
+      <Ionicons name="options-outline" size={compact ? 14 : 16} color={on ? T.gold : T.body} />
+      <Text style={[k.filterText, compact && k.filterTextCompact, on && { color: T.gold }]}>
+        {compact ? 'Filter' : 'Filters'}
+      </Text>
       {on ? (
         <View style={k.badge}>
           <Text style={k.badgeText}>{count}</Text>
@@ -507,7 +519,7 @@ const k = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 4,
   },
   backBtn: { flexDirection: 'row', alignItems: 'center', minHeight: 40, paddingRight: 6 },
@@ -538,6 +550,7 @@ const k = StyleSheet.create({
     borderWidth: 1,
     borderColor: T.ctrlBorder,
   },
+  fieldCompact: { height: 34, paddingHorizontal: 8, gap: 6 },
   fieldActive: { borderColor: T.goldLine, backgroundColor: T.goldSoft },
   fieldInput: { flex: 1, color: T.text, fontSize: 14, paddingVertical: 0 },
   fieldText: { flex: 1, color: T.muted, fontSize: 14 },
@@ -553,7 +566,9 @@ const k = StyleSheet.create({
     borderWidth: 1,
     borderColor: T.ctrlBorder,
   },
+  filterBtnCompact: { height: 34, gap: 5, paddingHorizontal: 9 },
   filterText: { color: T.body, fontSize: 14, fontWeight: '600' },
+  filterTextCompact: { fontSize: 13 },
   badge: {
     minWidth: 18,
     height: 18,
