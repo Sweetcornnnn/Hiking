@@ -1,9 +1,7 @@
 // Manager.tsx — restyled to match Admin (same ChatScreen shell: sidebar rail + main panel,
-// CHAT_* tokens, feedback/logout toasts, AdminModal popups). Data layer unchanged.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+// CHAT_* tokens, shared Toast notifications, and AdminModal popups). Data layer unchanged.
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
-  Easing,
   Image,
   ScrollView,
   StyleSheet,
@@ -13,9 +11,10 @@ import {
   View,
   type ImageSourcePropType,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import Toast, { type ToastHandle, type ToastType } from '../components/Toast';
 import { useAuthStore } from '../store/authStore';
 import { isMountainTips, managerService, type ManagedViewpoint, type ManagerMountainContent } from '../services/managerService';
 import type {
@@ -60,11 +59,10 @@ const LOGISTICS_TABS: { id: LogisticsTab; label: string }[] = [
   { id: 'announcements', label: 'Announcements' },
 ];
 
-type ToastType = 'success' | 'error' | 'warning';
-
 export default function ManagerScreen() {
   const router = useRouter();
-  const { user, profile, isLoading: authLoading, signOut } = useAuthStore();
+  const insets = useSafeAreaInsets();
+  const { user, profile, isLoading: authLoading, signOut, clearError } = useAuthStore();
   const userId = user?.id;
   const profileRole = profile?.role;
   const [activeTab, setActiveTab] = useState<Tab>('mountain');
@@ -78,7 +76,8 @@ export default function ManagerScreen() {
   const [dirtyViewpointIds, setDirtyViewpointIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [dashboardLoadError, setDashboardLoadError] = useState<string | null>(null);
+  const [dashboardRetry, setDashboardRetry] = useState(0);
   const [description, setDescription] = useState('');
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
@@ -109,52 +108,31 @@ export default function ManagerScreen() {
     [selectedViewpoint?.id, selectedMountain?.id, selectedMountain?.name],
   );
 
-  // ── Feedback toast (same as Admin) ──
-  const [toast, setToast] = useState<{ type: ToastType; title: string; msg: string } | null>(null);
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastY = useRef(new Animated.Value(8)).current;
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showToast = (type: ToastType, title: string, msg: string) => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ type, title, msg });
-    toastOpacity.setValue(0);
-    toastY.setValue(8);
-    Animated.parallel([
-      Animated.timing(toastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(toastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-    ]).start();
-    toastTimer.current = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(toastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(toastY, { toValue: 8, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      ]).start(() => setToast(null));
-    }, 2800);
-  };
-  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  const toastRef = useRef<ToastHandle>(null);
+  const showToast = useCallback((type: ToastType, title: string, msg: string) => {
+    toastRef.current?.show({ type, title, message: msg });
+  }, []);
 
-  // ── Logout confirm (same as Admin) ──
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const logoutToastOpacity = useRef(new Animated.Value(0)).current;
-  const logoutToastY = useRef(new Animated.Value(-6)).current;
-  const openLogoutConfirm = () => {
-    setShowLogoutConfirm(true);
-    logoutToastOpacity.setValue(0);
-    logoutToastY.setValue(-6);
-    Animated.parallel([
-      Animated.timing(logoutToastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-    ]).start();
-  };
-  const dismissLogoutConfirm = () => {
-    Animated.parallel([
-      Animated.timing(logoutToastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(logoutToastY, { toValue: -4, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-    ]).start(() => setShowLogoutConfirm(false));
-  };
+  const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
+  const openLogoutConfirm = () => setLogoutConfirmVisible(true);
   const confirmLogout = async () => {
-    setShowLogoutConfirm(false);
-    await signOut();
-    router.replace('/Login');
+    setLogoutConfirmVisible(false);
+    try {
+      clearError();
+      await signOut();
+      const logoutError = useAuthStore.getState().error;
+      if (logoutError) {
+        showToast('error', 'Sign out failed', logoutError);
+        return;
+      }
+      router.replace('/Login');
+    } catch (logoutError: unknown) {
+      showToast(
+        'error',
+        'Sign out failed',
+        logoutError instanceof Error ? logoutError.message : 'Unable to sign out. Please try again.',
+      );
+    }
   };
 
   // ── Data ──
@@ -169,21 +147,33 @@ export default function ManagerScreen() {
       return;
     }
     let active = true;
+    setLoading(true);
+    setDashboardLoadError(null);
     void managerService.fetchAssignedMountains(userId)
       .then((rows) => {
         if (!active) return;
         setMountains(rows);
         if (rows[0]) setSelectedId(rows[0].id);
       })
-      .catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : 'Unable to load manager dashboard.'))
+      .catch((loadError: unknown) => {
+        if (active) {
+          setDashboardLoadError(
+            loadError instanceof Error ? loadError.message : 'Unable to load manager dashboard.',
+          );
+        }
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [authLoading, profileRole, router, userId]);
+  }, [authLoading, dashboardRetry, profileRole, router, userId]);
+
+  useEffect(() => {
+    if (loading || !dashboardLoadError) return;
+    showToast('error', 'Dashboard failed to load', dashboardLoadError);
+  }, [dashboardLoadError, loading, showToast]);
 
   useEffect(() => {
     if (!selectedMountain || !userId) return;
     let active = true;
-    setError(null);
     setContent(null);
     setSelectedViewpointId('');
     setDirtyViewpointIds([]);
@@ -200,10 +190,16 @@ export default function ManagerScreen() {
       setLocation(selectedMountain.location ?? '');
       setElevation(String(selectedMountain.elevation ?? 0));
     }).catch((loadError: unknown) => {
-      if (active) setError(loadError instanceof Error ? loadError.message : 'Unable to load mountain details.');
+      if (active) {
+        showToast(
+          'error',
+          'Mountain details failed to load',
+          loadError instanceof Error ? loadError.message : 'Unable to load mountain details.',
+        );
+      }
     });
     return () => { active = false; };
-  }, [selectedMountain, userId]);
+  }, [selectedMountain, showToast, userId]);
 
   const updateViewpoint = (field: Exclude<keyof ManagedViewpoint, 'tags' | 'features' | 'trail_notes'>, value: string) => {
     if (!selectedViewpoint) return;
@@ -253,7 +249,11 @@ export default function ManagerScreen() {
     if (!selectedMountain || !content) return;
     const numericElevation = Number(elevation);
     setSaving(true);
-    setError(null);
+    toastRef.current?.show({
+      type: 'loading',
+      title: 'Saving changes',
+      message: 'Updating mountain information, tips, and viewpoints.',
+    });
     try {
       await managerService.saveMountain(selectedMountain.id, {
         name,
@@ -279,7 +279,6 @@ export default function ManagerScreen() {
       showToast('success', 'Saved', 'Mountain information, tips, and viewpoint changes were saved.');
     } catch (saveError: unknown) {
       const message = saveError instanceof Error ? saveError.message : 'Unable to save changes.';
-      setError(message);
       showToast('error', 'Save Failed', message);
     } finally {
       setSaving(false);
@@ -468,6 +467,17 @@ export default function ManagerScreen() {
           {renderModalAction('Save changes', submitSave, 'primary', 'checkmark')}
         </>,
       )}
+      {renderModalShell(
+        logoutConfirmVisible,
+        () => setLogoutConfirmVisible(false),
+        'Sign out?',
+        'log-out-outline',
+        <Text style={ss.modalDesc}>You'll be logged out of the manager panel.</Text>,
+        <>
+          {renderModalAction('Cancel', () => setLogoutConfirmVisible(false))}
+          {renderModalAction('Sign out', () => { void confirmLogout(); }, 'danger', 'log-out-outline')}
+        </>,
+      )}
 
       {/* MAIN SHELL — same as Admin */}
       <SafeAreaView style={ss.screen} edges={['top']}>
@@ -523,14 +533,20 @@ export default function ManagerScreen() {
               </View>,
             )}
 
-            {error ? (
-              <View style={[ss.alertBanner, { margin: 14, marginBottom: 0 }]}>
-                <Ionicons name="alert-circle-outline" size={13} color="#E07070" />
-                <Text style={ss.alertBannerText}>{error}</Text>
-              </View>
-            ) : null}
-
-            {mountains.length === 0 ? (
+            {dashboardLoadError ? (
+              renderEmpty(
+                'alert-circle-outline',
+                'Dashboard unavailable',
+                dashboardLoadError,
+                <TouchableOpacity
+                  onPress={() => setDashboardRetry((retry) => retry + 1)}
+                  activeOpacity={0.85}
+                  style={ss.emptyAction}
+                >
+                  <Text style={ss.emptyActionText}>Try again</Text>
+                </TouchableOpacity>,
+              )
+            ) : mountains.length === 0 ? (
               renderEmpty(
                 'trail-sign-outline',
                 'No mountains assigned',
@@ -930,55 +946,7 @@ export default function ManagerScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Logout confirm */}
-      {showLogoutConfirm && (
-        <Animated.View style={[ss.logoutToast, { opacity: logoutToastOpacity, transform: [{ translateY: logoutToastY }] }]}>
-          <View style={ss.logoutToastBar} />
-          <View style={ss.logoutToastInner}>
-            <Text style={ss.logoutToastTitle}>Sign out?</Text>
-            <Text style={ss.logoutToastMsg}>You'll be logged out of the manager panel.</Text>
-            <View style={ss.logoutToastActions}>
-              <TouchableOpacity style={ss.logoutToastCancel} onPress={dismissLogoutConfirm}>
-                <Text style={ss.logoutToastCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={ss.logoutToastConfirm} onPress={confirmLogout}>
-                <Ionicons name="log-out-outline" size={11} color={CHAT_BG} />
-                <Text style={ss.logoutToastConfirmText}>Sign out</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Animated.View>
-      )}
-
-      {/* Feedback toast */}
-      {toast && (
-        <Animated.View
-          style={[
-            ss.feedbackToast,
-            toast.type === 'success' && ss.feedbackToastSuccess,
-            toast.type === 'error' && ss.feedbackToastError,
-            toast.type === 'warning' && ss.feedbackToastWarning,
-            { opacity: toastOpacity, transform: [{ translateY: toastY }] },
-          ]}
-        >
-          <View style={[ss.feedbackToastBar,
-            toast.type === 'success' && { backgroundColor: '#6FAF8A' },
-            toast.type === 'error' && { backgroundColor: '#E07070' },
-            toast.type === 'warning' && { backgroundColor: ACCENT_GOLD },
-          ]} />
-          <View style={ss.feedbackToastIcon}>
-            <Ionicons
-              name={toast.type === 'success' ? 'checkmark-circle' : toast.type === 'error' ? 'alert-circle' : 'warning'}
-              size={15}
-              color={toast.type === 'success' ? '#6FAF8A' : toast.type === 'error' ? '#E07070' : ACCENT_GOLD}
-            />
-          </View>
-          <View style={ss.feedbackToastContent}>
-            <Text style={ss.feedbackToastTitle}>{toast.title}</Text>
-            <Text style={ss.feedbackToastMsg}>{toast.msg}</Text>
-          </View>
-        </Animated.View>
-      )}
+      <Toast ref={toastRef} position="top-right" topOffset={insets.top + 10} />
     </>
   );
 }
@@ -1932,43 +1900,6 @@ const ss = StyleSheet.create({
   userPillName: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '600' },
   userPillEmail: { color: TEXT_MUTED, fontSize: 10, marginTop: 1 },
 
-  // Error banner
-  alertBanner: {
-    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-    backgroundColor: 'rgba(224,112,112,0.08)', borderWidth: 1, borderColor: 'rgba(224,112,112,0.3)',
-    borderRadius: 10, padding: 10,
-  },
-  alertBannerText: { flex: 1, color: 'rgba(255,255,255,0.75)', fontSize: 11, lineHeight: 15 },
-
-  // Toasts (identical to Admin)
-  logoutToast: {
-    position: 'absolute', bottom: 40, left: '50%', marginLeft: -140, width: 280,
-    flexDirection: 'row', backgroundColor: '#141E2D', borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(224,112,112,0.2)', overflow: 'hidden', zIndex: 100, elevation: 10,
-  },
-  logoutToastBar: { width: 3, backgroundColor: '#BF6A6A', alignSelf: 'stretch' },
-  logoutToastInner: { flex: 1, paddingHorizontal: 10, paddingVertical: 9 },
-  logoutToastTitle: { color: TEXT_PRIMARY, fontSize: 11, fontWeight: '700', marginBottom: 2 },
-  logoutToastMsg: { color: 'rgba(255,255,255,0.42)', fontSize: 10, lineHeight: 13, marginBottom: 8 },
-  logoutToastActions: { flexDirection: 'row', gap: 6 },
-  logoutToastCancel: { flex: 1, alignItems: 'center', paddingVertical: 5, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)' },
-  logoutToastCancelText: { color: TEXT_MUTED, fontSize: 10, fontWeight: '600' },
-  logoutToastConfirm: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 5, borderRadius: 6, backgroundColor: '#BF6A6A' },
-  logoutToastConfirmText: { color: CHAT_BG, fontSize: 10, fontWeight: '700' },
-
-  feedbackToast: {
-    position: 'absolute', bottom: 16, left: '50%', marginLeft: -148, width: 296,
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#141E2D',
-    borderRadius: 10, borderWidth: 1, overflow: 'hidden', zIndex: 200, elevation: 12,
-  },
-  feedbackToastSuccess: { borderColor: 'rgba(111,175,138,0.25)' },
-  feedbackToastError: { borderColor: 'rgba(224,112,112,0.25)' },
-  feedbackToastWarning: { borderColor: 'rgba(201,169,110,0.25)' },
-  feedbackToastBar: { width: 3, alignSelf: 'stretch' },
-  feedbackToastIcon: { paddingLeft: 10, paddingRight: 2, justifyContent: 'center' },
-  feedbackToastContent: { flex: 1, paddingHorizontal: 8, paddingVertical: 10 },
-  feedbackToastTitle: { color: TEXT_PRIMARY, fontSize: 11, fontWeight: '700', marginBottom: 1 },
-  feedbackToastMsg: { color: 'rgba(255,255,255,0.42)', fontSize: 10, lineHeight: 14 },
 });
 
 
