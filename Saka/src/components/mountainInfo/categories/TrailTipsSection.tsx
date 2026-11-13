@@ -61,7 +61,8 @@ function TrailDetail({ guide }: { guide: TrailGuide }) {
 
   const trail = (
     <>
-      <Text style={styles.kicker}>ON THE TRAIL</Text>
+      <Text style={styles.kicker}>ON THE TRAIL (SUMMIT TRAIL)</Text>
+      {guide.summitTrail ? <Text style={styles.blockText}>{guide.summitTrail}</Text> : null}
       {stops.map((stop, index) => (
         <View key={index} style={[styles.row, index > 0 && styles.rowRule]}>
           <Text style={styles.stopName} numberOfLines={1}>{stop.label}</Text>
@@ -69,8 +70,9 @@ function TrailDetail({ guide }: { guide: TrailGuide }) {
         </View>
       ))}
       <View style={stops.length > 0 ? styles.metaGroup : undefined}>
-        {landmarks ? <Meta label="Along the way" text={landmarks} /> : null}
+        {landmarks ? <Meta label="Along the way / nearby attractions" text={landmarks} /> : null}
         {guide.water ? <Meta label="Water" text={guide.water} /> : null}
+        {guide.notes ? <Meta label="Notes" text={guide.notes} /> : null}
         {guide.tip ? <Meta label="Note" text={guide.tip} /> : null}
       </View>
     </>

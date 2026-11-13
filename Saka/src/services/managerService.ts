@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { Mountain } from './mountainService';
-import type { MountainTips } from '../data/mountainTips';
+import { MOUNTAIN_TIPS_BY_ID, type MountainTips } from '../data/mountainTips';
 
 export interface ManagerMountainContent {
   mountain_id: string;
@@ -99,13 +99,19 @@ function isMountainTipsShape(tips: Record<string, unknown>): boolean {
         && (option.kind === undefined || typeof option.kind === 'string')
         && (option.pricePerPerson === undefined || typeof option.pricePerPerson === 'string' || typeof option.pricePerPerson === 'number')
         && hasOptionalString(option, 'note'))
+      && hasOptionalString(transportGuide, 'whereToAvail')
+      && hasOptionalString(transportGuide, 'nextStop')
+      && hasOptionalString(transportGuide, 'lastStop')
+      && hasOptionalString(transportGuide, 'faresNotes')
       && hasOptionalString(transportGuide, 'tip')))
     && (trailGuide === undefined || (isRecord(trailGuide)
       && typeof trailGuide.startPoint === 'string'
+      && hasOptionalString(trailGuide, 'summitTrail')
       && (trailGuide.stops === undefined || isLabelArray(trailGuide.stops, 'detail'))
       && (trailGuide.landmarks === undefined || isStringArray(trailGuide.landmarks))
       && hasOptionalString(trailGuide, 'dropOff')
       && hasOptionalString(trailGuide, 'water')
+      && hasOptionalString(trailGuide, 'notes')
       && hasOptionalString(trailGuide, 'tip')))
     && (etiquetteGuide === undefined || (isRecord(etiquetteGuide)
       && (etiquetteGuide.rules === undefined || isLabelArray(etiquetteGuide.rules, 'detail'))
@@ -160,6 +166,19 @@ function applyLegacyContent(tips: MountainTips, row: LegacyManagerContent): Moun
   };
 }
 
+function applyLocalGuideData(tips: MountainTips): MountainTips {
+  const localTips = MOUNTAIN_TIPS_BY_ID[tips.id];
+  if (!localTips) return tips;
+
+  return {
+    ...tips,
+    transportation: localTips.transportation,
+    transportGuide: localTips.transportGuide,
+    trailTips: localTips.trailTips,
+    trailGuide: localTips.trailGuide,
+  };
+}
+
 export const managerService = {
   async fetchAssignedMountains(userId: string): Promise<Mountain[]> {
     const { data: assignments, error: assignmentError } = await supabase
@@ -185,17 +204,27 @@ export const managerService = {
       .eq('mountain_id', mountainId)
       .maybeSingle();
     if (error) throw new Error(`Unable to load mountain information: ${error.message}`);
-    if (!data) return { mountain_id: mountainId, tips_data: createEmptyMountainTips(mountainId, mountainName) };
+    if (!data) {
+      return {
+        mountain_id: mountainId,
+        tips_data: applyLocalGuideData(createEmptyMountainTips(mountainId, mountainName)),
+      };
+    }
     if (!isMountainTips(data.tips_data)) {
       if (isRecord(data.tips_data) && Object.keys(data.tips_data).length === 0) {
         return {
           mountain_id: mountainId,
-          tips_data: applyLegacyContent(createEmptyMountainTips(mountainId, mountainName), data),
+          tips_data: applyLocalGuideData(
+            applyLegacyContent(createEmptyMountainTips(mountainId, mountainName), data),
+          ),
         };
       }
       throw new Error('Mountain guide data in Supabase is invalid. Ask an administrator to review it.');
     }
-    return { mountain_id: data.mountain_id, tips_data: applyLegacyContent(data.tips_data, data) };
+    return {
+      mountain_id: data.mountain_id,
+      tips_data: applyLocalGuideData(applyLegacyContent(data.tips_data, data)),
+    };
   },
 
   async fetchAllTips(): Promise<MountainTips[]> {
