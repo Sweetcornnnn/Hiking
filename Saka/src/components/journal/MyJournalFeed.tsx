@@ -4,7 +4,9 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  FlatList,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -71,71 +73,48 @@ const getImageUrl = (image: string): string => {
   return supabase.storage.from('journal-images').getPublicUrl(image).data.publicUrl ?? '';
 };
 
-const CARD_HEIGHT_RATIO = 0.94;
-const LOOP_REPEATS = 3;
-const SIDE_SCALE = 0.72;
-const SIDE_OPACITY = 0.3;
 const LINE_HEIGHT = 20;
 const HOLE_COUNT = 4;
 const PHOTO_RADIUS = 12;
+const VIEWER_HEADER_HEIGHT = 58;
 const SERIF = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
 const OVERLAY = `${BG_CARD}CC`;
 
-function JournalHeader({
-  subtitle,
-  onBack,
-  onNewEntry,
-  onDelete,
-}: {
-  subtitle?: string;
-  onBack: () => void;
-  onNewEntry: () => void;
-  onDelete?: () => void;
-}) {
+const HEADER_TITLE = 'Love Letters to Peaks';
+const HEADER_TAGLINE = 'Sweaty confessions, blurry summit selfies, and one deeply tragic blister.';
+
+function JournalHeader({ onBack, onNewEntry }: { onBack: () => void; onNewEntry: () => void }) {
+  const { width, height } = useWindowDimensions();
+  const compact = width > height;
   return (
-    <SafeAreaView edges={['left', 'right']}>
-      <View style={styles.header}>
+    <View style={[styles.heroHeader, compact && styles.heroHeaderCompact]}>
+      <View style={styles.heroRow}>
         <TouchableOpacity
-          style={styles.backBtn}
           onPress={onBack}
+          style={styles.heroIconBtn}
+          activeOpacity={0.75}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={18} color={TEXT_PRIMARY} />
+          <Ionicons name="chevron-back" size={20} color={ACCENT_GOLD} />
         </TouchableOpacity>
-
-        <View style={styles.titlePill}>
-          <Text style={styles.headerTitle} numberOfLines={1}>My Journal</Text>
-          {!!subtitle && (
-            <>
-              <View style={styles.titleDivider} />
-              <Text style={styles.subtitleText} numberOfLines={1}>{subtitle}</Text>
-            </>
-          )}
+        <View style={styles.heroCopy}>
+          <Text style={styles.heroTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} accessibilityRole="header">
+            {HEADER_TITLE}
+          </Text>
+          <Text style={styles.heroTagline} numberOfLines={compact ? 1 : 2}>{HEADER_TAGLINE}</Text>
         </View>
-
         <TouchableOpacity
           onPress={onNewEntry}
-          style={styles.newEntryBtn}
+          style={styles.heroIconBtn}
+          activeOpacity={0.75}
           accessibilityRole="button"
           accessibilityLabel="New journal entry"
         >
-          <Ionicons name="add" size={18} color={TEXT_PRIMARY} />
+          <Ionicons name="add" size={22} color={ACCENT_GOLD} />
         </TouchableOpacity>
-
-        {!!onDelete && (
-          <Pressable
-            onPress={onDelete}
-            style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Delete journal entry"
-          >
-            <Ionicons name="trash-outline" size={16} color={TEXT_DANGER} />
-          </Pressable>
-        )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -250,6 +229,26 @@ function EmptyState({ landscape, onNewEntry }: { landscape: boolean; onNewEntry:
   );
 }
 
+/** Edge-to-edge page background. Owns the safe-area insets so the feed reads as a screen, not a card. */
+function Screen({ row = false, children }: { row?: boolean; children: React.ReactNode }) {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={[
+        styles.screen,
+        row && styles.lsShell,
+        {
+          paddingTop: insets.top,
+          paddingBottom: row ? insets.bottom : Math.max(insets.bottom, 8),
+        },
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
 export default function MyJournalFeed({
   entries,
   mountains,
@@ -270,38 +269,31 @@ export default function MyJournalFeed({
   const landscape = screenW > screenH;
 
   if (isLoading && entries.length === 0) {
-    return landscape ? (
-      <View style={styles.lsShell}>
-        <JournalRail onBack={onBack} onNewEntry={onNewEntry} />
-        <SkeletonCard landscape />
-      </View>
-    ) : (
-      <>
+    return (
+      <Screen>
         <JournalHeader onBack={onBack} onNewEntry={onNewEntry} />
-        <SkeletonCard />
-      </>
+        <SkeletonCard landscape={landscape} />
+      </Screen>
     );
   }
 
   if (!isLoading && entries.length === 0) {
-    return landscape ? (
-      <View style={styles.lsShell}>
-        <JournalRail onBack={onBack} onNewEntry={onNewEntry} />
-        <View style={styles.lsEmptyWrap}>
-          <EmptyState landscape onNewEntry={onNewEntry} />
-        </View>
-      </View>
-    ) : (
-      <>
+    return (
+      <Screen>
         <JournalHeader onBack={onBack} onNewEntry={onNewEntry} />
-        <EmptyState landscape={false} onNewEntry={onNewEntry} />
-      </>
+        {landscape ? (
+          <View style={styles.lsEmptyWrap}>
+            <EmptyState landscape onNewEntry={onNewEntry} />
+          </View>
+        ) : (
+          <EmptyState landscape={false} onNewEntry={onNewEntry} />
+        )}
+      </Screen>
     );
   }
 
   return (
-    <DiaryCarousel
-      key={entries.map((entry) => entry.id).join(':')}
+    <FeedColumns
       entries={entries}
       mountainsById={mountainsById}
       onDelete={onDelete}
@@ -313,227 +305,19 @@ export default function MyJournalFeed({
   );
 }
 
-function DiaryCarousel({
-  entries,
-  mountainsById,
-  onDelete,
-  onEdit,
-  onUpdateNote,
-  onBack,
-  onNewEntry,
-}: {
-  entries: JournalEntry[];
-  mountainsById: Map<string, string>;
-  onDelete: (entry: JournalEntry) => void;
-  onEdit: (entry: JournalEntry, index: number, uri: string) => void;
-  onUpdateNote?: (entry: JournalEntry, changes: NoteChanges) => Promise<void> | void;
-  onBack: () => void;
-  onNewEntry: () => void;
-}) {
-  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
-  const landscape = windowWidth > windowHeight;
-  const insets = useSafeAreaInsets();
-  const count = entries.length;
-  const loops = count > 1;
-  const fallbackHeight = Math.round(Math.max(340, Math.min(windowHeight * 0.6, 520)));
-  const [measuredHeight, setMeasuredHeight] = useState(0);
-  const panelHeight = measuredHeight > 0 ? measuredHeight : fallbackHeight;
-  const cardHeight = Math.round(panelHeight * CARD_HEIGHT_RATIO);
-  const cardGap = -Math.round(cardHeight * 0.04);
-  const itemHeight = cardHeight + cardGap;
-  const verticalPad = (panelHeight - cardHeight) / 2;
-  const middleStart = loops ? count * Math.floor(LOOP_REPEATS / 2) : 0;
+const ROW_GAP = 14;
 
-  const slots = useMemo(
-    () => Array.from({ length: count * (loops ? LOOP_REPEATS : 1) }, (_, slot) => ({
-      entry: entries[slot % count],
-      slot,
-    })),
-    [entries, count, loops],
-  );
-  const scrollRef = useRef<ScrollView | null>(null);
-  const [scrollY] = useState(() => new Animated.Value(0));
-  const lastSlot = useRef(middleStart);
-  const [fade] = useState(() => new Animated.Value(1));
-  const [activeSlot, setActiveSlot] = useState(middleStart);
-  const [shownIndex, setShownIndex] = useState(0);
-  const [pageOpen, setPageOpen] = useState(false);
-
-  const activeIndex = activeSlot % count;
-  const activeEntry = entries[activeIndex];
-  const shownEntry = entries[Math.min(shownIndex, count - 1)];
-  const shownImages = useMemo(
-    () => (shownEntry.images ?? []).filter(Boolean).map(getImageUrl).filter(Boolean),
-    [shownEntry.images],
-  );
-
-  useEffect(() => {
-    if (!loops) return;
-    const frame = requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ y: middleStart * itemHeight, animated: false });
-      scrollY.setValue(middleStart * itemHeight);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [itemHeight, loops, middleStart, scrollY]);
-
-  const handleScroll = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const offsetY = event.nativeEvent.contentOffset.y;
-    scrollY.setValue(offsetY);
-    const slot = Math.max(0, Math.min(slots.length - 1, Math.round(offsetY / itemHeight)));
-    if (slot !== lastSlot.current) {
-      lastSlot.current = slot;
-      setActiveSlot(slot);
-    }
-  };
-
-  const handleMomentumEnd = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    if (!loops) return;
-    const slot = Math.round(event.nativeEvent.contentOffset.y / itemHeight);
-    if (slot < count || slot >= count * 2) {
-      const position = ((slot % count) + count) % count;
-      const centeredSlot = middleStart + position;
-      scrollRef.current?.scrollTo({ y: centeredSlot * itemHeight, animated: false });
-      scrollY.setValue(centeredSlot * itemHeight);
-      lastSlot.current = centeredSlot;
-      setActiveSlot(centeredSlot);
-    }
-  };
-
-  useEffect(() => {
-    if (activeIndex === shownIndex) return;
-    fade.stopAnimation();
-    Animated.timing(fade, {
-      toValue: 0,
-      duration: ANIM.fadeMs / 2,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished) return;
-      setShownIndex(activeIndex);
-      Animated.timing(fade, {
-        toValue: 1,
-        duration: ANIM.fadeMs,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-    });
-  }, [activeIndex, fade, shownIndex]);
-
-  const goTo = (slot: number) =>
-    scrollRef.current?.scrollTo({ y: slot * itemHeight, animated: true });
-
-  return (
-    <View style={[styles.card, styles.fill, landscape ? styles.lsRoot : { paddingBottom: Math.max(insets.bottom, 8) }]}>
-      {landscape ? (
-        <JournalRail
-          page={activeIndex + 1}
-          total={count}
-          onBack={onBack}
-          onNewEntry={onNewEntry}
-          onDelete={() => onDelete(activeEntry)}
-          onPrev={loops ? () => goTo(activeSlot - 1) : undefined}
-          onNext={loops ? () => goTo(activeSlot + 1) : undefined}
-        />
-      ) : (
-        <JournalHeader
-          subtitle={count > 1 ? `Page ${activeIndex + 1} of ${count}` : 'Page 1'}
-          onBack={onBack}
-          onNewEntry={onNewEntry}
-          onDelete={() => onDelete(activeEntry)}
-        />
-      )}
-
-      <View
-        style={[styles.row, styles.fill, landscape && styles.lsRow]}
-        onLayout={(event) => {
-          const nextHeight = Math.round(event.nativeEvent.layout.height);
-          setMeasuredHeight((current) =>
-            nextHeight > 0 && nextHeight !== current ? nextHeight : current,
-          );
-        }}
-      >
-        <Animated.ScrollView
-          ref={scrollRef}
-          style={[styles.notesColumn, landscape && styles.lsNotes]}
-          contentContainerStyle={{ paddingVertical: verticalPad }}
-          showsVerticalScrollIndicator={false}
-          decelerationRate="fast"
-          bounces={false}
-          nestedScrollEnabled
-          scrollEnabled={loops}
-          snapToInterval={itemHeight}
-          snapToAlignment="start"
-          scrollEventThrottle={16}
-          onScroll={handleScroll}
-          onMomentumScrollEnd={handleMomentumEnd}
-        >
-          {slots.map(({ entry, slot }) => {
-            const inputRange = [
-              (slot - 1) * itemHeight,
-              slot * itemHeight,
-              (slot + 1) * itemHeight,
-            ];
-            const scale = scrollY.interpolate({
-              inputRange,
-              outputRange: [SIDE_SCALE, 1, SIDE_SCALE],
-              extrapolate: 'clamp',
-            });
-            const opacity = scrollY.interpolate({
-              inputRange,
-              outputRange: [SIDE_OPACITY, 1, SIDE_OPACITY],
-              extrapolate: 'clamp',
-            });
-            return (
-              <Animated.View
-                key={`${entry.id}-${slot}`}
-                style={{
-                  height: cardHeight,
-                  marginBottom: cardGap,
-                  transform: [{ scale }],
-                  opacity,
-                }}
-              >
-                <NotePage
-                  entry={entry}
-                  locationLabel={entry.mountain_id ? mountainsById.get(entry.mountain_id) : undefined}
-                  onPress={() => (slot === activeSlot ? setPageOpen(true) : goTo(slot))}
-                />
-              </Animated.View>
-            );
-          })}
-        </Animated.ScrollView>
-
-        <Animated.View style={[styles.photoColumn, landscape && styles.lsPhoto, { opacity: fade }]}>
-          <View style={{ height: cardHeight }}>
-            <View style={styles.tape} pointerEvents="none" />
-            <PhotoPanel
-              key={shownEntry.id}
-              images={shownImages}
-              onEdit={(imageIndex, uri) => onEdit(shownEntry, imageIndex, uri)}
-            />
-          </View>
-        </Animated.View>
-      </View>
-
-      <NotePageModal
-        visible={pageOpen}
-        entry={activeEntry}
-        locationLabel={activeEntry.mountain_id ? mountainsById.get(activeEntry.mountain_id) : undefined}
-        onClose={() => setPageOpen(false)}
-        onSave={onUpdateNote}
-      />
-    </View>
-  );
-}
-
+/** Paper note page: the left column. */
 function NotePage({
   entry,
   locationLabel,
   onPress,
+  onDelete,
 }: {
   entry: JournalEntry;
   locationLabel?: string;
   onPress: () => void;
+  onDelete: () => void;
 }) {
   const [bodyHeight, setBodyHeight] = useState(0);
   const lineCount = Math.max(0, Math.floor(bodyHeight / LINE_HEIGHT));
@@ -556,6 +340,15 @@ function NotePage({
               {entry.is_public && (
                 <Ionicons name="earth-outline" size={11} color={ACCENT_GOLD} accessibilityLabel="Public" />
               )}
+              <Pressable
+                onPress={onDelete}
+                hitSlop={8}
+                style={({ pressed }) => [styles.cardDeleteBtn, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${entry.title || 'untitled entry'}`}
+              >
+                <Ionicons name="trash-outline" size={12} color={TEXT_DANGER} />
+              </Pressable>
             </View>
           </View>
           {!!locationLabel && (
@@ -576,6 +369,152 @@ function NotePage({
           </View>
         </View>
       </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Two separate columns, notes on the left and photos on the right. Both scroll, and they stay
+ * row-aligned: dragging either column moves the other to the same offset. Every card has a fixed
+ * height and nothing scales, so nothing resizes while you scroll.
+ */
+function FeedColumns({
+  entries,
+  mountainsById,
+  onDelete,
+  onEdit,
+  onUpdateNote,
+  onBack,
+  onNewEntry,
+}: {
+  entries: JournalEntry[];
+  mountainsById: Map<string, string>;
+  onDelete: (entry: JournalEntry) => void;
+  onEdit: (entry: JournalEntry, index: number, uri: string) => void;
+  onUpdateNote?: (entry: JournalEntry, changes: NoteChanges) => Promise<void> | void;
+  onBack: () => void;
+  onNewEntry: () => void;
+}) {
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const landscape = windowWidth > windowHeight;
+  const insets = useSafeAreaInsets();
+
+  const [measuredHeight, setMeasuredHeight] = useState(0);
+  const areaHeight = measuredHeight > 0 ? measuredHeight : Math.round(windowHeight * 0.6);
+  const cardHeight = Math.max(200, Math.min(Math.round(areaHeight * (landscape ? 0.8 : 0.62)), 380));
+  const rowHeight = cardHeight + ROW_GAP;
+
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openEntry = openId ? entries.find((entry) => entry.id === openId) ?? null : null;
+  const [viewer, setViewer] = useState<{ id: string; index: number } | null>(null);
+  const viewerEntry = viewer ? entries.find((entry) => entry.id === viewer.id) ?? null : null;
+  const viewerImages = useMemo(
+    () => (viewerEntry?.images ?? []).filter(Boolean).map(getImageUrl).filter(Boolean),
+    [viewerEntry],
+  );
+
+  const notesRef = useRef<FlatList<JournalEntry> | null>(null);
+  const photosRef = useRef<FlatList<JournalEntry> | null>(null);
+  const driver = useRef<'notes' | 'photos' | null>(null);
+
+  const follow = (from: 'notes' | 'photos') => (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    if (driver.current !== from) return;
+    const target = from === 'notes' ? photosRef.current : notesRef.current;
+    target?.scrollToOffset({ offset: event.nativeEvent.contentOffset.y, animated: false });
+  };
+
+  const sharedListProps = {
+    data: entries,
+    keyExtractor: (entry: JournalEntry) => entry.id,
+    getItemLayout: (_: unknown, index: number) => ({ length: rowHeight, offset: rowHeight * index, index }),
+    showsVerticalScrollIndicator: false,
+    decelerationRate: 'fast' as const,
+    snapToInterval: rowHeight,
+    snapToAlignment: 'start' as const,
+    nestedScrollEnabled: true,
+    scrollEventThrottle: 16,
+    initialNumToRender: 3,
+    windowSize: 7,
+    contentContainerStyle: { paddingTop: 8, paddingBottom: Math.max(insets.bottom, 8) + 8 },
+  };
+
+  return (
+    <View
+      style={[
+        styles.screen,
+        {
+          paddingTop: insets.top,
+          paddingBottom: landscape ? insets.bottom : 0,
+        },
+      ]}
+    >
+      <JournalHeader onBack={onBack} onNewEntry={onNewEntry} />
+
+      <View
+        style={[styles.row, styles.fill, landscape && styles.lsRow]}
+        onLayout={(event) => {
+          const next = Math.round(event.nativeEvent.layout.height);
+          setMeasuredHeight((current) => (next > 0 && next !== current ? next : current));
+        }}
+      >
+        <FlatList
+          ref={notesRef}
+          {...sharedListProps}
+          style={[styles.notesColumn, landscape && styles.lsNotes]}
+          onScrollBeginDrag={() => { driver.current = 'notes'; }}
+          onMomentumScrollBegin={() => { driver.current = 'notes'; }}
+          onScroll={follow('notes')}
+          renderItem={({ item }) => (
+            <View style={{ height: rowHeight, paddingBottom: ROW_GAP }}>
+              <NotePage
+                entry={item}
+                locationLabel={item.mountain_id ? mountainsById.get(item.mountain_id) : undefined}
+                onPress={() => setOpenId(item.id)}
+                onDelete={() => onDelete(item)}
+              />
+            </View>
+          )}
+        />
+
+        <FlatList
+          ref={photosRef}
+          {...sharedListProps}
+          style={[styles.photoList, landscape && styles.lsPhoto]}
+          onScrollBeginDrag={() => { driver.current = 'photos'; }}
+          onMomentumScrollBegin={() => { driver.current = 'photos'; }}
+          onScroll={follow('photos')}
+          renderItem={({ item }) => (
+            <View style={{ height: rowHeight, paddingBottom: ROW_GAP }}>
+              <View style={styles.fill}>
+                <PhotoCollage
+                  images={(item.images ?? []).filter(Boolean).map(getImageUrl).filter(Boolean)}
+                  onOpen={(imageIndex) => setViewer({ id: item.id, index: imageIndex })}
+                />
+              </View>
+            </View>
+          )}
+        />
+      </View>
+
+      <PhotoViewerModal
+        visible={viewerEntry !== null && viewerImages.length > 0}
+        images={viewerImages}
+        entry={viewerEntry}
+        locationLabel={viewerEntry?.mountain_id ? mountainsById.get(viewerEntry.mountain_id) : undefined}
+        startIndex={viewer?.index ?? 0}
+        onClose={() => setViewer(null)}
+        onEdit={(imageIndex, uri) => {
+          if (viewerEntry) onEdit(viewerEntry, imageIndex, uri);
+        }}
+      />
+
+      <NotePageModal
+        visible={openEntry !== null}
+        entry={openEntry ?? entries[0]}
+        locationLabel={openEntry?.mountain_id ? mountainsById.get(openEntry.mountain_id) : undefined}
+        onClose={() => setOpenId(null)}
+        onSave={onUpdateNote}
+      />
     </View>
   );
 }
@@ -778,15 +717,6 @@ function NotePageModal({
                 <Ionicons name="pencil-outline" size={15} color={ACCENT_GOLD} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              onPress={editing ? cancelEdit : closeModal}
-              style={styles.modalClose}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={editing ? 'Cancel editing' : 'Close page'}
-            >
-              <Ionicons name="close" size={16} color={TEXT_PRIMARY} />
-            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
@@ -794,19 +724,81 @@ function NotePageModal({
   );
 }
 
-function PhotoPanel({
-  images,
-  onEdit,
-}: {
-  images: string[];
-  onEdit: (index: number, uri: string) => void;
-}) {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const [imageIndex, setImageIndex] = useState(0);
-  const [failed, setFailed] = useState<Set<number>>(new Set());
-  const multiple = images.length > 1;
+const PAPER = '#F1EADB';
 
-  if (images.length === 0) {
+type CollageFrame = { left: number; top: number; width: number; height: number; rotate: number; z: number };
+
+/** Scattered, overlapping, taped photos for entries with 1 to 3 pictures. */
+function computeCollage(count: number, W: number, H: number): CollageFrame[] {
+  const pad = 8;
+  const innerW = W - pad * 2;
+  if (count === 1) {
+    const height = Math.min(H - pad * 2, innerW * 1.35);
+    return [{ left: pad, top: (H - height) / 2, width: innerW, height, rotate: -3, z: 1 }];
+  }
+  if (count === 2) {
+    const width = innerW * 0.8;
+    const height = Math.min(H * 0.52, width * 1.25);
+    const overlap = height * 0.1;
+    const top = (H - (height * 2 - overlap)) / 2;
+    return [
+      { left: pad, top, width, height, rotate: -4, z: 1 },
+      { left: W - pad - width, top: top + height - overlap, width, height, rotate: 3, z: 2 },
+    ];
+  }
+  const width = innerW * 0.74;
+  const height = Math.min(H * 0.33, width * 1.2);
+  const step = height * 0.9;
+  const top = (H - (step * 2 + height)) / 2;
+  return [
+    { left: pad, top, width, height, rotate: -5, z: 1 },
+    { left: W - pad - width, top: top + step, width, height, rotate: 4, z: 2 },
+    { left: pad + (innerW - width) * 0.4, top: top + step * 2, width, height, rotate: -2, z: 3 },
+  ];
+}
+
+function Pic({
+  uri,
+  style,
+  contentFit = 'cover',
+  onLoad,
+}: {
+  uri: string;
+  style: any;
+  contentFit?: 'cover' | 'contain';
+  onLoad?: (width: number, height: number) => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <View style={[style, styles.picFallback]}>
+        <Ionicons name="image-outline" size={22} color={TEXT_MUTED} />
+      </View>
+    );
+  }
+  return (
+    <ExpoImage
+      source={{ uri }}
+      style={style}
+      contentFit={contentFit}
+      transition={ANIM.fadeMs}
+      cachePolicy="memory-disk"
+      onLoad={(event) => onLoad?.(event.source.width, event.source.height)}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/**
+ * 1-3 photos: tilted, overlapping prints stuck on with tape (one, two or three of them).
+ * 4 or more: a tidy 2x2 contact sheet; the last tile shows "+N" for the rest.
+ * Tapping any photo opens it in the viewer at that picture.
+ */
+function PhotoCollage({ images, onOpen }: { images: string[]; onOpen: (index: number) => void }) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const count = images.length;
+
+  if (count === 0) {
     return (
       <View style={styles.photoPlaceholder}>
         <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
@@ -815,53 +807,218 @@ function PhotoPanel({
     );
   }
 
+  let content: React.ReactNode = null;
+  if (size.width > 0 && size.height > 0) {
+    if (count <= 3) {
+      content = computeCollage(count, size.width, size.height).map((frame, index) => (
+        <Pressable
+          key={`${images[index]}-${index}`}
+          onPress={() => onOpen(index)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open photo ${index + 1} of ${count}`}
+          style={({ pressed }) => [
+            styles.polaroid,
+            {
+              left: frame.left,
+              top: frame.top,
+              width: frame.width,
+              height: frame.height,
+              zIndex: frame.z,
+              transform: [{ rotate: `${frame.rotate}deg` }, { scale: pressed ? 0.97 : 1 }],
+            },
+          ]}
+        >
+          <View style={styles.tape} pointerEvents="none" />
+          <View style={styles.polaroidImageWrap}>
+            <Pic uri={images[index]} style={styles.fill} />
+          </View>
+        </Pressable>
+      ));
+    } else {
+      const availableWidth = Math.max(0, size.width - 16);
+      const availableHeight = Math.max(0, size.height - 16);
+      const frameWidth = Math.min(availableWidth, availableHeight);
+      const tile = (frameWidth - 10 - 6) / 2;
+      const frameHeight = tile * 2 + 6 + 10;
+      content = (
+        <View style={[styles.mosaic, { left: (size.width - frameWidth) / 2, top: (size.height - frameHeight) / 2, width: frameWidth }]}>
+          {images.slice(0, 4).map((uri, index) => (
+            <Pressable
+              key={`${uri}-${index}`}
+              onPress={() => onOpen(index)}
+              accessibilityRole="button"
+              accessibilityLabel={index === 3 && count > 4 ? `Open all ${count} photos` : `Open photo ${index + 1} of ${count}`}
+              style={({ pressed }) => [{ width: tile, height: tile }, pressed && styles.pressed]}
+            >
+              <Pic uri={uri} style={styles.mosaicPic} />
+            </Pressable>
+          ))}
+        </View>
+      );
+    }
+  }
+
   return (
     <View
-      style={styles.photoFrame}
+      style={styles.fill}
       onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
     >
-      {size.width > 0 && (
-        <ScrollView
-          horizontal
-          pagingEnabled
-          scrollEnabled={multiple}
-          nestedScrollEnabled
-          bounces={false}
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={(event) => setImageIndex(Math.round(event.nativeEvent.contentOffset.x / size.width))}
-        >
-          {images.map((uri, index) => failed.has(index) ? (
-            <View key={`${uri}-${index}`} style={[styles.photoFallback, { width: size.width, height: size.height }]}>
-              <Ionicons name="image-outline" size={24} color={TEXT_MUTED} />
-            </View>
-          ) : (
-            <ExpoImage
-              key={`${uri}-${index}`}
-              source={{ uri }}
-              style={{ width: size.width, height: size.height }}
-              contentFit="cover"
-              transition={ANIM.fadeMs}
-              cachePolicy="memory-disk"
-              onError={() => setFailed((current) => new Set(current).add(index))}
-            />
-          ))}
-        </ScrollView>
-      )}
-      <TouchableOpacity
-        onPress={() => onEdit(imageIndex, images[imageIndex])}
-        style={styles.editPhotoButton}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel="Edit photo"
-      >
-        <Ionicons name="pencil-outline" size={15} color={TEXT_PRIMARY} />
-      </TouchableOpacity>
-      {multiple && (
-        <View style={styles.imageDots} pointerEvents="none">
-          {images.map((_, index) => <View key={index} style={[styles.dot, index === imageIndex && styles.dotActive]} />)}
-        </View>
-      )}
+      {content}
     </View>
+  );
+}
+
+/** Centered image-only modal with swipe and edit controls. */
+function PhotoViewerModal({
+  visible,
+  images,
+  entry,
+  locationLabel,
+  startIndex,
+  onClose,
+  onEdit,
+}: {
+  visible: boolean;
+  images: string[];
+  entry: JournalEntry | null;
+  locationLabel?: string;
+  startIndex: number;
+  onClose: () => void;
+  onEdit: (index: number, uri: string) => void;
+}) {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const maxModalWidth = Math.min(width - insets.left - insets.right - 32, 720);
+  const maxModalHeight = Math.min(height - insets.top - insets.bottom - 48 - VIEWER_HEADER_HEIGHT, 760);
+  const [index, setIndex] = useState(startIndex);
+  const [viewerSize, setViewerSize] = useState({ width: 0, height: 0 });
+  const [imageSizes, setImageSizes] = useState<Record<string, { width: number; height: number }>>({});
+  const pagerRef = useRef<ScrollView | null>(null);
+  const multiple = images.length > 1;
+  const activeImageSize = imageSizes[images[index]];
+  const imageAspectRatio = activeImageSize?.width && activeImageSize.height
+    ? activeImageSize.width / activeImageSize.height
+    : undefined;
+  const maxAspectRatio = maxModalWidth / maxModalHeight;
+  const modalWidth = imageAspectRatio
+    ? imageAspectRatio > maxAspectRatio ? maxModalWidth : maxModalHeight * imageAspectRatio
+    : maxModalWidth;
+  const modalHeight = imageAspectRatio
+    ? imageAspectRatio > maxAspectRatio ? maxModalWidth / imageAspectRatio : maxModalHeight
+    : maxModalHeight;
+
+  useEffect(() => {
+    if (!visible) return;
+    setIndex(startIndex);
+  }, [visible, startIndex]);
+
+  useEffect(() => {
+    if (!visible || viewerSize.width <= 0) return;
+    const frame = requestAnimationFrame(() =>
+      pagerRef.current?.scrollTo({ x: index * viewerSize.width, animated: false }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [visible, startIndex, index, viewerSize.width]);
+
+  return (
+    <Modal {...FULLSCREEN_MODAL_PROPS} visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.viewerRoot}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessible={false}
+        />
+        <View style={[styles.viewerModal, { width: modalWidth, height: modalHeight + VIEWER_HEADER_HEIGHT }]}>
+          <View style={styles.viewerHeader}>
+            <View style={styles.viewerHeaderInfo}>
+              <Text style={styles.viewerHeaderTitle} numberOfLines={1}>
+                {entry?.title || 'Untitled entry'}
+              </Text>
+              <View style={styles.viewerHeaderMeta}>
+                <Text style={styles.viewerHeaderDetail} numberOfLines={1}>
+                  {entry ? formatDiaryDate(entry.created_at) : ''}
+                </Text>
+                <Ionicons name="location-outline" size={12} color={TEXT_MUTED} />
+                <Text style={styles.viewerHeaderDetail} numberOfLines={1}>
+                  {locationLabel || 'Mountain not specified'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.viewerCounter} accessibilityLabel={`Image ${index + 1} of ${images.length}`}>
+              <Text style={styles.viewerCounterText}>{index + 1} of {images.length}</Text>
+            </View>
+          </View>
+          <View
+            style={styles.viewerImageArea}
+            onLayout={(event) => {
+              const { width: areaWidth, height: areaHeight } = event.nativeEvent.layout;
+              setViewerSize({ width: areaWidth, height: areaHeight });
+            }}
+          >
+            <ScrollView
+              ref={pagerRef}
+              style={styles.viewerPager}
+              horizontal
+              pagingEnabled
+              decelerationRate="fast"
+              scrollEnabled={multiple}
+              bounces={false}
+              showsHorizontalScrollIndicator={false}
+              contentOffset={{ x: startIndex * viewerSize.width, y: 0 }}
+              onMomentumScrollEnd={(event) => {
+                if (viewerSize.width > 0) {
+                  const nextIndex = Math.round(event.nativeEvent.contentOffset.x / viewerSize.width);
+                  if (nextIndex !== index) {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setIndex(nextIndex);
+                  }
+                }
+              }}
+            >
+              {images.map((uri, i) => (
+                <Pressable
+                  key={`${uri}-${i}`}
+                  onLongPress={() => {
+                    onClose();
+                    onEdit(i, uri);
+                  }}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={`Photo ${i + 1} of ${images.length}. Long press to edit.`}
+                  style={[styles.viewerImagePage, { width: viewerSize.width, height: viewerSize.height }]}
+                >
+                  <Pic
+                    uri={uri}
+                    contentFit="contain"
+                    style={styles.viewerImage}
+                    onLoad={(imageWidth, imageHeight) => {
+                      if (imageWidth > 0 && imageHeight > 0) {
+                        setImageSizes((current) => ({
+                          ...current,
+                          [uri]: { width: imageWidth, height: imageHeight },
+                        }));
+                      }
+                    }}
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              onPress={() => {
+                const activeImage = images[index];
+                if (!activeImage) return;
+                onClose();
+                onEdit(index, activeImage);
+              }}
+              style={({ pressed }) => [styles.viewerEditButton, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Edit photo"
+            >
+              <Ionicons name="pencil-outline" size={17} color={ACCENT_GOLD} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -885,25 +1042,16 @@ function SkeletonCard({ landscape = false }: { landscape?: boolean }) {
   }, [pulse]);
 
   return (
-    <Animated.View style={[styles.card, landscape && styles.lsSkeleton, { opacity: pulse }]} accessibilityLabel="Loading journal entries">
-      {!landscape && (
-        <View style={styles.skeletonHeader}>
-          <View style={skeletonStyles.avatar} />
-          <View style={skeletonStyles.nameBlock}>
-            <View style={[skeletonStyles.line, { width: '40%' }]} />
-            <View style={[skeletonStyles.line, { width: '22%', height: 8 }]} />
-          </View>
-        </View>
-      )}
+    <Animated.View style={[styles.fill, landscape && styles.lsSkeleton, { opacity: pulse }]} accessibilityLabel="Loading journal entries">
       <View style={[styles.row, landscape ? [styles.fill, styles.lsRow] : { height: 280 }]}>
-        <View style={[styles.notesColumn, skeletonStyles.page]}>
+        <View style={[styles.notesColumn, landscape && styles.lsNotes, skeletonStyles.page]}>
           <View style={[skeletonStyles.line, { width: '35%', height: 8 }]} />
           <View style={[skeletonStyles.line, { width: '70%', height: 14 }]} />
           <View style={[skeletonStyles.line, { width: '92%' }]} />
           <View style={[skeletonStyles.line, { width: '85%' }]} />
           <View style={[skeletonStyles.line, { width: '60%' }]} />
         </View>
-        <View style={[styles.photoColumn, skeletonStyles.photo]} />
+        <View style={[styles.photoColumn, landscape && styles.lsPhoto, skeletonStyles.photo]} />
       </View>
     </Animated.View>
   );
@@ -968,6 +1116,7 @@ const styles = StyleSheet.create({
     backgroundColor: ACCENT_GOLD,
   },
   emptyButtonText: { color: BG_CARD, fontSize: FONT.itemSize, fontWeight: '800' },
+  screen: { flex: 1, backgroundColor: BG_CARD },
   card: {
     backgroundColor: BG_CARD,
     borderRadius: RADIUS_CARD,
@@ -1025,6 +1174,13 @@ const styles = StyleSheet.create({
   syncFailed: { color: TEXT_DANGER, fontSize: 9, marginTop: 3 },
   syncError: { color: TEXT_FAINT, fontSize: 9, marginTop: 2 },
   header: { flexDirection: 'row', alignItems: 'center', gap: SPACING.gap, paddingHorizontal: 12, paddingTop: 6, paddingBottom: SPACING.gapLg },
+  heroHeader: { marginHorizontal: 16, paddingHorizontal: 12, paddingTop: 20, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: BORDER_DEFAULT, marginBottom: 8 },
+  heroHeaderCompact: { paddingTop: 12, paddingBottom: 6, marginBottom: 4 },
+  heroRow: { flexDirection: 'row', alignItems: 'center', minHeight: 40 },
+  heroIconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  heroCopy: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingHorizontal: 6 },
+  heroTitle: { color: TEXT_PRIMARY, fontFamily: SERIF, fontSize: 20, textAlign: 'center' },
+  heroTagline: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center' },
   backBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY, borderWidth: 1, borderColor: CHAT_BORDER_STRONG },
   titlePill: { flexShrink: 1, minWidth: 0, height: 34, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: 17, backgroundColor: OVERLAY, borderWidth: 1, borderColor: CHAT_BORDER_STRONG },
   headerTitle: { flexShrink: 1, color: TEXT_PRIMARY, fontSize: FONT.nameSize, fontWeight: FONT.namWeight },
@@ -1033,11 +1189,12 @@ const styles = StyleSheet.create({
   newEntryBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: OVERLAY, borderWidth: 1, borderColor: CHAT_BORDER_STRONG },
   deleteBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: OVERLAY, borderWidth: 1, borderColor: BORDER_DANGER },
   pressed: { opacity: 0.6 },
+  cardDeleteBtn: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: BG_DANGER_SUBTLE, borderWidth: 1, borderColor: BORDER_DANGER },
   fill: { flex: 1 },
   // ── landscape layout ──
   lsShell: { flex: 1, flexDirection: 'row' },
   lsRoot: { flexDirection: 'row', paddingBottom: 0 },
-  lsRow: { gap: 10, paddingLeft: 2, paddingRight: 8 },
+  lsRow: { gap: 12, paddingHorizontal: 16 },
   lsNotes: { flex: 1.15 },
   lsPhoto: { flex: 1 },
   lsSkeleton: { flex: 1, paddingBottom: 0 },
@@ -1057,8 +1214,9 @@ const styles = StyleSheet.create({
   modalPageLs: { maxWidth: 720 },
   modalBodyInputLs: { minHeight: 90 },
   skeletonHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.gap, paddingHorizontal: SPACING.cardPadH, paddingTop: SPACING.cardPadT, paddingBottom: SPACING.gapLg },
-  row: { flexDirection: 'row', alignItems: 'stretch', gap: 8, paddingHorizontal: 8 },
+  row: { flexDirection: 'row', alignItems: 'stretch', gap: 10, paddingHorizontal: 16 },
   notesColumn: { flex: 3 },
+  photoList: { flex: 2 },
   photoColumn: { flex: 2, justifyContent: 'center' },
   noteShadow: { flex: 1, borderRadius: RADIUS_CARD, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 8 },
   notePage: { flex: 1, overflow: 'hidden', borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
@@ -1078,8 +1236,8 @@ const styles = StyleSheet.create({
   ruleLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: BORDER_DEFAULT },
   noteBody: { color: TEXT_SECONDARY, fontFamily: SERIF, fontSize: FONT.itemSize, lineHeight: LINE_HEIGHT },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  modalPage: { width: '100%', overflow: 'hidden', borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_GOLD_SOFT, backgroundColor: BG_PANEL },
-  modalContent: { paddingLeft: 40, paddingRight: 52, paddingTop: SPACING.cardPadT + 6, paddingBottom: SPACING.cardPadT + 6, gap: SPACING.gap },
+  modalPage: { width: '50%', overflow: 'hidden', borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_GOLD_SOFT, backgroundColor: BG_PANEL },
+  modalContent: { paddingLeft: 40, paddingRight: SPACING.cardPadH, paddingTop: SPACING.cardPadT + 6, paddingBottom: SPACING.cardPadT + 6, gap: SPACING.gap },
   modalTitle: { color: TEXT_PRIMARY, fontFamily: SERIF, fontSize: CHAT_FS_TITLE, fontWeight: '700', lineHeight: 22 },
   modalBody: { color: TEXT_SECONDARY, fontFamily: SERIF, fontSize: CHAT_FS_BODY, lineHeight: 22 },
   modalTitleInput: { color: TEXT_PRIMARY, fontFamily: SERIF, fontSize: CHAT_FS_TITLE, fontWeight: '700', lineHeight: 22, paddingVertical: 4, paddingHorizontal: 0 },
@@ -1091,12 +1249,30 @@ const styles = StyleSheet.create({
   editBtnTextPrimary: { color: BG_CARD, fontWeight: '800' },
   saveError: { color: TEXT_DANGER, fontSize: FONT.emailSize },
   modalFooter: { flexDirection: 'row', alignItems: 'center', gap: SPACING.gap, marginTop: SPACING.gap },
-  modalClose: { position: 'absolute', top: 10, right: 10, width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: BG_SUBTLE, borderWidth: 1, borderColor: BORDER_SUBTLE },
-  modalEdit: { position: 'absolute', top: 10, right: 52, width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: BG_SUBTLE, borderWidth: 1, borderColor: BORDER_GOLD },
+  modalEdit: { position: 'absolute', top: 10, right: 10, width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: BG_SUBTLE, borderWidth: 1, borderColor: BORDER_GOLD },
   locationChip: { alignSelf: 'flex-start', maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, backgroundColor: BG_GOLD_TINT, borderWidth: 1, borderColor: BORDER_GOLD_SOFT },
   locationText: { flexShrink: 1, color: ACCENT_GOLD, fontSize: FONT.emailSize, fontWeight: '700' },
   publicBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1, borderColor: BORDER_GOLD_SOFT, backgroundColor: BG_SUBTLE },
   publicBadgeText: { color: ACCENT_GOLD, fontSize: FONT.tagSize, fontWeight: '700' },
+  picFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: BG_AVATAR },
+  polaroid: { position: 'absolute', padding: 5, borderRadius: 3, backgroundColor: PAPER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 6, elevation: 6 },
+  polaroidImageWrap: { flex: 1, overflow: 'hidden', borderRadius: 1, backgroundColor: BG_AVATAR },
+  mosaic: { position: 'absolute', flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 5, borderRadius: 4, backgroundColor: PAPER, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 6, elevation: 6, transform: [{ rotate: '-6deg' }] },
+  mosaicPic: { width: '100%', height: '100%', borderRadius: 2 },
+  viewerRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
+  viewerModal: { overflow: 'hidden', borderRadius: PHOTO_RADIUS },
+  viewerHeader: { height: VIEWER_HEADER_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: BG_CARD, borderBottomWidth: 1, borderBottomColor: BORDER_DEFAULT },
+  viewerHeaderInfo: { flex: 1, minWidth: 0, gap: 2 },
+  viewerHeaderTitle: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '700' },
+  viewerHeaderMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  viewerHeaderDetail: { color: TEXT_MUTED, fontSize: 10 },
+  viewerCounter: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: BG_GOLD_TINT, borderWidth: 1, borderColor: BORDER_GOLD_SOFT },
+  viewerCounterText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '700' },
+  viewerImageArea: { flex: 1, width: '100%', overflow: 'hidden', borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: PHOTO_RADIUS, borderBottomRightRadius: PHOTO_RADIUS, backgroundColor: '#000000' },
+  viewerPager: { flex: 1, overflow: 'hidden', borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: PHOTO_RADIUS, borderBottomRightRadius: PHOTO_RADIUS },
+  viewerImagePage: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: PHOTO_RADIUS, borderBottomRightRadius: PHOTO_RADIUS },
+  viewerImage: { width: '100%', height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: PHOTO_RADIUS, borderBottomRightRadius: PHOTO_RADIUS },
+  viewerEditButton: { position: 'absolute', right: 12, bottom: 12, width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: OVERLAY, borderWidth: 1, borderColor: BORDER_GOLD_SOFT, zIndex: 2, elevation: 3 },
   tape: { position: 'absolute', top: -7, alignSelf: 'center', zIndex: 3, width: 46, height: 14, borderRadius: 3, backgroundColor: BG_GOLD_ICON, borderWidth: 1, borderColor: BORDER_GOLD_SOFT, transform: [{ rotate: '-4deg' }] },
   photoFrame: { flex: 1, overflow: 'hidden', borderRadius: PHOTO_RADIUS, borderWidth: 1, borderColor: BORDER_GOLD_SOFT, backgroundColor: BG_AVATAR },
   photoFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: BG_AVATAR },
@@ -1104,6 +1280,4 @@ const styles = StyleSheet.create({
   placeholderText: { color: TEXT_MUTED, fontSize: FONT.emailSize, textAlign: 'center' },
   editPhotoButton: { position: 'absolute', top: 10, right: 10, width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: OVERLAY, borderWidth: 1, borderColor: BORDER_GOLD },
   imageDots: { position: 'absolute', bottom: 10, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999, backgroundColor: OVERLAY },
-  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.38)' },
-  dotActive: { width: 16, backgroundColor: ACCENT_GOLD },
 });
