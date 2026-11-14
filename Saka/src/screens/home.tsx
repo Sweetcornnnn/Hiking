@@ -826,17 +826,15 @@ function HomeContent() {
 
   const handleProfileImageSelect = async (uri: string) => {
     if (!user) {
-      Alert.alert('Sign in required', 'Sign in to save a profile photo.');
-      return;
+      throw new Error('Sign in to save a profile photo.');
     }
     try {
       const localUri = await persistProfileAvatarLocally(user.id, uri);
       const result = await updateProfile({ avatar_url: localUri });
       if (!result.success) throw new Error(result.error || 'Unable to save your profile photo.');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to save your profile photo.';
       console.error('[Profile] Avatar update failed:', error);
-      Alert.alert('Profile photo not saved', message);
+      throw error;
     }
   };
 

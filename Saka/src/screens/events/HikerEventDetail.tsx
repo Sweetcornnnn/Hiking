@@ -69,6 +69,7 @@ import {
   formatTime,
   type IconName,
 } from '../../components/events/TrailKit';
+import { HikerEventDetailSkeleton } from '../../components/events/HikersSkeletons';
 
 
 // ── SAKA logo for the permit stamp ─────────────────────────
@@ -840,7 +841,7 @@ export default function HikerEventDetail() {
     [attendees]
   );
 
-  if (loading) return <CenterMessage loading message="Loading hike…" />;
+  if (loading) return <HikerEventDetailSkeleton onBack={() => router.back()} />;
   if (error || !event) {
     return (
       <>
@@ -1190,7 +1191,6 @@ export default function HikerEventDetail() {
             accessibilityLabel="Back to Events"
           >
             <Ionicons name="chevron-back" size={20} color={T.gold} />
-            <Text style={styles.detailBackText}>Events</Text>
           </Pressable>
           <View style={styles.detailHeaderTitle}>
             <Text style={styles.detailHeaderEyebrow}>YOUR HIKE PLAN</Text>
@@ -1349,12 +1349,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: T.border,
   },
-  detailBack: { flexDirection: 'row', alignItems: 'center', gap: 3, minWidth: 70 },
-  detailBackText: { color: T.gold, fontSize: 13, fontWeight: '600' },
+  detailBack: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   detailHeaderTitle: { flex: 1, alignItems: 'center', gap: 2 },
   detailHeaderEyebrow: { color: T.gold, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
   detailHeaderName: { color: T.text, fontFamily: SERIF, fontSize: 17, textAlign: 'center' },
-  detailHeaderSpacer: { width: 70 },
+  detailHeaderSpacer: { width: 36 },
   detailMainPanel: {
     gap: 10,
     padding: 14,

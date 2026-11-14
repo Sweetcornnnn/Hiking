@@ -1,11 +1,9 @@
 // Settings.tsx — desktop-style layout (sidebar + main panel, same shell as Admin/Manager).
 // Native Alert.alert popups are replaced by in-app toasts and AdminModal dialogs.
 // Behaviour and data layer are unchanged.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
   Linking,
   ScrollView,
   StyleSheet,
@@ -33,6 +31,7 @@ import { retryTextMessageQueue } from '../services/offlineMessageQueue';
 import { retryProfileUpdateQueue } from '../services/offlineProfileService';
 import locationService from '../services/locationService';
 import AdminModal from '../admin/AdminModal';
+import Toast, { type ToastHandle } from '../components/Toast';
 import {
   CHAT_BG,
   CHAT_ONLINE,
@@ -126,28 +125,10 @@ export default function SettingsScreen() {
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [notifDeniedVisible, setNotifDeniedVisible] = useState(false);
 
-  // ── Feedback toast (same look as Admin / Manager) ──
-  const [toast, setToast] = useState<{ type: ToastType; title: string; msg: string } | null>(null);
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastY = useRef(new Animated.Value(8)).current;
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
   const showToast = useCallback((type: ToastType, title: string, msg: string) => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ type, title, msg });
-    toastOpacity.setValue(0);
-    toastY.setValue(8);
-    Animated.parallel([
-      Animated.timing(toastOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(toastY, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-    ]).start();
-    toastTimer.current = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(toastOpacity, { toValue: 0, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(toastY, { toValue: 8, duration: 180, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      ]).start(() => setToast(null));
-    }, 3200);
-  }, [toastOpacity, toastY]);
-  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+    toastRef.current?.show({ type, title, message: msg, duration: 3200 });
+  }, []);
 
   const refreshSettingsStatus = useCallback(async (): Promise<OfflineStatusSnapshot | null> => {
     setLoadingOfflineStatus(true);
@@ -664,35 +645,7 @@ export default function SettingsScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Feedback toast */}
-      {toast && (
-        <Animated.View
-          style={[
-            ss.feedbackToast,
-            toast.type === 'success' && ss.feedbackToastSuccess,
-            toast.type === 'error' && ss.feedbackToastError,
-            toast.type === 'warning' && ss.feedbackToastWarning,
-            { opacity: toastOpacity, transform: [{ translateY: toastY }] },
-          ]}
-        >
-          <View style={[ss.feedbackToastBar,
-            toast.type === 'success' && { backgroundColor: GREEN },
-            toast.type === 'error' && { backgroundColor: RED },
-            toast.type === 'warning' && { backgroundColor: ACCENT_GOLD },
-          ]} />
-          <View style={ss.feedbackToastIcon}>
-            <Ionicons
-              name={toast.type === 'success' ? 'checkmark-circle' : toast.type === 'error' ? 'alert-circle' : 'warning'}
-              size={15}
-              color={toast.type === 'success' ? GREEN : toast.type === 'error' ? RED : ACCENT_GOLD}
-            />
-          </View>
-          <View style={ss.feedbackToastContent}>
-            <Text style={ss.feedbackToastTitle}>{toast.title}</Text>
-            <Text style={ss.feedbackToastMsg}>{toast.msg}</Text>
-          </View>
-        </Animated.View>
-      )}
+      <Toast ref={toastRef} widthRatio={0.78} />
     </>
   );
 }
@@ -857,18 +810,4 @@ const ss = StyleSheet.create({
   userPillName: { color: TEXT_PRIMARY, fontSize: 12, fontWeight: '600' },
   userPillEmail: { color: TEXT_MUTED, fontSize: 10, marginTop: 1 },
 
-  // Toast (identical to Admin / Manager)
-  feedbackToast: {
-    position: 'absolute', bottom: 16, left: '50%', marginLeft: -148, width: 296,
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#141E2D',
-    borderRadius: 10, borderWidth: 1, overflow: 'hidden', zIndex: 200, elevation: 12,
-  },
-  feedbackToastSuccess: { borderColor: 'rgba(111,175,138,0.25)' },
-  feedbackToastError: { borderColor: 'rgba(224,112,112,0.25)' },
-  feedbackToastWarning: { borderColor: 'rgba(201,169,110,0.25)' },
-  feedbackToastBar: { width: 3, alignSelf: 'stretch' },
-  feedbackToastIcon: { paddingLeft: 10, paddingRight: 2, justifyContent: 'center' },
-  feedbackToastContent: { flex: 1, paddingHorizontal: 8, paddingVertical: 10 },
-  feedbackToastTitle: { color: TEXT_PRIMARY, fontSize: 11, fontWeight: '700', marginBottom: 1 },
-  feedbackToastMsg: { color: 'rgba(255,255,255,0.42)', fontSize: 10, lineHeight: 14 },
 });

@@ -402,6 +402,7 @@ export function SheetShell({
   onClose,
   onBack,
   headerRight,
+  showCloseButton = true,
   children,
 }: {
   visible: boolean;
@@ -409,6 +410,7 @@ export function SheetShell({
   onClose: () => void;
   onBack?: () => void;
   headerRight?: React.ReactNode;
+  showCloseButton?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -433,9 +435,11 @@ export function SheetShell({
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
               {headerRight}
-              <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityLabel="Close">
-                <Ionicons name="close" size={20} color={T.muted} />
-              </TouchableOpacity>
+              {showCloseButton && (
+                <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+                  <Ionicons name="close" size={20} color={T.muted} />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
           {children}

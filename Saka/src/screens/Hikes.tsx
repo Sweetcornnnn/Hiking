@@ -23,6 +23,7 @@ import { dateInRange, effectiveEnd, formatRangeShort } from '../utils/dateRange'
 import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
 import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 import { HikeCardFace, getCardShell, getHikeAge, CARD_VARIANT } from '../components/HikeCardFace';
+import { Skeleton } from '../components/organizations/Skeleton';
 
 const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
 
@@ -55,6 +56,31 @@ const WIPE_EDGE_COLORS = ['#FFD08A', '#FF8A65', '#FF5252', '#FF3B30', '#FF6B4A']
 const WIPE_BORDER_COLORS = ['rgba(255,255,255,0.07)', '#F2994A', '#EB5757', '#D64545', '#FF3B30'];
 
 const keyExtractor = (hike: Hike) => hike.id;
+const SKELETON_HIKES = [0, 1, 2, 3, 4, 5];
+
+function HikeCardSkeleton() {
+  return (
+    <View style={styles.skeletonCard}>
+      <View style={styles.skeletonTop}>
+        <Skeleton width={46} height={7} style={styles.skeletonInk} />
+        <Skeleton width={12} height={12} radius={6} style={styles.skeletonInk} />
+      </View>
+      <View style={styles.skeletonBody}>
+        <View style={{ flex: 1, gap: 5 }}>
+          <Skeleton width="78%" height={21} radius={3} style={styles.skeletonInk} />
+          <Skeleton width="48%" height={8} radius={3} style={styles.skeletonInk} />
+        </View>
+        <Skeleton width={34} height={19} radius={3} style={styles.skeletonInk} />
+      </View>
+      <View style={styles.skeletonPerforation}>
+        <View style={styles.skeletonPerfLine} />
+      </View>
+      <View style={styles.skeletonFooter}>
+        <Skeleton width="66%" height={11} radius={3} style={styles.skeletonInk} />
+      </View>
+    </View>
+  );
+}
 
 // ⚠️ Minimal local shape — swap for your real Mountain type if it already
 // includes latitude/longitude/name.
@@ -319,6 +345,7 @@ export default function HikesScreen() {
   const { date, mountainId } = useLocalSearchParams<{ date: string; mountainId?: string }>();
   const { mountainHikes, deleteHike } = useHikesStore();
   const { user } = useAuthStore();
+  const [loadingHikes, setLoadingHikes] = useState(Boolean(mountainId));
   const [editingHike, setEditingHike] = useState<Hike | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [resolvedMountain, setResolvedMountain] = useState<Mountain | null>(null);
@@ -353,8 +380,20 @@ export default function HikesScreen() {
   // Resolve the mountain (for its name and lat/long) — cache first, same as
   // Calendar.tsx, then a network fetch as fallback.
   useEffect(() => {
-    if (!mountainId) return;
-    useHikesStore.getState().fetchMountainHikes(mountainId);
+    if (!mountainId) {
+      setLoadingHikes(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingHikes(true);
+    void useHikesStore.getState().fetchMountainHikes(mountainId).finally(() => {
+      if (!cancelled) setLoadingHikes(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [mountainId]);
 
   useEffect(() => {
@@ -507,7 +546,21 @@ export default function HikesScreen() {
         <TutorialHelpButton onPress={tutorial.open} />
       </View>
 
-      {hikesOnDate.length === 0 ? (
+      {loadingHikes ? (
+        <FlatList
+          key="hikes-grid-skeleton"
+          data={SKELETON_HIKES}
+          keyExtractor={(item) => String(item)}
+          numColumns={COLUMNS}
+          renderItem={() => (
+            <View style={{ width: cardWidth }}>
+              <HikeCardSkeleton />
+            </View>
+          )}
+          columnWrapperStyle={styles.row}
+          contentContainerStyle={[styles.list, { paddingHorizontal: sidePadding }]}
+        />
+      ) : hikesOnDate.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
             <Ionicons name="map-outline" size={26} color="rgba(201,169,110,0.6)" />
@@ -617,6 +670,39 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  skeletonCard: {
+    minHeight: 112,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderRadius: 4,
+    borderColor: '#CDB88A',
+    backgroundColor: '#F2E8D0',
+  },
+  skeletonTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 11,
+    marginTop: 9,
+  },
+  skeletonBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginHorizontal: 11,
+    marginTop: 6,
+    marginBottom: 9,
+  },
+  skeletonInk: { backgroundColor: 'rgba(90,70,35,0.22)' },
+  skeletonPerforation: { height: 14, justifyContent: 'center' },
+  skeletonPerfLine: {
+    marginHorizontal: 9,
+    borderTopWidth: 1.5,
+    borderStyle: 'dotted',
+    borderColor: 'rgba(110,80,35,0.45)',
+  },
+  skeletonFooter: { paddingHorizontal: 11, paddingTop: 6, paddingBottom: 9 },
   // The main fill of the hold-to-delete wipe. Its backgroundColor is driven
   // by an Animated interpolation, so it visibly shifts hue (amber → red →
   // near-black) as the hold progresses rather than staying one flat red.

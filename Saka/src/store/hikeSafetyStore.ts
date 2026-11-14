@@ -40,7 +40,7 @@ interface HikeSafetyState {
   handleResponseEvent: (e: ResponseEvent) => Promise<void>;
   reconcile: () => Promise<void>;
   loadAdminSafety: () => Promise<void>;
-  markAdminAlertSeen: (alertId: string) => Promise<void>;
+  markAdminAlertSeen: (alertId: string) => Promise<string | null>;
 }
 
 let listenerAttached = false;
@@ -155,7 +155,7 @@ export const useHikeSafetyStore = create<HikeSafetyState>((set, get) => ({
 
   markAdminAlertSeen: async (alertId) => {
     const { error } = await hikeSafetyService.markAlertSeen(alertId);
-    if (error) return;
+    if (error) return error;
     set((s) => ({
       adminHikes: s.adminHikes.map((r) =>
         r.active_alert_id === alertId ? { ...r, seen: true } : r,
@@ -164,5 +164,6 @@ export const useHikeSafetyStore = create<HikeSafetyState>((set, get) => ({
         r.active_alert_id === alertId ? { ...r, seen: true } : r,
       ),
     }));
+    return null;
   },
 }));

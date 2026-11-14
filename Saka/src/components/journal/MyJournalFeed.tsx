@@ -80,8 +80,8 @@ const VIEWER_HEADER_HEIGHT = 58;
 const SERIF = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
 const OVERLAY = `${BG_CARD}CC`;
 
-const HEADER_TITLE = 'Love Letters to Peaks';
-const HEADER_TAGLINE = 'Sweaty confessions, blurry summit selfies, and one deeply tragic blister.';
+const HEADER_TITLE = 'My Trail Journal';
+const HEADER_TAGLINE = 'Mud, miles, and questionable snack decisions.';
 
 function JournalHeader({ onBack, onNewEntry }: { onBack: () => void; onNewEntry: () => void }) {
   const { width, height } = useWindowDimensions();

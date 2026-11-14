@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
-import { Alert } from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
@@ -32,6 +31,9 @@ export default function ForgotPasswordScreen() {
   const [offlineAction, setOfflineAction] = useState<'request' | 'update' | null>(null);
   const [toast, setToast] = useState<ToastConfig | null>(null);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((type: ToastConfig['type'], title: string, message: string) => {
+    setToast({ type, title, message });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -55,7 +57,8 @@ export default function ForgotPasswordScreen() {
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (cancelled) return;
       if (error) {
-        Alert.alert(
+        showToast(
+          'error',
           'Connection problem',
           getAuthErrorMessage(error, 'Could not verify the reset link. Please try again.'),
         );
@@ -63,14 +66,16 @@ export default function ForgotPasswordScreen() {
       }
       if (!session) {
         setMode('request');
-        Alert.alert(
+        showToast(
+          'error',
           'Link expired',
           'Your reset link is invalid or has expired. Please request a new one.',
         );
       }
     }).catch((error: unknown) => {
       if (cancelled) return;
-      Alert.alert(
+      showToast(
+        'error',
         'Could not verify reset link',
         getAuthErrorMessage(error, 'Please try again.'),
       );
@@ -79,15 +84,15 @@ export default function ForgotPasswordScreen() {
     return () => {
       cancelled = true;
     };
-  }, [mode]);
+  }, [mode, showToast]);
 
   const handleRequestReset = async () => {
     if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email address');
+      showToast('error', 'Email required', 'Please enter your email address.');
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      Alert.alert('Invalid email', 'Please enter a valid email address');
+      showToast('error', 'Invalid email', 'Please enter a valid email address.');
       return;
     }
 
@@ -110,7 +115,8 @@ export default function ForgotPasswordScreen() {
         setOfflineAction('request');
       } else {
         setOfflineAction(null);
-        Alert.alert(
+        showToast(
+          'error',
           'Reset link not sent',
           getAuthErrorMessage(error, 'Could not send the reset link. Please try again.'),
         );
@@ -120,11 +126,11 @@ export default function ForgotPasswordScreen() {
 
   const handleUpdatePassword = async () => {
     if (password.length < 6) {
-      Alert.alert('Weak password', 'Use at least 6 characters.');
+      showToast('error', 'Weak password', 'Use at least 6 characters.');
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Passwords do not match', 'Re-enter the same password in both fields.');
+      showToast('error', 'Passwords do not match', 'Re-enter the same password in both fields.');
       return;
     }
 
@@ -136,7 +142,8 @@ export default function ForgotPasswordScreen() {
           setOfflineAction('update');
         } else {
           setOfflineAction(null);
-          Alert.alert(
+          showToast(
+            'error',
             'Update failed',
             getAuthErrorMessage(error, 'Could not update your password. Please try again.'),
           );
@@ -155,7 +162,8 @@ export default function ForgotPasswordScreen() {
         setOfflineAction('update');
       } else {
         setOfflineAction(null);
-        Alert.alert(
+        showToast(
+          'error',
           'Update failed',
           getAuthErrorMessage(error, 'Could not update your password. Please try again.'),
         );

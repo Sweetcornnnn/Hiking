@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
   FlatList,
   ScrollView,
@@ -22,7 +21,6 @@ import {
   T,
   SERIF,
   Screen,
-  CenterMessage,
   SearchBox,
   FilterButton,
   SheetShell,
@@ -34,6 +32,7 @@ import {
   formatTime,
 } from '../../components/events/TrailKit';
 import { EventStub } from '../../components/events/EventStub';
+import { EventsBoardSkeleton } from '../../components/events/HikersSkeletons';
 
 const DIFFICULTIES = ['All', 'Easy', 'Moderate', 'Hard', 'Expert'] as const;
 const DATE_RANGES = [
@@ -153,6 +152,7 @@ function FilterSheet({
       visible={visible}
       title="Filters"
       onClose={onClose}
+      showCloseButton={false}
       headerRight={
         canReset ? (
           <TouchableOpacity onPress={onReset} hitSlop={10} accessibilityRole="button" accessibilityLabel="Reset filters">
@@ -201,7 +201,6 @@ export default function HikerEventsList() {
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [counts, setCounts] = useState<Record<string, EventRsvpCounts>>({});
   const [loading, setLoading] = useState(true);
-  const [hasLoaded, setHasLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
@@ -249,7 +248,6 @@ export default function HikerEventsList() {
       }
     } finally {
       setLoading(false);
-      setHasLoaded(true);
       setRefreshing(false);
     }
   }, [mountainId, difficulty, dateRange]);
@@ -370,9 +368,6 @@ export default function HikerEventsList() {
     return { text: c.confirmed > 0 ? `${c.confirmed} going` : 'Open to all', strong: false };
   };
 
-  // Full-screen loader only for the very first load; filter changes load inside the list.
-  if (!hasLoaded && loading) return <CenterMessage loading message="Loading events…" />;
-
   const renderStub = (item: ListItem) => {
     if ('__spacer' in item) return null;
     const event = item;
@@ -430,9 +425,7 @@ export default function HikerEventsList() {
   };
 
   const empty = loading ? (
-    <View style={styles.state}>
-      <ActivityIndicator color={T.gold} />
-    </View>
+    <EventsBoardSkeleton cols={cols} />
   ) : error ? (
     <View style={styles.state}>
       <Ionicons name="cloud-offline-outline" size={26} color={T.red} />

@@ -16,7 +16,7 @@ interface HikesState {
 
   fetchHikes: (mountainId?: string) => Promise<void>;
   fetchMountainHikes: (mountainId?: string) => Promise<void>;
-  fetchAllHikes: () => Promise<void>;
+  fetchAllHikes: () => Promise<string | null>;
   fetchAdminStats: () => Promise<void>;
   createHike: (
     hike: Omit<Hike, 'id' | 'user_id' | 'created_at'>
@@ -229,7 +229,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
       if (hikesError) {
         console.error('[HikesStore] fetchAllHikes error:', hikesError);
         set({ allHikes: [], isLoading: false });
-        return;
+        return hikesError.message;
       }
 
       const userIds = [...new Set((hikesData || []).map((hike) => hike.user_id))];
@@ -268,12 +268,14 @@ export const useHikesStore = create<HikesState>((set, get) => ({
       })) as Hike[];
 
       set({ allHikes });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[HikesStore] Network error fetching all hikes:', error);
-      set({ allHikes: [] });
+      set({ allHikes: [], isLoading: false });
+      return error instanceof Error ? error.message : 'Network error fetching hikes.';
     }
 
     set({ isLoading: false });
+    return null;
   },
 
   fetchAdminStats: async () => {

@@ -28,6 +28,7 @@ import type {
 import { mountainService, type Mountain } from '../services/mountainService';
 import MountainGuideEditor from './MountainGuideEditor';
 import AdminModal from '../admin/AdminModal';
+import { ManagerSkeleton } from '../components/admin/AdminsSkeletons';
 // Reused from the hiker-facing screen so the manager edits exactly what hikers see.
 import { VerticalMediaCarousel, getViewpointMedia, PC, type MediaItem } from '../screens/Viewpoint';
 import {
@@ -427,10 +428,7 @@ export default function ManagerScreen() {
   if (loading) {
     return (
       <SafeAreaView style={ss.screen} edges={['top']}>
-        <View style={ss.emptyState}>
-          <Ionicons name="hourglass-outline" size={20} color={TEXT_MUTED} />
-          <Text style={ss.emptySubtitle}>Loading manager dashboard…</Text>
-        </View>
+        <ManagerSkeleton />
       </SafeAreaView>
     );
   }
