@@ -1,5 +1,5 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Modal, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
@@ -42,6 +42,14 @@ const THEME: Record<
 };
 
 const HIDDEN_Y = -80;
+
+const getDisplayMessage = (message?: string): string | undefined => {
+  if (!message) return undefined;
+  if (/\bpermission denied\b|\brow[- ]level security\b/i.test(message)) {
+    return 'Permission denied.';
+  }
+  return message;
+};
 
 // Small top-center notification card (half the screen's width by default), styled to match the app instead of
 // relying on the OS's default Alert dialog.
@@ -110,49 +118,55 @@ const Toast = forwardRef<ToastHandle, ToastProps>(({ topOffset = 14, widthRatio 
 
   useEffect(() => clearTimer, []);
 
-  if (!content) {
-    return null;
-  }
-
-  const type = content.type ?? 'success';
+  const type = content?.type ?? 'success';
   const { color, icon } = THEME[type];
+  const displayMessage = getDisplayMessage(content?.message);
 
   return (
-    // Full-width strip that only exists to center the card; the card itself is
-    // `widthRatio` of the screen's width, so it sits top-center at about half width.
-    <Animated.View
-      pointerEvents="none"
-      accessibilityRole="alert"
-      accessibilityLiveRegion={type === 'error' || type === 'warning' ? 'assertive' : 'polite'}
-      style={[styles.anchor, { top: topOffset, transform: [{ translateY }], opacity }]}
+    <Modal
+      transparent
+      visible={content !== null}
+      animationType="none"
+      statusBarTranslucent
+      presentationStyle="overFullScreen"
+      onRequestClose={animateOut}
     >
-      <View
-        style={[
-          styles.toast,
-          {
-            width: `${Math.round(widthRatio * 100)}%`,
-            borderColor: `${color}4D`, // ~30% alpha hairline
-            borderLeftColor: color, // solid edge = the at-a-glance severity cue
-          },
-        ]}
+      <Animated.View
+        pointerEvents="none"
+        accessibilityRole="alert"
+        accessibilityLiveRegion={type === 'error' || type === 'warning' ? 'assertive' : 'polite'}
+        style={[styles.anchor, { top: topOffset, transform: [{ translateY }], opacity }]}
       >
-        <View style={[styles.iconWrap, { backgroundColor: `${color}1F` }]}>
-          {type === 'loading' && !content.icon ? (
-            <ActivityIndicator size="small" color={color} />
-          ) : (
-            <Ionicons name={content.icon ?? icon} size={18} color={color} />
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.toastTitle}>{content.title}</Text>
-          {content.message ? (
-            <Text style={styles.toastMessage} numberOfLines={2}>
-              {content.message}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-    </Animated.View>
+        {content && (
+          <View
+            style={[
+              styles.toast,
+              {
+                width: `${Math.round(widthRatio * 100)}%`,
+                borderColor: `${color}4D`,
+                borderLeftColor: color,
+              },
+            ]}
+          >
+            <View style={[styles.iconWrap, { backgroundColor: `${color}1F` }]}>
+              {type === 'loading' && !content.icon ? (
+                <ActivityIndicator size="small" color={color} />
+              ) : (
+                <Ionicons name={content.icon ?? icon} size={18} color={color} />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toastTitle}>{content.title}</Text>
+              {displayMessage ? (
+                <Text style={styles.toastMessage} numberOfLines={2}>
+                  {displayMessage}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        )}
+      </Animated.View>
+    </Modal>
   );
 });
 
