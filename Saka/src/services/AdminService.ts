@@ -101,6 +101,12 @@ export interface AdminJournalRow {
   created_at: string;
 }
 
+export interface AdminJournalFilters {
+  visibility: 'all' | 'public' | 'private';
+  year: number | null;
+  month: number | null;
+}
+
 export interface AdminSosRow {
   id: number | string;
   latitude: number;
@@ -316,12 +322,19 @@ export async function fetchAdminEvents(): Promise<AdminEventRow[]> {
 
 /* ───────────────────────── journal (Paginated) ───────────────────────── */
 
-export async function fetchAdminJournal(publicOnly = false, page = 0, limit = 100): Promise<AdminJournalRow[]> {
+export async function fetchAdminJournal(filters: AdminJournalFilters, page = 0, limit = 100): Promise<AdminJournalRow[]> {
   const from = page * limit;
   const to = from + limit - 1;
 
   let query = supabase.from('hiking_journals').select('*').order('created_at', { ascending: false }).range(from, to);
-  if (publicOnly) query = query.eq('is_public', true);
+  if (filters.visibility !== 'all') query = query.eq('is_public', filters.visibility === 'public');
+  if (filters.year !== null) {
+    const start = new Date(Date.UTC(filters.year, filters.month === null ? 0 : filters.month - 1, 1));
+    const end = filters.month === null
+      ? new Date(Date.UTC(filters.year + 1, 0, 1))
+      : new Date(Date.UTC(filters.year, filters.month, 1));
+    query = query.gte('created_at', start.toISOString()).lt('created_at', end.toISOString());
+  }
 
   const { data, error } = await query;
   if (error) throw new Error(error.message || 'Failed to fetch journals');

@@ -19,6 +19,7 @@ import {
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import SharedToast, { type ToastHandle } from '../Toast';
 
 // ─── Shared look for Login and Signup ───────────────────────────────────────
 export const AUTH = {
@@ -62,68 +63,33 @@ export interface ToastConfig {
 }
 
 export function Toast({ config, onHide }: { config: ToastConfig | null; onHide: () => void }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(-12)).current;
+  const toastRef = useRef<ToastHandle>(null);
+  const onHideRef = useRef(onHide);
 
   useEffect(() => {
-    if (!config) return;
-    opacity.setValue(0);
-    translateY.setValue(-6);
-    Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-    ]).start();
+    onHideRef.current = onHide;
+  }, [onHide]);
 
-    const timer = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(opacity, { toValue: 0, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: -4, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      ]).start(() => onHide());
-    }, 3200);
+  useEffect(() => {
+    if (!config) {
+      toastRef.current?.hide();
+      return;
+    }
+
+    toastRef.current?.show({
+      type: config.type === 'success' ? 'success' : 'error',
+      icon: config.type === 'denied' ? 'shield-outline' : undefined,
+      title: config.title,
+      message: config.message,
+      duration: 3200,
+    });
+
+    const timer = setTimeout(() => onHideRef.current(), 3440);
     return () => clearTimeout(timer);
   }, [config]);
 
-  if (!config) return null;
-
-  const accent = config.type === 'error' ? AUTH.gold : config.type === 'denied' ? '#BF6A6A' : AUTH.green;
-  const icon =
-    config.type === 'error' ? 'alert-circle-outline' : config.type === 'denied' ? 'shield-outline' : 'checkmark-circle-outline';
-
-  return (
-    <View pointerEvents="none" style={toast.holder}>
-      <Animated.View style={[toast.wrap, { opacity, transform: [{ translateY }] }]}>
-        <View style={[toast.bar, { backgroundColor: accent }]} />
-        <View style={toast.icon}>
-          <Ionicons name={icon as any} size={18} color={accent} />
-        </View>
-        <View style={toast.text}>
-          <Text style={toast.title}>{config.title}</Text>
-          <Text style={toast.message}>{config.message}</Text>
-        </View>
-      </Animated.View>
-    </View>
-  );
+  return <SharedToast ref={toastRef} position="top" topOffset={10} widthRatio={0.92} />;
 }
-
-const toast = StyleSheet.create({
-  holder: { position: 'absolute', top: 10, left: 0, right: 0, alignItems: 'center', zIndex: 999 },
-  wrap: {
-    width: '92%',
-    maxWidth: 440,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#141E2D',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
-  },
-  bar: { width: 3, alignSelf: 'stretch' },
-  icon: { paddingHorizontal: 10, paddingVertical: 10 },
-  text: { flex: 1, paddingVertical: 9, paddingRight: 12 },
-  title: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', marginBottom: 1 },
-  message: { color: 'rgba(255,255,255,0.6)', fontSize: 12, lineHeight: 16 },
-});
 
 // ─── Backdrop: faint topographic rings ──────────────────────────────────────
 function Backdrop({ cx, cy }: { cx: number; cy: number }) {

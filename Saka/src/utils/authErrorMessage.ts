@@ -33,9 +33,5 @@ export function getAuthErrorMessage(error: unknown, fallback: string): string {
     return 'No account exists for this email. Check it or sign up first.';
   }
 
-  if (/supabase .*not configured|email auth is not configured/.test(normalized)) {
-    return message;
-  }
-
   return fallback;
 }
