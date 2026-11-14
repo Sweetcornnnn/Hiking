@@ -39,6 +39,7 @@ import {
 
 type Point = { x: number; y: number };
 type Tool = 'pen' | 'erase' | 'text' | 'arrow' | 'rect' | 'circle';
+type DropdownKey = 'tool' | 'color' | 'size';
 type TextItem = {
   id: string;
   type: 'text';
@@ -65,7 +66,6 @@ const WIDTHS = [2, 4, 6, 10, 16];
 const TEXT_SIZES = [16, 22, 28, 36];
 const MAX_HISTORY = 50;
 const MAX_EXPORT_SIDE = 2048;
-const PANEL_W = 236; // landscape tool panel width
 const MARGIN_X = 14; // gap between the dialog and the screen edge (portrait)
 const MARGIN_X_LS = 24; // (landscape)
 const MARGIN_Y_LS = 12;
@@ -75,9 +75,15 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
   const { width: windowW, height: windowH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const landscape = windowW > windowH;
+  const landscapeCardWidth = Math.min(
+    windowW - insets.left - insets.right - 2 * MARGIN_X_LS,
+    1200,
+  );
+  const panelWidth = landscapeCardWidth * 0.3;
   const [imageSize, setImageSize] = useState<{ w: number; h: number } | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [tool, setTool] = useState<Tool>('pen');
+  const [openDropdown, setOpenDropdown] = useState<DropdownKey | null>(null);
   const [color, setColor] = useState(COLORS[2]);
   const [width, setWidth] = useState(WIDTHS[1]);
   const [textSize, setTextSize] = useState(TEXT_SIZES[1]);
@@ -105,6 +111,7 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
     setHist({ stack: [[]], index: 0 });
     setDraft(null);
     setTool('pen');
+    setOpenDropdown(null);
     Image.getSize(
       uri,
       (w, h) => setImageSize({ w, h }),
@@ -114,9 +121,11 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
 
   const canvasSize = useMemo(() => {
     if (!imageSize) return { width: 0, height: 0 };
-    const cardW = windowW - insets.left - insets.right - 2 * (landscape ? MARGIN_X_LS : MARGIN_X);
+    const cardW = landscape
+      ? landscapeCardWidth
+      : windowW - insets.left - insets.right - 2 * MARGIN_X;
     const cardH = windowH - insets.top - insets.bottom - 2 * MARGIN_Y_LS;
-    const maxW = landscape ? cardW - PANEL_W - 26 : Math.min(cardW, 640) - 26;
+    const maxW = landscape ? cardW - panelWidth - 26 : Math.min(cardW, 640) - 26;
     const maxH = landscape ? cardH - 26 : windowH * 0.5;
     const ratio = imageSize.w / imageSize.h;
     let w = maxW;
@@ -126,7 +135,7 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
       w = h * ratio;
     }
     return { width: Math.round(w), height: Math.round(h) };
-  }, [imageSize, windowW, windowH, landscape, insets.left, insets.right, insets.top, insets.bottom]);
+  }, [imageSize, windowW, windowH, landscape, landscapeCardWidth, panelWidth, insets.left, insets.right, insets.top, insets.bottom]);
 
   const live = useRef({ items, tool, color, width, canvas: canvasSize });
   live.current = { items, tool, color, width, canvas: canvasSize };
@@ -284,14 +293,37 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
     </TouchableOpacity>
   );
 
+  const panelCancelBtn = (
+    <TouchableOpacity
+      onPress={requestClose}
+      style={styles.panelActionIconBtn}
+      accessibilityRole="button"
+      accessibilityLabel="Cancel editing"
+    >
+      <Ionicons name="close" size={18} color={TEXT_PRIMARY} />
+    </TouchableOpacity>
+  );
+
+  const panelSaveBtn = (
+    <TouchableOpacity
+      onPress={handleSave}
+      disabled={saveDisabled}
+      style={[styles.panelSaveIconBtn, saveDisabled && { opacity: 0.5 }]}
+      accessibilityRole="button"
+      accessibilityLabel="Save edited photo"
+    >
+      {isSaving ? <ActivityIndicator size="small" color={BG_PANEL} /> : <Ionicons name="checkmark" size={17} color={BG_PANEL} />}
+    </TouchableOpacity>
+  );
+
   const toolButtons = (compact: boolean) => (
     <>
-      <ToolButton compact={compact} icon="pencil" label="Pen" active={tool === 'pen'} onPress={() => setTool('pen')} />
-      <ToolButton compact={compact} icon="text" label="Text" active={tool === 'text'} onPress={() => setTool('text')} />
-      <ToolButton compact={compact} icon="arrow-forward" label="Arrow" active={tool === 'arrow'} onPress={() => setTool('arrow')} />
-      <ToolButton compact={compact} icon="square-outline" label="Rect" active={tool === 'rect'} onPress={() => setTool('rect')} />
-      <ToolButton compact={compact} icon="ellipse-outline" label="Circle" active={tool === 'circle'} onPress={() => setTool('circle')} />
-      <ToolButton compact={compact} icon="backspace-outline" label="Erase" active={tool === 'erase'} onPress={() => setTool('erase')} />
+      <ToolButton compact={compact} icon="pencil" label="Pen" active={tool === 'pen'} onPress={() => { setTool('pen'); setOpenDropdown(null); }} />
+      <ToolButton compact={compact} icon="text" label="Text" active={tool === 'text'} onPress={() => { setTool('text'); setOpenDropdown(null); }} />
+      <ToolButton compact={compact} icon="arrow-forward" label="Arrow" active={tool === 'arrow'} onPress={() => { setTool('arrow'); setOpenDropdown(null); }} />
+      <ToolButton compact={compact} icon="square-outline" label="Rect" active={tool === 'rect'} onPress={() => { setTool('rect'); setOpenDropdown(null); }} />
+      <ToolButton compact={compact} icon="ellipse-outline" label="Circle" active={tool === 'circle'} onPress={() => { setTool('circle'); setOpenDropdown(null); }} />
+      <ToolButton compact={compact} icon="backspace-outline" label="Erase" active={tool === 'erase'} onPress={() => { setTool('erase'); setOpenDropdown(null); }} />
     </>
   );
 
@@ -299,7 +331,7 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
     COLORS.map((c) => (
       <TouchableOpacity
         key={c}
-        onPress={() => setColor(c)}
+        onPress={() => { setColor(c); setOpenDropdown(null); }}
         style={[styles.colorSwatch, { width: size, height: size, borderRadius: size / 2, backgroundColor: c }, color === c && styles.colorSwatchActive]}
         accessibilityRole="button"
         accessibilityLabel={`Color ${c}`}
@@ -307,10 +339,48 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
     ));
 
   const widthChips = WIDTHS.map((w) => (
-    <TouchableOpacity key={w} onPress={() => setWidth(w)} style={[styles.widthChip, width === w && styles.widthChipActive]}>
+    <TouchableOpacity key={w} onPress={() => { setWidth(w); setOpenDropdown(null); }} style={[styles.widthChip, width === w && styles.widthChipActive]}>
       <View style={{ width: 18, height: w, borderRadius: w / 2, backgroundColor: width === w ? ACCENT_GOLD : TEXT_MUTED }} />
     </TouchableOpacity>
   ));
+
+  const dropdownTrigger = (key: DropdownKey, label: string, value: string, colorValue?: string) => (
+    <TouchableOpacity
+      key={key}
+      onPress={() => setOpenDropdown((current) => current === key ? null : key)}
+      style={[styles.dropdownTrigger, openDropdown === key && styles.dropdownTriggerActive]}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: openDropdown === key }}
+    >
+      <View style={styles.dropdownTriggerLabelRow}>
+        <Text style={styles.dropdownTriggerLabel}>{label}</Text>
+        <Ionicons name={openDropdown === key ? 'chevron-up' : 'chevron-down'} size={12} color={TEXT_MUTED} />
+      </View>
+      <View style={styles.dropdownTriggerValueRow}>
+        {colorValue && <View style={[styles.selectedColor, { backgroundColor: colorValue }]} />}
+        <Text style={styles.dropdownTriggerValue} numberOfLines={1}>{value}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const dropdownChoices = openDropdown ? (
+    <View style={styles.dropdownChoices}>
+      {openDropdown === 'tool' && <View style={styles.toolGrid}>{toolButtons(true)}</View>}
+      {openDropdown === 'color' && <View style={styles.panelColors}>{colorSwatches(22)}</View>}
+      {openDropdown === 'size' && <View style={styles.widthOptions}>{widthChips}</View>}
+    </View>
+  ) : null;
+
+  const dropdownControls = (
+    <>
+      <View style={[styles.dropdownRow, landscape && styles.dropdownColumn]}>
+        {dropdownTrigger('tool', 'Tool', tool[0].toUpperCase() + tool.slice(1))}
+        {dropdownTrigger('color', 'Color', '', color)}
+        {dropdownTrigger('size', 'Size', `${width}px`)}
+      </View>
+      {dropdownChoices}
+    </>
+  );
 
   const historyButtons = (
     <>
@@ -356,6 +426,21 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
           </View>
         )}
 
+        {landscape && (
+          <ScrollView
+            style={[styles.panel, { width: panelWidth }]}
+            contentContainerStyle={styles.panelContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.panelTop}>
+              {panelCancelBtn}
+              {panelSaveBtn}
+            </View>
+            {dropdownControls}
+            <View style={styles.panelActions}>{historyButtons}</View>
+          </ScrollView>
+        )}
+
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.canvasArea, landscape && styles.canvasAreaLs]}>
           {loadFailed ? (
             <View style={styles.errorBox}>
@@ -369,7 +454,7 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
                 collapsable={false}
                 style={{ width: canvasSize.width, height: canvasSize.height, backgroundColor: '#000' }}
               >
-                {uri && <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+                {uri && <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="contain" />}
                 <Svg style={StyleSheet.absoluteFill} width={canvasSize.width} height={canvasSize.height}>
                   {renderedItems.map((item) => renderSvgItem(item))}
                 </Svg>
@@ -394,33 +479,10 @@ export default function PhotoEditor({ visible, uri, onClose, onSave }: Props) {
           )}
         </KeyboardAvoidingView>
 
-        {landscape ? (
-          // LANDSCAPE: the photo gets the full height; every control lives in this side panel
-          <ScrollView
-            style={styles.panel}
-            contentContainerStyle={styles.panelContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.panelTop}>
-              {cancelBtn}
-              {saveBtn}
-            </View>
-            <View style={styles.toolGrid}>{toolButtons(true)}</View>
-            <View style={styles.panelColors}>{colorSwatches(22)}</View>
-            <View style={styles.toolRow}>{widthChips}</View>
-            <View style={styles.panelActions}>{historyButtons}</View>
-          </ScrollView>
-        ) : (
+        {!landscape && (
           <View style={styles.toolbarWrap}>
-            <View style={styles.toolRow}>{toolButtons(false)}</View>
-            <View style={styles.toolRow}>
-              <View style={styles.colorRow}>{colorSwatches(26)}</View>
-            </View>
-            <View style={styles.toolRow}>
-              {widthChips}
-              <View style={{ flex: 1 }} />
-              {historyButtons}
-            </View>
+            {dropdownControls}
+            <View style={styles.panelActions}>{historyButtons}</View>
           </View>
         )}
 
@@ -677,20 +739,31 @@ const styles = StyleSheet.create({
   errorText: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center' },
   textOverlay: { position: 'absolute', paddingHorizontal: 4, paddingVertical: 2 },
   toolbarWrap: { paddingTop: 10, paddingBottom: 12, paddingHorizontal: 12, gap: 8, borderTopWidth: 1, borderTopColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
-  toolRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  dropdownRow: { flexDirection: 'row', gap: 6 },
+  dropdownColumn: { flexDirection: 'column' },
+  dropdownTrigger: { flex: 1, minWidth: 0, minHeight: 44, justifyContent: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 5, borderRadius: RADIUS_BTN, borderWidth: 1, borderColor: BORDER_SUBTLE, backgroundColor: BG_CARD },
+  dropdownTriggerActive: { borderColor: BORDER_GOLD, backgroundColor: 'rgba(201,169,110,0.1)' },
+  dropdownTriggerLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 2 },
+  dropdownTriggerLabel: { color: TEXT_FAINT, fontSize: 9, fontWeight: '700' },
+  dropdownTriggerValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
+  dropdownTriggerValue: { flexShrink: 1, color: TEXT_PRIMARY, fontSize: 10, fontWeight: '700' },
+  selectedColor: { width: 10, height: 10, borderRadius: 5, borderWidth: 1, borderColor: BORDER_SUBTLE },
+  dropdownChoices: { padding: 8, borderRadius: RADIUS_BTN, borderWidth: 1, borderColor: BORDER_DEFAULT, backgroundColor: BG_CARD },
+  widthOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   toolBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: BORDER_SUBTLE, backgroundColor: BG_CARD },
   toolBtnActive: { borderColor: BORDER_GOLD, backgroundColor: 'rgba(201,169,110,0.12)' },
   toolBtnLabel: { color: TEXT_MUTED, fontSize: 11, fontWeight: '700' },
   toolBtnCompact: { flexGrow: 1, flexBasis: '30%', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 6, gap: 4 },
   toolBtnLabelCompact: { fontSize: 10 },
   // ── landscape side panel ──
-  panel: { width: PANEL_W, borderLeftWidth: 1, borderLeftColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
-  panelContent: { flexGrow: 1, justifyContent: 'space-between', padding: 10, gap: 8 },
-  panelTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  panel: { flexGrow: 0, flexShrink: 0, borderRightWidth: 1, borderRightColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
+  panelContent: { flexGrow: 1, justifyContent: 'flex-start', padding: 8, gap: 8 },
+  panelTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4 },
+  panelActionIconBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS_BTN, borderWidth: 1, borderColor: BORDER_SUBTLE, backgroundColor: BG_CARD },
+  panelSaveIconBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: ACCENT_GOLD },
   toolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   panelColors: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
-  panelActions: { flexDirection: 'row', alignItems: 'center' },
-  colorRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  panelActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 'auto' },
   colorSwatch: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'rgba(255,255,255,0.15)' },
   colorSwatchActive: { borderColor: ACCENT_GOLD, borderWidth: 3 },
   widthChip: { width: 30, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 6, borderWidth: 1, borderColor: BORDER_SUBTLE },
