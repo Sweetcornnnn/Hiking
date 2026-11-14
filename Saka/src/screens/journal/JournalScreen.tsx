@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Image, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,11 +8,12 @@ import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim'
 import JournalImageGrid from '../../components/journal/JournalImageGrid';
 import MyJournalFeed from '../../components/journal/MyJournalFeed';
 import PhotoEditor from '../../components/journal/PhotoEditor';
+import Toast, { type ToastHandle } from '../../components/Toast';
 import { mountainService, type Mountain } from '../../services/mountainService';
 import { useJournalStore } from '../../store/journalStore';
 import { useProfileCardStore } from '../../store/profileCardStore';
 import type { JournalEntry, JournalImage } from '../../types/journal';
-import { ACCENT_GOLD, BG_CARD, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_GOLD, BORDER_SUBTLE, CHAT_BG, CHAT_BORDER, CHAT_DANGER, CHAT_PANEL, CHAT_RADIUS_BTN, CHAT_RADIUS_MODAL, CHAT_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
+import { ACCENT_GOLD, BG_CARD, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_GOLD, BORDER_SUBTLE, CHAT_BORDER, CHAT_DANGER, CHAT_PANEL, CHAT_RADIUS_BTN, CHAT_RADIUS_MODAL, CHAT_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
 
 type Mode = 'feed' | 'form';
 
@@ -52,9 +53,9 @@ export default function JournalScreen() {
   const [selectedMountainId, setSelectedMountainId] = useState<string | null>(preselectedMountainId);
   const [mountainsLoading, setMountainsLoading] = useState(true);
   const [mountainsError, setMountainsError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<JournalEntry | null>(null);
   const saveInProgress = useRef(false);
+  const toastRef = useRef<ToastHandle>(null);
 
   const goBackToProfile = () => {
     if (cameFromProfile) {
@@ -114,19 +115,35 @@ export default function JournalScreen() {
     });
 
     if (result.error) throw new Error(result.error);
+    toastRef.current?.show({
+      type: 'success',
+      title: 'Note updated',
+      message: 'Your journal note has been saved.',
+    });
   };
 
   const handleSaveEditedPhoto = async (editedUri: string): Promise<{ error: string | null }> => {
     if (!editingPhoto) return { error: null };
     const result = await replaceEntryImage(editingPhoto.entry, editingPhoto.index, editedUri);
-    if (!result.error) setEditingPhoto(null);
+    if (!result.error) {
+      setEditingPhoto(null);
+      toastRef.current?.show({
+        type: 'success',
+        title: 'Photo updated',
+        message: 'Your edited photo was saved to your journal.',
+      });
+    }
     return result;
   };
 
   const pickImages = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission required', 'Allow photo access to add photos to your journal.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Permission required',
+        message: 'Allow photo access to add photos to your journal.',
+      });
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -150,11 +167,19 @@ export default function JournalScreen() {
     if (saveInProgress.current || isLoading) return;
 
     if (!title.trim() || !content.trim()) {
-      Alert.alert('Complete your entry', 'Add a title and describe your experience.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Complete your entry',
+        message: 'Add a title and describe your experience.',
+      });
       return;
     }
     if (!selectedMountainId && !preselectedViewpointId) {
-      Alert.alert('Choose a mountain', 'Select the mountain these journal photos belong to.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Choose a mountain',
+        message: 'Select the mountain these journal photos belong to.',
+      });
       return;
     }
     saveInProgress.current = true;
@@ -171,7 +196,7 @@ export default function JournalScreen() {
       });
 
       if (result.error) {
-        Alert.alert('Save failed', result.error);
+        toastRef.current?.show({ type: 'error', title: 'Save failed', message: result.error });
         return;
       }
 
@@ -183,7 +208,8 @@ export default function JournalScreen() {
       setSelectedMountainId(preselectedMountainId);
       setMode('feed');
 
-      setNotice({
+      toastRef.current?.show({
+        type: 'success',
         title: result.pendingSync ? 'Saved on this device' : 'Journal saved',
         message: result.pendingSync
           ? 'Your entry and photos are saved locally and will sync automatically when the internet is available.'
@@ -224,7 +250,10 @@ export default function JournalScreen() {
     ));
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView
+      style={styles.container}
+      edges={mode === 'feed' ? [] : ['top', 'bottom']}
+    >
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {mode === 'form' && <View style={[styles.header, isLandscape && styles.headerCompact]}>
         <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
@@ -249,20 +278,26 @@ export default function JournalScreen() {
       </View>}
 
       {mode === 'feed' ? (
-        <View style={[styles.feedContent, isLandscape ? styles.feedContentLandscape : { paddingBottom: 20 + insets.bottom }]}>
-          {error && <Text style={styles.error}>{error}</Text>}
-          {entries.some((entry) => entry.sync_status) && (
-            <TouchableOpacity
-              onPress={async () => {
-                const result = await retryPendingSync();
-                if (result.error) Alert.alert('Sync failed', result.error);
-              }}
-              style={[styles.syncButton, isLandscape && styles.syncButtonCompact]}
-              accessibilityRole="button"
-            >
-              <Ionicons name="sync-outline" size={14} color={ACCENT_GOLD} />
-              <Text style={styles.syncButtonText}>Retry pending journal sync</Text>
-            </TouchableOpacity>
+        <View style={styles.feedScreen}>
+          {(error || entries.some((entry) => entry.sync_status)) && (
+            <View style={[styles.feedBanners, { paddingTop: insets.top + 6, paddingHorizontal: 16 }]}>
+              {error && <Text style={styles.error}>{error}</Text>}
+              {entries.some((entry) => entry.sync_status) && (
+                <TouchableOpacity
+                  onPress={async () => {
+                    const result = await retryPendingSync();
+                    if (result.error) {
+                      toastRef.current?.show({ type: 'error', title: 'Sync failed', message: result.error });
+                    }
+                  }}
+                  style={[styles.syncButton, isLandscape && styles.syncButtonCompact]}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="sync-outline" size={14} color={ACCENT_GOLD} />
+                  <Text style={styles.syncButtonText}>Retry pending journal sync</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
           <MyJournalFeed
             entries={entries}
@@ -474,7 +509,9 @@ export default function JournalScreen() {
                   const entry = pendingDelete;
                   setPendingDelete(null);
                   const result = await deleteEntry(entry);
-                  if (result.error) Alert.alert('Delete failed', result.error);
+                  if (result.error) {
+                    toastRef.current?.show({ type: 'error', title: 'Delete failed', message: result.error });
+                  }
                 }}
                 activeOpacity={0.85}
               >
@@ -484,27 +521,7 @@ export default function JournalScreen() {
           </View>
         </View>
       </Modal>
-      <Modal
-        {...FULLSCREEN_MODAL_PROPS}
-        visible={notice !== null}
-        animationType="fade"
-        onRequestClose={() => setNotice(null)}
-      >
-        <ModalScrim color="rgba(0,0,0,0.62)" />
-        <View style={styles.noticeBackdrop}>
-          <View style={styles.noticeCard} accessibilityLiveRegion="polite">
-            <Text style={styles.noticeTitle}>{notice?.title}</Text>
-            <Text style={styles.noticeText}>{notice?.message}</Text>
-            <TouchableOpacity
-              style={styles.noticeButton}
-              onPress={() => setNotice(null)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.noticeButtonText}>OK</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <Toast ref={toastRef} topOffset={insets.top + 10} widthRatio={0.82} />
     </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -523,6 +540,8 @@ const styles = StyleSheet.create({
   title: { color: TEXT_PRIMARY, fontSize: 21, fontWeight: '700', marginTop: 3 },
   newEntryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, backgroundColor: ACCENT_GOLD },
   newEntryButtonText: { color: BG_PANEL, fontSize: 12, fontWeight: '800' },
+  feedScreen: { flex: 1, backgroundColor: BG_CARD },
+  feedBanners: { backgroundColor: BG_CARD, paddingBottom: 4 },
   feedContent: { flex: 1, padding: 20, maxWidth: 680, width: '100%', alignSelf: 'center' },
   feedContentLandscape: { padding: 6, maxWidth: 1400 },
   content: { padding: 24, paddingBottom: 40, maxWidth: 680, width: '100%', alignSelf: 'center' },
@@ -587,14 +606,6 @@ const styles = StyleSheet.create({
   },
   noticeTitle: { color: TEXT_PRIMARY, fontSize: 16, fontWeight: '700', textAlign: 'center' },
   noticeText: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 8 },
-  noticeButton: {
-    alignItems: 'center',
-    marginTop: 18,
-    paddingVertical: 10,
-    borderRadius: CHAT_RADIUS_BTN,
-    backgroundColor: ACCENT_GOLD,
-  },
-  noticeButtonText: { color: CHAT_BG, fontSize: 12, fontWeight: '800' },
   confirmActions: {
     flexDirection: 'row',
     gap: 10,
