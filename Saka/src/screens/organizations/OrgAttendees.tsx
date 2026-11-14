@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,6 @@ import { useRequireOrganization } from '../../hooks/useRoleGuard';
 import {
   OrgLandscapeShell,
   CenteredState,
-  Banner,
   Card,
   Chip,
   EmptyState,
@@ -29,6 +28,8 @@ import {
   SP,
   FS,
 } from '../../components/organizations/OrgLandscapeShell';
+import { AttendeesSkeleton } from '../../components/organizations/OrgSkeletons';
+import Toast, { type ToastHandle } from '../../components/Toast';
 
 type StatusFilter = 'all' | 'confirmed' | 'waitlist' | 'cancelled';
 
@@ -49,8 +50,7 @@ export default function OrgAttendees() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Errors from check-in / status actions are shown inline so the list stays on screen.
-  const [actionError, setActionError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [busyRsvpId, setBusyRsvpId] = useState<string | null>(null);
 
@@ -73,7 +73,13 @@ export default function OrgAttendees() {
       setEvent(evt);
       setAttendees(list);
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load attendees');
+      console.error('[OrgAttendees] Failed to load attendees:', e);
+      setError('Unable to load attendees. Please try again.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Attendees failed to load',
+        message: e?.message ?? 'Please try again.',
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -86,7 +92,6 @@ export default function OrgAttendees() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setActionError(null);
     fetchAll();
   }, [fetchAll]);
 
@@ -107,51 +112,97 @@ export default function OrgAttendees() {
   }, [attendees]);
 
   const handleToggleCheckIn = async (a: EventAttendee) => {
-    setActionError(null);
     setBusyRsvpId(a.rsvp_id);
-    const { error: e } = await organizationService.toggleRsvpCheckIn(
-      a.rsvp_id,
-      !a.checked_in
-    );
-    setBusyRsvpId(null);
-    if (e) {
-      setActionError(e);
-      return;
+    try {
+      const { error: e } = await organizationService.toggleRsvpCheckIn(
+        a.rsvp_id,
+        !a.checked_in
+      );
+      if (e) {
+        toastRef.current?.show({ type: 'error', title: 'Check-in update failed', message: e });
+        return;
+      }
+      setAttendees((prev) =>
+        prev.map((r) =>
+          r.rsvp_id === a.rsvp_id ? { ...r, checked_in: !r.checked_in } : r
+        )
+      );
+      toastRef.current?.show({
+        type: 'success',
+        title: a.checked_in ? 'Check-in undone' : 'Attendee checked in',
+        message: a.checked_in
+          ? 'The attendee is no longer marked as checked in.'
+          : 'The attendee is marked as checked in.',
+      });
+    } catch (error) {
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Check-in update failed',
+        message: error instanceof Error ? error.message : 'Unable to update check-in.',
+      });
+    } finally {
+      setBusyRsvpId(null);
     }
-    setAttendees((prev) =>
-      prev.map((r) =>
-        r.rsvp_id === a.rsvp_id ? { ...r, checked_in: !r.checked_in } : r
-      )
-    );
   };
 
   const handleSetStatus = async (a: EventAttendee, status: string) => {
-    setActionError(null);
     setBusyRsvpId(a.rsvp_id);
-    const { error: e } = await organizationService.updateRsvpStatus(a.rsvp_id, status);
-    setBusyRsvpId(null);
-    if (e) {
-      setActionError(e);
-      return;
+    try {
+      const { error: e } = await organizationService.updateRsvpStatus(a.rsvp_id, status);
+      if (e) {
+        toastRef.current?.show({ type: 'error', title: 'Attendee update failed', message: e });
+        return;
+      }
+      setAttendees((prev) =>
+        prev.map((r) => (r.rsvp_id === a.rsvp_id ? { ...r, status } : r))
+      );
+      const statusLabel = status === 'confirmed'
+        ? 'confirmed'
+        : status === 'waitlist'
+          ? 'moved to the waitlist'
+          : status === 'cancelled'
+            ? 'cancelled'
+            : 'updated';
+      toastRef.current?.show({
+        type: 'success',
+        title: 'Attendee updated',
+        message: `The attendee was ${statusLabel}.`,
+      });
+    } catch (error) {
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Attendee update failed',
+        message: error instanceof Error ? error.message : 'Unable to update the attendee.',
+      });
+    } finally {
+      setBusyRsvpId(null);
     }
-    setAttendees((prev) =>
-      prev.map((r) => (r.rsvp_id === a.rsvp_id ? { ...r, status } : r))
-    );
   };
 
-  if (loading) return <CenteredState loading message="Loading attendees…" />;
+  if (loading) {
+    return (
+      <>
+        <AttendeesSkeleton onBack={() => router.back()} />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
   if (error || !event) {
     return (
-      <CenteredState
-        message={error ?? 'Event not found'}
-        actionLabel="Go back"
-        onAction={() => router.back()}
-      />
+      <>
+        <CenteredState
+          message={error ?? 'Event not found'}
+          actionLabel="Go back"
+          onAction={() => router.back()}
+        />
+        <Toast ref={toastRef} />
+      </>
     );
   }
 
   return (
-    <OrgLandscapeShell
+    <>
+      <OrgLandscapeShell
       onBack={() => router.back()}
       backLabel="Event"
       eyebrow="Attendees"
@@ -184,8 +235,6 @@ export default function OrgAttendees() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PC.gold} />
       }
     >
-      {actionError ? <Banner tone="error">{actionError}</Banner> : null}
-
       {filtered.length === 0 ? (
         <EmptyState
           icon="people-outline"
@@ -290,7 +339,9 @@ export default function OrgAttendees() {
           })}
         </Card>
       )}
-    </OrgLandscapeShell>
+      </OrgLandscapeShell>
+      <Toast ref={toastRef} />
+    </>
   );
 }
 

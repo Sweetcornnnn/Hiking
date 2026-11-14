@@ -1,6 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Text, Alert, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import {
   organizationService,
   type Organization,
@@ -22,11 +31,17 @@ import {
   PC,
   FS,
 } from '../../components/organizations/OrgLandscapeShell';
+import { EventDetailSkeleton } from '../../components/organizations/OrgSkeletons';
+import Toast, { type ToastHandle } from '../../components/Toast';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
 export default function OrgEventDetail() {
   useRequireOrganization();
   const router = useRouter();
-  const { eventId } = useLocalSearchParams<{ eventId?: string }>();
+  const { eventId, createdStatus } = useLocalSearchParams<{
+    eventId?: string;
+    createdStatus?: EventStatus;
+  }>();
 
   const [org, setOrg] = useState<Organization | null>(null);
   const [event, setEvent] = useState<HikingEvent | null>(null);
@@ -34,7 +49,10 @@ export default function OrgEventDetail() {
   const [counts, setCounts] = useState({ confirmed: 0, waitlist: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
+  const creationNoticeShown = useRef(false);
 
   const fetchAll = useCallback(async () => {
     if (!eventId) {
@@ -72,7 +90,13 @@ export default function OrgEventDetail() {
       const map = await organizationService.getEventRsvpCounts([evt.id]);
       setCounts(map[evt.id] ?? { confirmed: 0, waitlist: 0, total: 0 });
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load event');
+      console.error('[OrgEventDetail] Failed to load event:', e);
+      setError('Unable to load this event. Please try again.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Event failed to load',
+        message: e?.message ?? 'Please try again.',
+      });
     } finally {
       setLoading(false);
     }
@@ -82,61 +106,118 @@ export default function OrgEventDetail() {
     fetchAll();
   }, [fetchAll]);
 
+  useEffect(() => {
+    if (creationNoticeShown.current || !createdStatus) return;
+    creationNoticeShown.current = true;
+    toastRef.current?.show({
+      type: 'success',
+      title: createdStatus === 'draft' ? 'Draft saved' : 'Event created',
+      message: createdStatus === 'draft'
+        ? 'Your event is saved as a draft.'
+        : 'Your event has been published.',
+    });
+  }, [createdStatus]);
+
   const isVerified = org?.is_verified === true;
 
   const handleSetStatus = async (status: EventStatus) => {
     if (!event) return;
     if (status === 'published' && !isVerified) {
-      Alert.alert(
-        'Verification required',
-        'Your organization must be verified before publishing events.'
-      );
+      toastRef.current?.show({
+        type: 'warning',
+        title: 'Verification required',
+        message: 'Your organization must be verified before publishing events.',
+      });
       return;
     }
     setWorking(true);
-    const { error: e } = await organizationService.updateEventStatus(event.id, status);
-    setWorking(false);
-    if (e) {
-      Alert.alert('Update failed', e);
-      return;
+    try {
+      const { error: e } = await organizationService.updateEventStatus(event.id, status);
+      if (e) {
+        toastRef.current?.show({ type: 'error', title: 'Update failed', message: e });
+        return;
+      }
+      toastRef.current?.show({
+        type: 'success',
+        title: status === 'published'
+          ? 'Event published'
+          : status === 'draft'
+            ? 'Event moved to drafts'
+            : 'Event cancelled',
+        message: status === 'published'
+          ? 'Your event is now visible to hikers.'
+          : status === 'draft'
+            ? 'Your event is no longer published.'
+            : 'Hikers can no longer join this event.',
+      });
+      await fetchAll();
+    } catch (error) {
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Update failed',
+        message: error instanceof Error ? error.message : 'Unable to update the event.',
+      });
+    } finally {
+      setWorking(false);
     }
-    await fetchAll();
   };
 
   const handleDelete = () => {
     if (!event) return;
-    Alert.alert('Delete event?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          setWorking(true);
-          const { error: e } = await organizationService.deleteEvent(event.id);
-          setWorking(false);
-          if (e) {
-            Alert.alert('Delete failed', e);
-            return;
-          }
-          router.replace('/organizations/Events');
-        },
-      },
-    ]);
+    setDeleteConfirmVisible(true);
   };
 
-  if (loading) return <CenteredState loading message="Loading event…" />;
+  const confirmDelete = async () => {
+    if (!event || working) return;
+    setWorking(true);
+    try {
+      const { error: e } = await organizationService.deleteEvent(event.id);
+      if (e) {
+        setDeleteConfirmVisible(false);
+        toastRef.current?.show({ type: 'error', title: 'Delete failed', message: e });
+        return;
+      }
+      setDeleteConfirmVisible(false);
+      router.replace({
+        pathname: '/organizations/Events',
+        params: { notice: 'event-deleted' },
+      } as any);
+    } catch (error) {
+      setDeleteConfirmVisible(false);
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Delete failed',
+        message: error instanceof Error ? error.message : 'Unable to delete the event.',
+      });
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <>
+        <EventDetailSkeleton onBack={() => router.back()} />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
   if (error || !event) {
     return (
-      <CenteredState
-        message={error ?? 'Event not found'}
-        actionLabel="Go back"
-        onAction={() => router.back()}
-      />
+      <>
+        <CenteredState
+          message={error ?? 'Event not found'}
+          actionLabel="Go back"
+          onAction={() => router.back()}
+        />
+        <Toast ref={toastRef} />
+      </>
     );
   }
 
   return (
-    <OrgLandscapeShell
+    <>
+      <OrgLandscapeShell
       onBack={() => router.back()}
       backLabel="Events"
       title={event.title}
@@ -262,10 +343,131 @@ export default function OrgEventDetail() {
           <Text style={styles.blockText}>{event.required_gear}</Text>
         </Block>
       ) : null}
-    </OrgLandscapeShell>
+      </OrgLandscapeShell>
+      <Modal
+        {...FULLSCREEN_MODAL_PROPS}
+        visible={deleteConfirmVisible}
+        animationType="fade"
+        onRequestClose={() => {
+          if (!working) setDeleteConfirmVisible(false);
+        }}
+      >
+        <View style={styles.deleteConfirmRoot}>
+          <ModalScrim color="rgba(0,0,0,0.68)" />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (!working) setDeleteConfirmVisible(false);
+            }}
+            accessible={false}
+          />
+          <View style={styles.deleteConfirmCard} accessibilityViewIsModal>
+            <View style={styles.deleteConfirmIcon}>
+              <Ionicons name="trash-outline" size={22} color={PC.danger} />
+            </View>
+            <Text style={styles.deleteConfirmTitle}>
+              Delete {event.status === 'draft' ? 'draft' : 'event'}?
+            </Text>
+            <Text style={styles.deleteConfirmMessage}>
+              “{event.title}” will be permanently removed. This action cannot be undone.
+            </Text>
+            <View style={styles.deleteConfirmActions}>
+              <TouchableOpacity
+                onPress={() => setDeleteConfirmVisible(false)}
+                disabled={working}
+                style={styles.deleteCancelButton}
+                accessibilityRole="button"
+              >
+                <Text style={styles.deleteCancelText}>Keep event</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => void confirmDelete()}
+                disabled={working}
+                style={[styles.deleteConfirmButton, working && styles.deleteConfirmButtonDisabled]}
+                accessibilityRole="button"
+              >
+                {working ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}
+                <Text style={styles.deleteConfirmButtonText}>
+                  {working ? 'Deleting…' : 'Delete'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Toast ref={toastRef} />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   blockText: { color: PC.textBody, fontSize: FS.base, lineHeight: 19 },
+  deleteConfirmRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  deleteConfirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    padding: 22,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#101923',
+  },
+  deleteConfirmIcon: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.28)',
+    backgroundColor: 'rgba(224,112,112,0.12)',
+  },
+  deleteConfirmTitle: {
+    marginTop: 14,
+    color: PC.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  deleteConfirmMessage: {
+    marginTop: 7,
+    color: PC.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  deleteConfirmActions: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    gap: 10,
+    marginTop: 20,
+  },
+  deleteCancelButton: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: PC.border,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  deleteCancelText: { color: PC.textSecondary, fontSize: 12, fontWeight: '600' },
+  deleteConfirmButton: {
+    flex: 1,
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    backgroundColor: PC.danger,
+  },
+  deleteConfirmButtonDisabled: { opacity: 0.6 },
+  deleteConfirmButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 });

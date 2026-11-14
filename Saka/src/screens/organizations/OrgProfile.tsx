@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { useRequireOrganization } from '../../hooks/useRoleGuard';
@@ -15,6 +15,8 @@ import {
   PC,
   FS,
 } from '../../components/organizations/OrgLandscapeShell';
+import { ProfileSkeleton } from '../../components/organizations/OrgSkeletons';
+import Toast, { type ToastHandle } from '../../components/Toast';
 
 export default function OrgProfile() {
   useRequireOrganization();
@@ -25,6 +27,7 @@ export default function OrgProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -49,7 +52,13 @@ export default function OrgProfile() {
       setWebsite(organization.website ?? '');
       setLogoUrl(organization.logo_url ?? '');
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load organization');
+      console.error('[OrgProfile] Failed to load organization:', e);
+      setError('Unable to load your organization profile. Please try again.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Organization profile failed to load',
+        message: e?.message ?? 'Please try again.',
+      });
     } finally {
       setLoading(false);
     }
@@ -62,7 +71,11 @@ export default function OrgProfile() {
   const handleSave = async () => {
     if (!org) return;
     if (name.trim().length < 2) {
-      Alert.alert('Invalid name', 'Organization name must be at least 2 characters.');
+      toastRef.current?.show({
+        type: 'warning',
+        title: 'Invalid name',
+        message: 'Organization name must be at least 2 characters.',
+      });
       return;
     }
 
@@ -78,24 +91,38 @@ export default function OrgProfile() {
     setSaving(false);
 
     if (e) {
-      Alert.alert('Save failed', e);
+      toastRef.current?.show({ type: 'error', title: 'Save failed', message: e });
       return;
     }
 
     // refresh local cache + auth store profile so dashboard reflects changes
     await fetchOrg();
     await loadProfile();
-    Alert.alert('Saved', 'Your organization profile has been updated.');
+    toastRef.current?.show({
+      type: 'success',
+      title: 'Saved',
+      message: 'Your organization profile has been updated.',
+    });
   };
 
-  if (loading) return <CenteredState loading message="Loading profile…" />;
+  if (loading) {
+    return (
+      <>
+        <ProfileSkeleton onBack={() => router.back()} />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
   if (error || !org) {
     return (
-      <CenteredState
-        message={error ?? 'Organization not found'}
-        actionLabel="Retry"
-        onAction={fetchOrg}
-      />
+      <>
+        <CenteredState
+          message={error ?? 'Organization not found'}
+          actionLabel="Retry"
+          onAction={fetchOrg}
+        />
+        <Toast ref={toastRef} />
+      </>
     );
   }
 
@@ -108,7 +135,8 @@ export default function OrgProfile() {
     logoUrl !== (org.logo_url ?? '');
 
   return (
-    <OrgLandscapeShell
+    <>
+      <OrgLandscapeShell
       onBack={() => router.back()}
       backLabel="Dashboard"
       icon="business-outline"
@@ -219,7 +247,9 @@ export default function OrgProfile() {
           />
         </Field>
       </FormRow>
-    </OrgLandscapeShell>
+      </OrgLandscapeShell>
+      <Toast ref={toastRef} />
+    </>
   );
 }
 

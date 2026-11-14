@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -33,6 +33,8 @@ import {
   SP,
   FS,
 } from '../../components/organizations/OrgLandscapeShell';
+import { DashboardSkeleton } from '../../components/organizations/OrgSkeletons';
+import Toast, { type ToastHandle } from '../../components/Toast';
 
 // Local date (toISOString is UTC and is off by a day for early-morning UTC+8 users).
 const todayISO = () => {
@@ -54,6 +56,7 @@ export default function OrgDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const toastRef = useRef<ToastHandle>(null);
 
   const fetchAll = useCallback(async () => {
     setError(null);
@@ -76,7 +79,13 @@ export default function OrgDashboard() {
       setEvents(evts);
       setStats(dashStats);
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load dashboard');
+      console.error('[OrgDashboard] Failed to load dashboard:', e);
+      setError('Unable to load the organization dashboard. Please try again.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Dashboard failed to load',
+        message: e?.message ?? 'Please try again.',
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -102,8 +111,22 @@ export default function OrgDashboard() {
     router.replace('/Login');
   }, [signOut, router]);
 
-  if (loading) return <CenteredState loading message="Loading your dashboard…" />;
-  if (error) return <CenteredState message={error} actionLabel="Retry" onAction={fetchAll} />;
+  if (loading) {
+    return (
+      <>
+        <DashboardSkeleton />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
+  if (error) {
+    return (
+      <>
+        <CenteredState message={error} actionLabel="Retry" onAction={fetchAll} />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
   if (!org) return null;
 
   const today = todayISO();
@@ -118,6 +141,24 @@ export default function OrgDashboard() {
         titleIconInline
         eyebrow="Organizer dashboard"
         title={org.name}
+        titleSize={17}
+        titleActions={
+          <>
+            <RailIconButton
+              icon="person-circle-outline"
+              color="#F4E7C5"
+              label="Organization profile"
+              onPress={() => router.push('/organizations/Profile')}
+            />
+            <RailIconButton
+              icon="log-out-outline"
+              color={PC.danger}
+              label="Sign out"
+              onPress={handleSignOut}
+            />
+          </>
+        }
+        badgeCentered
         badge={
           org.is_verified ? (
             <Pill label="Verified" icon="shield-checkmark" bg="rgba(63,214,157,0.12)" color={PC.green} border="rgba(63,214,157,0.28)" uppercase={false} />
@@ -134,26 +175,12 @@ export default function OrgDashboard() {
         }
         railFooter={
           <>
-            <View style={styles.utilityActions}>
-              <RailIconButton
-                icon="person-circle-outline"
-                color="#F4E7C5"
-                label="Organization profile"
-                onPress={() => router.push('/organizations/Profile')}
-              />
-              <RailIconButton
-                icon="compass-outline"
-                color={PC.green}
-                label="Browse as hiker"
-                onPress={() => router.push('/Home')}
-              />
-              <RailIconButton
-                icon="log-out-outline"
-                color={PC.danger}
-                label="Sign out"
-                onPress={handleSignOut}
-              />
-            </View>
+            <RailButton
+              icon="compass-outline"
+              label="Browse the app"
+              variant="secondary"
+              onPress={() => router.push('/Home')}
+            />
             <RailButton
               icon="add-circle-outline"
               label="Create event"
@@ -302,12 +329,12 @@ export default function OrgDashboard() {
           </View>
         </View>
       </Modal>
+      <Toast ref={toastRef} />
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  utilityActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 8 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { color: PC.textPrimary, fontSize: FS.title - 1, fontWeight: '700' },
   sectionCount: { color: PC.gold, fontWeight: '700', fontSize: FS.small },

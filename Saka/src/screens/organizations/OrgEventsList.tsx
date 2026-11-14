@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, RefreshControl, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   organizationService,
@@ -22,6 +22,8 @@ import {
   SP,
   FS,
 } from '../../components/organizations/OrgLandscapeShell';
+import { EventsListSkeleton } from '../../components/organizations/OrgSkeletons';
+import Toast, { type ToastHandle } from '../../components/Toast';
 
 type FilterTab = 'all' | 'draft' | 'published' | 'cancelled';
 
@@ -34,6 +36,7 @@ const TABS: { id: FilterTab; label: string }[] = [
 
 export default function OrgEventsList() {
   const router = useRouter();
+  const { notice } = useLocalSearchParams<{ notice?: string }>();
   useRequireOrganization();
 
   const [org, setOrg] = useState<Organization | null>(null);
@@ -43,6 +46,8 @@ export default function OrgEventsList() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<FilterTab>('all');
+  const toastRef = useRef<ToastHandle>(null);
+  const deletionNoticeShown = useRef(false);
 
   const fetchAll = useCallback(async () => {
     setError(null);
@@ -60,7 +65,13 @@ export default function OrgEventsList() {
       const rsvpCounts = await organizationService.getEventRsvpCounts(list.map((e) => e.id));
       setCounts(rsvpCounts);
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load events');
+      console.error('[OrgEventsList] Failed to load events:', e);
+      setError('Unable to load your events. Please try again.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Events failed to load',
+        message: e?.message ?? 'Please try again.',
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -70,6 +81,16 @@ export default function OrgEventsList() {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  useEffect(() => {
+    if (notice !== 'event-deleted' || deletionNoticeShown.current) return;
+    deletionNoticeShown.current = true;
+    toastRef.current?.show({
+      type: 'success',
+      title: 'Event deleted',
+      message: 'The event was removed.',
+    });
+  }, [notice]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -94,12 +115,27 @@ export default function OrgEventsList() {
     return cached?.name ?? 'Mountain';
   };
 
-  if (loading) return <CenteredState loading message="Loading your events…" />;
-  if (error) return <CenteredState message={error} actionLabel="Retry" onAction={fetchAll} />;
+  if (loading) {
+    return (
+      <>
+        <EventsListSkeleton onBack={() => router.back()} />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
+  if (error) {
+    return (
+      <>
+        <CenteredState message={error} actionLabel="Retry" onAction={fetchAll} />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
   if (!org) return null;
 
   return (
-    <OrgLandscapeShell
+    <>
+      <OrgLandscapeShell
       onBack={() => router.back()}
       backLabel="Dashboard"
       eyebrow="Your events"
@@ -203,7 +239,9 @@ export default function OrgEventsList() {
           })}
         </Card>
       )}
-    </OrgLandscapeShell>
+      </OrgLandscapeShell>
+      <Toast ref={toastRef} />
+    </>
   );
 }
 

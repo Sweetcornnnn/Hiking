@@ -68,7 +68,7 @@ export const SP = { xs: 4, sm: 6, md: 10, lg: 14, xl: 20 } as const;
 export const FS = { micro: 9, small: 10, body: 11, base: 12, title: 14 } as const;
 export const HIT = { top: 6, bottom: 6, left: 6, right: 6 };
 
-export const RAIL_WIDTH_RATIO = 0.24;
+export const RAIL_WIDTH_RATIO = 0.28;
 
 /** Status colors shared by event + RSVP pills. */
 export const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
@@ -92,9 +92,12 @@ interface ShellProps {
   titleIconInline?: boolean;
   eyebrow?: string;
   title: string;
+  titleSize?: number;
   titleLines?: number;
   subtitle?: string;
   badge?: React.ReactNode;
+  badgeCentered?: boolean;
+  titleActions?: React.ReactNode;
   /** Small icon buttons shown at the top-right of the rail. */
   headerActions?: React.ReactNode;
   /** Rail content under the identity block (stats, filters, banners…). */
@@ -112,9 +115,12 @@ export function OrgLandscapeShell({
   titleIconInline = false,
   eyebrow,
   title,
+  titleSize,
   titleLines = 3,
   subtitle,
   badge,
+  badgeCentered = false,
+  titleActions,
   headerActions,
   rail,
   railFooter,
@@ -122,7 +128,10 @@ export function OrgLandscapeShell({
   children,
 }: ShellProps) {
   const { width } = useWindowDimensions();
-  const railWidth = Math.min(Math.max(Math.round(width * RAIL_WIDTH_RATIO), 188), 232);
+  const railWidth = Math.min(Math.max(Math.round(width * RAIL_WIDTH_RATIO), 188), 256);
+  const titleSizeStyle = titleSize
+    ? { fontSize: titleSize, lineHeight: titleSize + 4 }
+    : null;
 
   return (
     <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
@@ -178,13 +187,21 @@ export function OrgLandscapeShell({
                 <View style={[s.iconBox, s.inlineIconBox]}>
                   <Ionicons name={icon} size={15} color={PC.gold} />
                 </View>
-                <Text style={[s.title, s.inlineTitle]} numberOfLines={titleLines}>{title}</Text>
+                <Text style={[s.title, s.inlineTitle, titleSizeStyle]} numberOfLines={titleLines}>{title}</Text>
+                {titleActions ? <View style={s.titleActions}>{titleActions}</View> : null}
               </View>
             ) : (
-              <Text style={s.title} numberOfLines={titleLines}>{title}</Text>
+              titleActions ? (
+                <View style={s.titleRow}>
+                  <Text style={[s.title, s.inlineTitle, titleSizeStyle]} numberOfLines={titleLines}>{title}</Text>
+                  <View style={s.titleActions}>{titleActions}</View>
+                </View>
+              ) : (
+                <Text style={[s.title, titleSizeStyle]} numberOfLines={titleLines}>{title}</Text>
+              )
             )}
             {subtitle ? <Text style={s.subtitle}>{subtitle}</Text> : null}
-            {badge ? <View style={s.badgeWrap}>{badge}</View> : null}
+            {badge ? <View style={badgeCentered ? s.badgeWrapCentered : s.badgeWrap}>{badge}</View> : null}
           </View>
 
           {rail}
@@ -863,6 +880,7 @@ const s = StyleSheet.create({
 
   identity: { gap: 3 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: SP.sm },
+  titleActions: { flexDirection: 'row', alignItems: 'center', gap: SP.xs, flexShrink: 0 },
   inlineTitle: { flex: 1, minWidth: 0 },
   iconBox: {
     width: 30,
@@ -880,6 +898,7 @@ const s = StyleSheet.create({
   title: { color: PC.textPrimary, fontSize: FS.title, fontWeight: '700', lineHeight: 18, letterSpacing: -0.1 },
   subtitle: { color: PC.textMuted, fontSize: FS.small, lineHeight: 14, marginTop: 2 },
   badgeWrap: { marginTop: SP.sm, alignSelf: 'flex-start' },
+  badgeWrapCentered: { marginTop: SP.sm, alignSelf: 'center' },
 
   railFooter: {
     gap: SP.sm,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -32,6 +32,8 @@ import {
   SP,
   FS,
 } from '../../components/organizations/OrgLandscapeShell';
+import { CreateEventSkeleton } from '../../components/organizations/OrgSkeletons';
+import Toast, { type ToastHandle } from '../../components/Toast';
 
 const DIFFICULTIES = ['Easy', 'Moderate', 'Hard', 'Expert'] as const;
 
@@ -70,7 +72,8 @@ export default function OrgCreateEvent() {
   const [requiredGear, setRequiredGear] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
 
   const selectedMountain = useMemo(
     () => mountains.find((m) => m.id === mountainId) ?? null,
@@ -114,7 +117,15 @@ export default function OrgCreateEvent() {
         if (!mounted) return;
         setMountains(list);
       } catch (e: any) {
-        if (mounted) setError(e?.message ?? 'Failed to load form');
+        if (mounted) {
+          console.error('[OrgCreateEvent] Failed to load form data:', e);
+          setLoadError('Unable to load event form data. Please try again.');
+          toastRef.current?.show({
+            type: 'error',
+            title: 'Event form failed to load',
+            message: e?.message ?? 'Please try again.',
+          });
+        }
       } finally {
         if (mounted) setOrgLoading(false);
       }
@@ -153,54 +164,82 @@ export default function OrgCreateEvent() {
   const handleSave = async (status: EventStatus) => {
     if (!org) return;
     if (status === 'published' && !isVerified) {
-      setError('Your organization must be verified before publishing. Save as draft instead.');
+      toastRef.current?.show({
+        type: 'warning',
+        title: 'Verification required',
+        message: 'Your organization must be verified before publishing. Save as draft instead.',
+      });
       return;
     }
 
     const v = validation();
     if (v) {
-      setError(v);
+      toastRef.current?.show({ type: 'warning', title: 'Check event details', message: v });
       return;
     }
 
     setSubmitting(true);
-    setError(null);
+    try {
+      const { eventId, error: createErr } = await organizationService.createEvent({
+        organization_id: org.id,
+        mountain_id: mountainId!,
+        title: title.trim(),
+        description: description.trim() || undefined,
+        event_date: date,
+        end_date: endDate || null,
+        start_time: time,
+        end_time: endTime,
+        meeting_point: meetingPoint.trim(),
+        difficulty,
+        duration_hours: durationFromRange(date, time, endDate || date, endTime),
+        capacity: capacity ? Number(capacity) : null,
+        is_public: isPublic,
+        allow_walkins: allowWalkins,
+        status,
+        safety_notes: safetyNotes.trim() || undefined,
+        required_gear: requiredGear.trim() || undefined,
+      });
 
-    const { eventId, error: createErr } = await organizationService.createEvent({
-      organization_id: org.id,
-      mountain_id: mountainId!,
-      title: title.trim(),
-      description: description.trim() || undefined,
-      event_date: date,
-      end_date: endDate || null,
-      start_time: time,
-      end_time: endTime,
-      meeting_point: meetingPoint.trim(),
-      difficulty,
-      duration_hours: durationFromRange(date, time, endDate || date, endTime),
-      capacity: capacity ? Number(capacity) : null,
-      is_public: isPublic,
-      allow_walkins: allowWalkins,
-      status,
-      safety_notes: safetyNotes.trim() || undefined,
-      required_gear: requiredGear.trim() || undefined,
-    });
+      if (createErr || !eventId) {
+        toastRef.current?.show({
+          type: 'error',
+          title: 'Could not create event',
+          message: createErr ?? 'Failed to create event',
+        });
+        return;
+      }
 
-    setSubmitting(false);
-
-    if (createErr || !eventId) {
-      setError(createErr ?? 'Failed to create event');
-      return;
+      router.replace({
+        pathname: '/organizations/EventDetail',
+        params: { eventId, createdStatus: status },
+      } as any);
+    } catch (error) {
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Could not create event',
+        message: error instanceof Error ? error.message : 'Failed to create event',
+      });
+    } finally {
+      setSubmitting(false);
     }
-
-    router.replace({
-      pathname: '/organizations/EventDetail',
-      params: { eventId },
-    } as any);
   };
 
-  if (orgLoading) return <CenteredState loading message="Loading…" />;
-  if (!org) return null;
+  if (orgLoading) {
+    return (
+      <>
+        <CreateEventSkeleton onBack={() => router.back()} />
+        <Toast ref={toastRef} />
+      </>
+    );
+  }
+  if (!org) {
+    return loadError ? (
+      <>
+        <CenteredState message={loadError} actionLabel="Back" onAction={() => router.back()} />
+        <Toast ref={toastRef} />
+      </>
+    ) : null;
+  }
 
   return (
     <>
@@ -218,7 +257,7 @@ export default function OrgCreateEvent() {
                 approves you.
               </Banner>
             )}
-            {error && <Banner tone="error">{error}</Banner>}
+            {loadError && <Banner tone="error">{loadError}</Banner>}
           </>
         }
         railFooter={
@@ -409,6 +448,8 @@ export default function OrgCreateEvent() {
           </Field>
         </FormRow>
       </OrgLandscapeShell>
+
+      <Toast ref={toastRef} />
 
       <PickerModal
         visible={mountainPickerOpen}

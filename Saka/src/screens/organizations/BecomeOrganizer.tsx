@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
@@ -7,12 +7,12 @@ import { useRequireAuth } from '../../hooks/useRoleGuard';
 import {
   OrgLandscapeShell,
   RailButton,
-  Banner,
   Field,
   FormInput,
   FormRow,
   FS,
 } from '../../components/organizations/OrgLandscapeShell';
+import Toast, { type ToastHandle } from '../../components/Toast';
 
 export default function BecomeOrganizer() {
   useRequireAuth();
@@ -27,7 +27,7 @@ export default function BecomeOrganizer() {
   const [phone, setPhone] = useState(profile?.contact_number ?? '');
   const [website, setWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
 
   const effectiveSlug = slugTouched ? slug : organizationService.slugify(name);
   const canSubmit =
@@ -36,7 +36,6 @@ export default function BecomeOrganizer() {
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
-    setError(null);
 
     const { error: createError } = await organizationService.createOrganization({
       name: name.trim(),
@@ -48,7 +47,11 @@ export default function BecomeOrganizer() {
     });
 
     if (createError) {
-      setError(createError);
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Could not create organization',
+        message: createError,
+      });
       setSubmitting(false);
       return;
     }
@@ -82,8 +85,6 @@ export default function BecomeOrganizer() {
         </>
       }
     >
-      {error && <Banner tone="error">{error}</Banner>}
-
       <FormRow>
         <Field label="ORGANIZATION NAME">
           <FormInput
@@ -148,6 +149,7 @@ export default function BecomeOrganizer() {
           editable={!submitting}
         />
       </Field>
+      <Toast ref={toastRef} />
     </OrgLandscapeShell>
   );
 }
