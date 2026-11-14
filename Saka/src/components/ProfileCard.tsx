@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   ScrollView,
   useWindowDimensions,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -23,6 +22,7 @@ import { useLocationTracking } from '../hooks/useLocationTracking';
 import EmergencyContactsPreview from './emergency/EmergencyContactsPreview';
 import { useJournalStore } from '../store/journalStore';
 import { FULLSCREEN_MODAL_PROPS, ModalScrim } from './ModalScrim';
+import Toast, { type ToastHandle } from './Toast';
 import JournalShowcase from './journal/JournalShowcase';
 import { useTutorial, TutorialHelpButton } from './TutorialModal';
 
@@ -70,6 +70,7 @@ export default function ProfileCard({
   onProfileImageSelect
 }: ProfileCardProps) {
   const router = useRouter();
+  const toastRef = useRef<ToastHandle>(null);
   const { height: windowHeight, fontScale } = useWindowDimensions();
   const { user, profile, retryProfileSync } = useAuthStore();
   const { selectedMountainId } = useWildTrackStore();
@@ -251,19 +252,36 @@ export default function ProfileCard({
   };
 
   const pickProfileImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permissionResult.status !== 'granted') {
-      Alert.alert('Permission required', 'Allow photo access to choose a profile image.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      await onProfileImageSelect?.(result.assets[0].uri);
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.status !== 'granted') {
+        toastRef.current?.show({
+          type: 'error',
+          title: 'Permission required',
+          message: 'Allow photo access to choose a profile image.',
+        });
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri && onProfileImageSelect) {
+        await onProfileImageSelect(result.assets[0].uri);
+        toastRef.current?.show({
+          type: 'success',
+          title: 'Profile photo updated',
+          message: 'Your profile photo was saved.',
+        });
+      }
+    } catch (error) {
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Profile photo not saved',
+        message: error instanceof Error ? error.message : 'Unable to save your profile photo.',
+      });
     }
   };
 
@@ -290,6 +308,13 @@ export default function ProfileCard({
 
           {/* Left panel */}
           <View style={[styles.leftPanel, { width: leftPanelWidth }]}>
+            {/* Identity block scrolls if the name/notes outgrow the card; buttons stay pinned below. */}
+            <ScrollView
+              style={styles.identityScroll}
+              contentContainerStyle={styles.identityContent}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
             <TouchableOpacity style={styles.avatar} onPress={handleAvatarPress} activeOpacity={0.8}>
               {profileImage ? (
                 <Image source={{ uri: profileImage }} style={styles.avatarImage} resizeMode="cover" />
@@ -298,10 +323,19 @@ export default function ProfileCard({
               )}
             </TouchableOpacity>
 
-            <Text style={styles.name} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{user?.name || 'Hiker'}</Text>
-            <Text style={styles.email} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{user?.email || 'email@example.com'}</Text>
+            <Text style={styles.name} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={2}>{user?.name || 'Hiker'}</Text>
+            <Text
+              style={styles.email}
+              maxFontSizeMultiplier={TIGHT_FONT_CAP}
+              numberOfLines={1}
+              ellipsizeMode="middle"
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              {user?.email || 'email@example.com'}
+            </Text>
             {profile?.sync_conflict && (
-              <Text style={{ color: '#F2D99A', fontSize: 9, textAlign: 'center', marginTop: 3 }}>
+              <Text style={{ color: '#F2D99A', fontSize: 9, textAlign: 'center', marginTop: 3, alignSelf: 'stretch' }}>
                 Profile changed elsewhere; your offline changes were kept.
               </Text>
             )}
@@ -310,9 +344,9 @@ export default function ProfileCard({
                 onPress={() => void retryProfileSync()}
                 accessibilityRole="button"
                 accessibilityLabel="Retry profile synchronization"
-                style={{ alignItems: 'center', marginTop: 4 }}
+                style={{ alignItems: 'center', marginTop: 4, alignSelf: 'stretch' }}
               >
-                <Text style={{ color: profile.sync_status === 'failed' ? '#F2A5A5' : '#D8C28B', fontSize: 10 }}>
+                <Text style={{ color: profile.sync_status === 'failed' ? '#F2A5A5' : '#D8C28B', fontSize: 10, textAlign: 'center' }}>
                   {profile.sync_status === 'failed' ? 'Profile changes failed to sync · Retry' : 'Profile changes waiting to sync'}
                 </Text>
               </TouchableOpacity>
@@ -322,8 +356,7 @@ export default function ProfileCard({
               <Ionicons name="location-outline" size={11} color="#8A9BB0" />
               <Text style={styles.locationText} maxFontSizeMultiplier={TIGHT_FONT_CAP} numberOfLines={1}>{location}</Text>
             </View>
-
-            <View style={{ flex: 1 }} />
+            </ScrollView>
 
             {canBecomeOrganizer && (
               <TouchableOpacity
@@ -637,6 +670,7 @@ export default function ProfileCard({
 
         {/* Inside this Modal on purpose, so the tutorial stacks above the card */}
         {tutorial.element}
+        <Toast ref={toastRef} />
       </View>
     </Modal>
   );
@@ -663,28 +697,34 @@ const styles = StyleSheet.create({
   },
   leftPanel: {
     width: 160,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 14,
-    alignItems: 'flex-start',
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 12,
+    alignItems: 'stretch',
     backgroundColor: '#111927',
     borderTopLeftRadius: 16,
     borderBottomLeftRadius: 16,
     overflow: 'hidden',
     position: 'relative',
   },
+  identityScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  identityContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingBottom: 6,
+  },
   avatar: {
-    position: 'absolute',
-    top: 11,
-    right: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#1E2D42',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    marginBottom: 0,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: 'rgba(201,169,110,0.4)',
   },
@@ -698,26 +738,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   name: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
     color: '#FFFFFF',
     fontSize: 13,
+    lineHeight: 17,
     fontWeight: '700',
     marginBottom: 2,
-    marginTop: 36,
   },
   email: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
     color: 'rgba(255,255,255,0.38)',
     fontSize: 10,
     marginBottom: 6,
   },
   locationRow: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 3,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   locationText: {
     color: '#8A9BB0',
     fontSize: 10,
+    flexShrink: 1,
   },
   organizerBtn: {
     flexDirection: 'row',
