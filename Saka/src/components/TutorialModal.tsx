@@ -1437,15 +1437,6 @@ export default function TutorialModal({ visible, steps, onClose, finishLabel = '
         <Stage key={index} step={step} reduceMotion={reduceMotion} />
       </Animated.View>
       <Progress count={steps.length} index={index} />
-      <Pressable
-        onPress={dismiss}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={isLast ? 'Close tutorial' : 'Skip tutorial'}
-        style={({ pressed }) => [styles.close, pressed && { opacity: 0.7 }]}
-      >
-        <Ionicons name="close" size={16} color="rgba(255,255,255,0.75)" />
-      </Pressable>
     </View>
   );
 
@@ -1487,8 +1478,7 @@ export default function TutorialModal({ visible, steps, onClose, finishLabel = '
 
   return (
     // A real Modal = its own window, so it always sits above everything
-    // (including native video). A soft scrim dims the screen behind the card;
-    // tapping it does nothing, so the tour can't be dismissed by accident.
+    // (including native video). Tapping the scrim dismisses the tour.
     <Modal
       transparent
       visible
@@ -1500,6 +1490,12 @@ export default function TutorialModal({ visible, steps, onClose, finishLabel = '
     >
       <View style={styles.root}>
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.scrim, { opacity: enter }]} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={dismiss}
+          accessibilityRole="button"
+          accessibilityLabel="Close tutorial"
+        />
         <Animated.View
           {...pan.panHandlers}
           style={[
@@ -1578,21 +1574,10 @@ const styles = StyleSheet.create({
   },
   stagePanelLandscape: { width: STAGE_W_LAND, height: undefined, alignSelf: 'stretch', minHeight: STAGE_H },
   contourAnchor: { position: 'absolute', left: '50%', top: '56%', width: 0, height: 0 },
-  progress: { position: 'absolute', top: 24, left: 20, right: 64, flexDirection: 'row', gap: 5 },
+  progress: { position: 'absolute', top: 24, left: 20, right: 20, flexDirection: 'row', gap: 5 },
   seg: { flex: 1, maxWidth: 40, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.14)' },
   segDone: { backgroundColor: 'rgba(201,169,110,0.5)' },
   segActive: { backgroundColor: C.gold },
-  close: {
-    position: 'absolute',
-    top: 10,
-    right: 12,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   scene: { width: SCENE_W, height: SCENE_H },
   glow: {
     position: 'absolute',

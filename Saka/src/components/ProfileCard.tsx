@@ -3,6 +3,7 @@ import {
   View,
   Text,
   Modal,
+  Pressable,
   TouchableOpacity,
   StyleSheet,
   Image,
@@ -303,7 +304,14 @@ export default function ProfileCard({
       onRequestClose={closeCard}
     >
       <View style={styles.centerContainer}>
-        <ModalScrim color="rgba(4,8,13,0.5)" />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={closeCard}
+          accessibilityRole="button"
+          accessibilityLabel="Close profile card"
+        >
+          <ModalScrim color="rgba(4,8,13,0.5)" />
+        </Pressable>
         <View style={[styles.card, { height: cardHeight }]}>
 
           {/* Left panel */}
@@ -405,16 +413,11 @@ export default function ProfileCard({
                   {TITLES[view]}
                 </Text>
               </View>
-              <View style={styles.headerActions}>
-                {view === 'home' ? <TutorialHelpButton onPress={tutorial.open} /> : null}
-                <TouchableOpacity
-                  onPress={closeCard}
-                  style={styles.closeBtn}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="close" size={14} color="rgba(255,255,255,0.4)" />
-                </TouchableOpacity>
-              </View>
+              {view === 'home' ? (
+                <View style={styles.headerActions}>
+                  <TutorialHelpButton onPress={tutorial.open} />
+                </View>
+              ) : null}
             </View>
 
             {view === 'home' && (
@@ -860,14 +863,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-  },
-  closeBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   listHeaderLeft: {
     flex: 1,
