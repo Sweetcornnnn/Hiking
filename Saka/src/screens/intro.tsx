@@ -817,6 +817,9 @@ function Corner({ style }: { style: object }) {
 }
 
 function CreditsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;
+  const cardWidth = landscape ? Math.min(width - 48, 560) : Math.min(width - 32, 360);
   const [mounted, setMounted] = useState(visible);
   const anim = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
@@ -865,9 +868,20 @@ function CreditsModal({ visible, onClose }: { visible: boolean; onClose: () => v
   };
 
   return (
-    <Modal visible={mounted} transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
+    <Modal
+      visible={mounted}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      navigationBarTranslucent
+      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+      onRequestClose={onClose}
+    >
       <View style={creditsStyles.root}>
-        <Animated.View style={[StyleSheet.absoluteFill, creditsStyles.backdrop, { opacity: backdropOpacity }]} />
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, creditsStyles.backdrop, { opacity: backdropOpacity }]}
+        />
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={onClose}
@@ -875,7 +889,7 @@ function CreditsModal({ visible, onClose }: { visible: boolean; onClose: () => v
           accessibilityLabel="Close credits"
         />
 
-        <Animated.View style={[creditsStyles.card, cardStyle]}>
+        <Animated.View style={[creditsStyles.card, { width: cardWidth }, cardStyle]}>
           {/* soft top-lit background */}
           <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
             <Defs>
@@ -1774,14 +1788,12 @@ const creditsStyles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    paddingVertical: 24,
   },
   backdrop: {
-    backgroundColor: 'rgba(3, 6, 10, 0.84)',
+    backgroundColor: 'rgba(4,8,13,0.66)',
   },
   card: {
-    width: '100%',
-    maxWidth: 360,
     maxHeight: '90%',
     borderRadius: 28,
     backgroundColor: INK,
