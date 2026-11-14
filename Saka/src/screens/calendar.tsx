@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  PanResponder,
 } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -17,7 +18,7 @@ import { useAuthStore } from '../store/authStore';
 import HikeFormModal from '../components/HikeFormModal';
 import { useHikePermit, buildPermitDetails } from '../components/HikePermitModal';
 import { inclusiveDates } from '../utils/dateRange';
-import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
+import { useTutorial } from '../components/TutorialModal';
 
 const SAKA_LOGO = require('../../assets/images/SakaLogo.png');
 
@@ -42,6 +43,8 @@ export default function CalendarScreen() {
 
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [calendarDate, setCalendarDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const calendarDateRef = useRef(calendarDate);
   const [modalVisible, setModalVisible] = useState(false);
   const tutorial = useTutorial('calendar');
   const permit = useHikePermit(SAKA_LOGO);
@@ -286,6 +289,32 @@ export default function CalendarScreen() {
     }
   };
 
+  const updateCalendarDate = (dateString: string) => {
+    calendarDateRef.current = dateString;
+    setCalendarDate(dateString);
+  };
+
+  const shiftCalendarMonth = (amount: number) => {
+    const date = new Date(`${calendarDateRef.current}T00:00:00`);
+    date.setDate(1);
+    date.setMonth(date.getMonth() + amount);
+    updateCalendarDate(
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+    );
+  };
+
+  const calendarSwipe = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 24 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+      onPanResponderRelease: (_, gesture) => {
+        if (Math.abs(gesture.dx) > 40) {
+          shiftCalendarMonth(gesture.dx < 0 ? 1 : -1);
+        }
+      },
+    })
+  ).current;
+
   return (
     <View style={styles.container}>
       <View style={styles.centerWrap}>
@@ -295,57 +324,74 @@ export default function CalendarScreen() {
             <Text style={styles.forecastLoadingText}>Updating forecast…</Text>
           ) : null}
 
-          <Calendar
-            style={styles.calendar}
-            onDayPress={handleDayPress}
-            onDayLongPress={handleDayLongPress}
-            markedDates={markedDates}
-            dayComponent={renderDayComponent}
-            monthFormat="MMMM yyyy"
-            renderHeader={(date: any) => (
-              <View style={styles.monthHeaderRow}>
-                <TouchableOpacity
-                  style={styles.headerIconBtn}
-                  onPress={handleHomePress}
-                  accessibilityLabel="Go home"
-                  accessibilityRole="button"
+          <View {...calendarSwipe.panHandlers}>
+            <Calendar
+              style={styles.calendar}
+              initialDate={calendarDate}
+              onDayPress={handleDayPress}
+              onDayLongPress={handleDayLongPress}
+              onMonthChange={(month) => updateCalendarDate(month.dateString)}
+              markedDates={markedDates}
+              dayComponent={renderDayComponent}
+              monthFormat="MMMM yyyy"
+              renderHeader={(date: any) => (
+                <View style={styles.monthHeaderRow}>
+                  <TouchableOpacity
+                    style={styles.headerIconBtn}
+                    onPress={() => shiftCalendarMonth(-1)}
+                    accessibilityLabel="Previous month"
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="chevron-back" size={14} color="#C9A96E" />
+                  </TouchableOpacity>
+                  <Text style={styles.monthHeaderText}>{date ? date.toString('MMMM yyyy') : ''}</Text>
+                  <TouchableOpacity
+                    style={styles.headerIconBtn}
+                    onPress={() => shiftCalendarMonth(1)}
+                    accessibilityLabel="Next month"
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="chevron-forward" size={14} color="#C9A96E" />
+                  </TouchableOpacity>
+                </View>
+              )}
+              onPressArrowLeft={handleHomePress}
+              onPressArrowRight={tutorial.open}
+              theme={{
+                backgroundColor: 'transparent',
+                calendarBackground: 'transparent',
+                selectedDayBackgroundColor: '#C9A96E',
+                selectedDayTextColor: '#0E1520',
+                todayTextColor: '#C9A96E',
+                todayBackgroundColor: 'rgba(201,169,110,0.12)',
+                dayTextColor: 'rgba(255,255,255,0.75)',
+                textDisabledColor: 'rgba(255,255,255,0.2)',
+                dotColor: '#C9A96E',
+                arrowColor: '#C9A96E',
+                monthTextColor: '#FFFFFF',
+                textMonthFontWeight: '700',
+                textDayFontSize: 11,
+                textMonthFontSize: 12,
+                textDayHeaderFontSize: 9,
+                textDayHeaderFontWeight: '600',
+                textSectionTitleColor: 'rgba(255,255,255,0.35)',
+              }}
+              renderArrow={(direction: 'left' | 'right') => (
+                <View
+                  style={[
+                    styles.arrowWrapper,
+                    direction === 'right' && styles.tutorialArrowWrapper,
+                  ]}
                 >
-                  <Ionicons name="home-outline" size={13} color="#C9A96E" />
-                </TouchableOpacity>
-                <Text style={styles.monthHeaderText}>{date ? date.toString('MMMM yyyy') : ''}</Text>
-                <TutorialHelpButton onPress={tutorial.open} />
-              </View>
-            )}
-            theme={{
-              backgroundColor: 'transparent',
-              calendarBackground: 'transparent',
-              selectedDayBackgroundColor: '#C9A96E',
-              selectedDayTextColor: '#0E1520',
-              todayTextColor: '#C9A96E',
-              todayBackgroundColor: 'rgba(201,169,110,0.12)',
-              dayTextColor: 'rgba(255,255,255,0.75)',
-              textDisabledColor: 'rgba(255,255,255,0.2)',
-              dotColor: '#C9A96E',
-              arrowColor: '#C9A96E',
-              monthTextColor: '#FFFFFF',
-              textMonthFontWeight: '700',
-              textDayFontSize: 11,
-              textMonthFontSize: 12,
-              textDayHeaderFontSize: 9,
-              textDayHeaderFontWeight: '600',
-              textSectionTitleColor: 'rgba(255,255,255,0.35)',
-            }}
-            enableSwipeMonths
-            renderArrow={(direction: 'left' | 'right') => (
-              <View style={styles.arrowWrapper}>
-                <Ionicons
-                  name={direction === 'left' ? 'chevron-back' : 'chevron-forward'}
-                  size={14}
-                  color="#C9A96E"
-                />
-              </View>
-            )}
-          />
+                  {direction === 'left' ? (
+                    <Ionicons name="home-outline" size={13} color="#C9A96E" />
+                  ) : (
+                    <Text style={styles.tutorialArrowText}>?</Text>
+                  )}
+                </View>
+              )}
+            />
+          </View>
 
           <View style={styles.legendRow}>
             <Ionicons name="partly-sunny-outline" size={10} color="rgba(201,169,110,0.7)" />
@@ -480,8 +526,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
+  tutorialArrowWrapper: {
+    width: 18,
+    height: 18,
+    padding: 0,
+    borderRadius: 9,
+    borderColor: 'rgba(201,169,110,0.5)',
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tutorialArrowText: {
+    color: '#C9A96E',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
 
-  // ── Custom month header (home + month/year + info) ──
+  // ── Custom month header (month navigation + title) ──
   monthHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
