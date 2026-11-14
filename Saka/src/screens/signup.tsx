@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   Easing,
   Modal,
@@ -24,6 +23,7 @@ import {
   FieldRow,
   FooterLink,
   PrimaryButton,
+  type ToastConfig,
   SERIF,
 } from '../components/auth/AuthKit';
 
@@ -48,6 +48,7 @@ export default function SignupScreen() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
+  const [toast, setToast] = useState<ToastConfig | null>(null);
   const { signUp, isLoading } = useAuthStore();
 
   const getPasswordStrength = (pwd: string): { label: string; color: string; width: string } => {
@@ -69,7 +70,9 @@ export default function SignupScreen() {
   const reqs = checkReqs(password);
   const allReqsMet = Object.values(reqs).every(Boolean);
   const passwordsMatch = password === confirmPassword && password.length > 0;
-  const canSubmit = allReqsMet && passwordsMatch && phone.trim().length > 0 && !isLoading;
+  const phoneDigits = phone.replace(/\D/g, '');
+  const phoneIsComplete = /^09\d{9}$/.test(phoneDigits) || /^639\d{9}$/.test(phoneDigits);
+  const canSubmit = allReqsMet && passwordsMatch && phoneIsComplete && !isLoading;
 
   // 0 = separate chips, 1 = one full-width pill (fades/slides between the two)
   const done = useRef(new Animated.Value(0)).current;
@@ -84,15 +87,19 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     if (!email || !password || !confirmPassword || !name || !phone.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      setToast({ type: 'error', title: 'Missing information', message: 'Please fill in all fields.' });
+      return;
+    }
+    if (!phoneIsComplete) {
+      setToast({ type: 'error', title: 'Invalid phone number', message: 'Enter a complete Philippine mobile number starting with 09 or +639.' });
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      setToast({ type: 'error', title: 'Passwords do not match', message: 'Re-enter the same password in both fields.' });
       return;
     }
     if (!allReqsMet) {
-      Alert.alert('Error', 'Password does not meet all requirements');
+      setToast({ type: 'error', title: 'Password requirements not met', message: 'Check the password requirements and try again.' });
       return;
     }
     try {
@@ -102,10 +109,11 @@ export default function SignupScreen() {
           setOfflineModalVisible(true);
         } else {
           setOfflineModalVisible(false);
-          Alert.alert(
-            'Sign up failed',
-            getAuthErrorMessage(error, 'Could not create your account. Please try again.'),
-          );
+          setToast({
+            type: 'error',
+            title: 'Sign up failed',
+            message: getAuthErrorMessage(error, 'Could not create your account. Please try again.'),
+          });
         }
       } else {
         setOfflineModalVisible(false);
@@ -117,10 +125,11 @@ export default function SignupScreen() {
         setOfflineModalVisible(true);
       } else {
         setOfflineModalVisible(false);
-        Alert.alert(
-          'Sign up failed',
-          getAuthErrorMessage(error, 'Could not create your account. Please try again.'),
-        );
+        setToast({
+          type: 'error',
+          title: 'Sign up failed',
+          message: getAuthErrorMessage(error, 'Could not create your account. Please try again.'),
+        });
       }
     }
   };
@@ -132,8 +141,8 @@ export default function SignupScreen() {
         title="Create account"
         subtitle="Start tracking your summits."
         note="Your trail. Your adventure. Your SAKA."
-        toast={null}
-        onHideToast={() => {}}
+        toast={toast}
+        onHideToast={() => setToast(null)}
         footer={
           <FooterLink muted="Already have an account?" link="Sign in" onPress={() => router.push('/Login')} />
         }
@@ -156,6 +165,12 @@ export default function SignupScreen() {
             placeholder="09xx xxx xxxx"
             keyboardType="phone-pad"
             editable={!isLoading}
+            tone={phone.trim().length > 0 ? (phoneIsComplete ? 'ok' : 'bad') : undefined}
+            trailing={
+              phone.trim().length > 0
+                ? { text: phoneIsComplete ? '✓ Valid' : '✗ Incomplete', color: phoneIsComplete ? AUTH.green : AUTH.red }
+                : undefined
+            }
           />
         </FieldRow>
 

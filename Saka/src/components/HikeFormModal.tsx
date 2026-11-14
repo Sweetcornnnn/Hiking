@@ -32,6 +32,26 @@ const NAVY = '#0E1520';
 const ICON_GOLD = 'rgba(201,169,110,0.55)';
 const PLACEHOLDER = 'rgba(255,255,255,0.22)';
 
+const isValidPhilippineMobile = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  return /^09\d{9}$/.test(digits) || /^639\d{9}$/.test(digits);
+};
+
+const parseEmergencyContact = (value: string) => {
+  const phoneMatch = value.match(/(?:\+?63|0)[\s()-]*9(?:[\s()-]*\d){9}/);
+  if (!phoneMatch || !isValidPhilippineMobile(phoneMatch[0])) {
+    return { name: value.trim(), phone: '' };
+  }
+
+  return {
+    name: value
+      .replace(phoneMatch[0], '')
+      .replace(/\s*(?:[,&|–—-]\s*)+$/, '')
+      .trim(),
+    phone: phoneMatch[0].trim(),
+  };
+};
+
 const getDateParts = (isoDate: string) => {
   const date = new Date(`${isoDate}T12:00:00`);
   if (Number.isNaN(date.getTime())) return null;
@@ -69,7 +89,8 @@ interface HikeFormData {
   end_time: string;
   tagalongs: string;
   contact_number: string;
-  emergency_contact: string;
+  emergency_contact_name: string;
+  emergency_contact_number: string;
 }
 
 const buildInitialForm = (date: string): HikeFormData => ({
@@ -79,7 +100,8 @@ const buildInitialForm = (date: string): HikeFormData => ({
   end_time: '16:00',
   tagalongs: '1',
   contact_number: '',
-  emergency_contact: '',
+  emergency_contact_name: '',
+  emergency_contact_number: '',
 });
 
 type OverlayKind = 'none' | 'info' | 'endDate' | 'startTime' | 'endTime';
@@ -93,9 +115,7 @@ interface HikeFormModalProps {
   onSaved?: (mode: 'created' | 'updated', hike: SavedHikeLike) => void;
 }
 
-// Centered, landscape-oriented add/edit modal. No heavy backdrop, no X
-// button — Cancel already covers "close without saving". Shared by
-// Calendar (adding a hike) and Hikes (editing one) so both stay in sync.
+// Centered, landscape-oriented add/edit modal shared by Calendar and Hikes.
 export default function HikeFormModal({
   visible,
   onClose,
@@ -121,6 +141,7 @@ export default function HikeFormModal({
     }
     setOverlay('none');
     if (editingHike) {
+      const emergencyContact = parseEmergencyContact(editingHike.emergency_contact);
       setFormData({
         date: editingHike.date,
         end_date:
@@ -131,7 +152,8 @@ export default function HikeFormModal({
         end_time: editingHike.end_time,
         tagalongs: editingHike.tagalongs.toString(),
         contact_number: editingHike.contact_number,
-        emergency_contact: editingHike.emergency_contact,
+        emergency_contact_name: emergencyContact.name,
+        emergency_contact_number: emergencyContact.phone,
       });
     } else {
       setFormData(buildInitialForm(defaultDate));
@@ -143,6 +165,10 @@ export default function HikeFormModal({
     setOverlay(kind);
   };
   const closeOverlay = () => setOverlay('none');
+  const contactNumberHasInput = formData.contact_number.trim().length > 0;
+  const contactNumberIsComplete = isValidPhilippineMobile(formData.contact_number);
+  const emergencyNumberHasInput = formData.emergency_contact_number.trim().length > 0;
+  const emergencyNumberIsComplete = isValidPhilippineMobile(formData.emergency_contact_number);
 
   const handleSave = async () => {
     if (formData.end_date) {
@@ -164,11 +190,23 @@ export default function HikeFormModal({
       }
     }
 
-    if (!formData.contact_number || !formData.emergency_contact) {
+    if (
+      !formData.contact_number.trim() ||
+      !formData.emergency_contact_name.trim() ||
+      !formData.emergency_contact_number.trim()
+    ) {
       toastRef.current?.show({
         type: 'error',
         title: 'Missing info',
-        message: 'Contact and emergency contact are required.',
+        message: 'Contact number, emergency contact name, and phone number are required.',
+      });
+      return;
+    }
+    if (!contactNumberIsComplete || !emergencyNumberIsComplete) {
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Invalid contact number',
+        message: 'Both numbers must be complete Philippine mobile numbers starting with 09 or +639.',
       });
       return;
     }
@@ -180,7 +218,7 @@ export default function HikeFormModal({
       end_time: formData.end_time,
       tagalongs: parseInt(formData.tagalongs) || 1,
       contact_number: formData.contact_number,
-      emergency_contact: formData.emergency_contact,
+      emergency_contact: `${formData.emergency_contact_name.trim()} · ${formData.emergency_contact_number.trim()}`,
       mountain_id: editingHike?.mountain_id || mountainId,
     };
 
@@ -219,6 +257,13 @@ export default function HikeFormModal({
           style={[styles.modalOverlay, { backgroundColor: 'transparent' }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => {
+            if (!isLoading) onClose();
+          }}
+          accessible={false}
+        />
         <View style={[styles.modalCard, { maxHeight: height - 24 }]}>
           {/* Header */}
           <View style={styles.modalHeader}>
@@ -231,6 +276,22 @@ export default function HikeFormModal({
                 {formatHikeDateRange(formData.date, hasRange ? formData.end_date : formData.date)}
               </Text>
             </View>
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={isLoading}
+              style={[styles.headerSaveBtn, isLoading && styles.headerSaveBtnDisabled]}
+              accessibilityRole="button"
+              accessibilityLabel={editingHike ? 'Update hike' : 'Schedule hike'}
+            >
+              <Ionicons
+                name={editingHike ? 'save-outline' : 'add-circle-outline'}
+                size={15}
+                color={isLoading ? 'rgba(255,255,255,0.4)' : NAVY}
+              />
+              <Text style={[styles.headerSaveText, isLoading && styles.headerSaveTextDisabled]}>
+                {isLoading ? 'Saving…' : editingHike ? 'Update Hike' : 'Schedule Hike'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Body */}
@@ -327,56 +388,95 @@ export default function HikeFormModal({
 
               <View style={styles.cell}>
                 <Text style={styles.fieldGroupLabel}>Contact *</Text>
-                <View style={styles.inputWrap}>
+                <View
+                  style={[
+                    styles.inputWrap,
+                    contactNumberHasInput
+                      ? contactNumberIsComplete
+                        ? styles.inputWrapValid
+                        : styles.inputWrapInvalid
+                      : undefined,
+                  ]}
+                >
                   <Ionicons name="call-outline" size={14} color="rgba(110,175,138,0.7)" style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     value={formData.contact_number}
-                    onChangeText={(text) => setFormData({ ...formData, contact_number: text })}
+                    onChangeText={(text) =>
+                      setFormData({
+                        ...formData,
+                        contact_number: text.replace(/[^\d+\s()-]/g, ''),
+                      })
+                    }
                     keyboardType="phone-pad"
                     placeholder="Your contact number"
                     placeholderTextColor={PLACEHOLDER}
+                    accessibilityLabel="Your contact number"
                   />
+                </View>
+                {contactNumberHasInput ? (
+                  <Text style={contactNumberIsComplete ? styles.phoneValid : styles.phoneInvalid}>
+                    {contactNumberIsComplete
+                      ? '✓ Valid Philippine mobile number'
+                      : 'Enter a complete number starting with 09 or +639.'}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+
+            {/* Emergency contact */}
+            <View style={[styles.cell, styles.cellLast]}>
+              <Text style={styles.fieldGroupLabel}>Emergency contact *</Text>
+              <View style={styles.emergencyContactRow}>
+                <View style={[styles.inputWrap, styles.emergencyContactInput]}>
+                  <Ionicons name="person-outline" size={14} color="rgba(224,112,112,0.75)" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={formData.emergency_contact_name}
+                    onChangeText={(text) => setFormData({ ...formData, emergency_contact_name: text })}
+                    placeholder="Contact Name"
+                    placeholderTextColor={PLACEHOLDER}
+                    accessibilityLabel="Emergency contact name"
+                  />
+                </View>
+                <View style={styles.emergencyNumberCell}>
+                  <View
+                    style={[
+                      styles.inputWrap,
+                      emergencyNumberHasInput
+                        ? emergencyNumberIsComplete
+                          ? styles.inputWrapValid
+                          : styles.inputWrapInvalid
+                        : undefined,
+                    ]}
+                  >
+                    <Ionicons name="call-outline" size={14} color="rgba(224,112,112,0.75)" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      value={formData.emergency_contact_number}
+                      onChangeText={(text) =>
+                        setFormData({
+                          ...formData,
+                          emergency_contact_number: text.replace(/[^\d+\s()-]/g, ''),
+                        })
+                      }
+                      keyboardType="phone-pad"
+                      placeholder="Contact Number"
+                      placeholderTextColor={PLACEHOLDER}
+                      accessibilityLabel="Emergency contact phone number"
+                    />
+                  </View>
+                  {emergencyNumberHasInput ? (
+                    <Text style={emergencyNumberIsComplete ? styles.phoneValid : styles.phoneInvalid}>
+                      {emergencyNumberIsComplete
+                        ? '✓ Valid number'
+                        : 'Use 09… or +639…'}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             </View>
-
-            {/* Row 3: Emergency (full width) */}
-            <View style={[styles.cell, styles.cellLast]}>
-              <Text style={styles.fieldGroupLabel}>Emergency contact *</Text>
-              <View style={styles.inputWrap}>
-                <Ionicons name="warning-outline" size={14} color="rgba(224,112,112,0.75)" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  value={formData.emergency_contact}
-                  onChangeText={(text) => setFormData({ ...formData, emergency_contact: text })}
-                  placeholder="Name & number"
-                  placeholderTextColor={PLACEHOLDER}
-                />
-              </View>
-            </View>
           </ScrollView>
-
-          {/* Footer */}
-          <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.modalCancelBtn} onPress={onClose}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSave}
-              disabled={isLoading}
-              style={[styles.saveBtn, isLoading && styles.saveBtnDisabled]}
-            >
-              <Ionicons
-                name={editingHike ? 'save-outline' : 'add-circle-outline'}
-                size={15}
-                color={isLoading ? 'rgba(255,255,255,0.4)' : NAVY}
-              />
-              <Text style={[styles.saveBtnText, isLoading && styles.saveBtnTextDisabled]}>
-                {isLoading ? 'Saving…' : editingHike ? 'Update Hike' : 'Schedule Hike'}
-              </Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* Info warning popup (own Modal so it always sits in front) */}
@@ -485,7 +585,21 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+    minWidth: 0,
   },
+  headerSaveBtn: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    backgroundColor: GOLD,
+  },
+  headerSaveBtnDisabled: { backgroundColor: 'rgba(201,169,110,0.3)' },
+  headerSaveText: { color: NAVY, fontWeight: '700', fontSize: 11 },
+  headerSaveTextDisabled: { color: 'rgba(14,21,32,0.5)' },
   modalTitle: {
     color: '#FFFFFF',
     fontSize: 14,
@@ -558,6 +672,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.09)',
     paddingHorizontal: 9,
   },
+  inputWrapValid: { borderColor: 'rgba(95,190,135,0.8)' },
+  inputWrapInvalid: {
+    borderColor: '#E07070',
+    shadowColor: '#E07070',
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+  },
+  emergencyContactRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  emergencyContactInput: { flex: 1, minWidth: 0 },
+  emergencyNumberCell: { flex: 1, minWidth: 0 },
   inputIcon: {
     marginRight: 6,
   },
@@ -574,6 +698,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+  phoneValid: { color: '#78D49A', fontSize: 9, marginTop: 4 },
+  phoneInvalid: { color: '#F08A8A', fontSize: 9, marginTop: 4 },
   timeValue: {
     flex: 1,
     color: '#FFFFFF',
@@ -583,52 +709,6 @@ const styles = StyleSheet.create({
   dateText: {
     paddingVertical: 0,
   },
-  /* Footer */
-  modalFooter: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingTop: 10,
-    marginTop: 2,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-  },
-  modalCancelBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
-  },
-  modalCancelText: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  saveBtn: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    borderRadius: 9,
-    backgroundColor: GOLD,
-  },
-  saveBtnDisabled: {
-    backgroundColor: 'rgba(201,169,110,0.3)',
-  },
-  saveBtnText: {
-    color: NAVY,
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  saveBtnTextDisabled: {
-    color: 'rgba(14,21,32,0.5)',
-  },
-
   /* Info popup */
   popupLayer: {
     flex: 1,

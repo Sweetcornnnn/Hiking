@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   ScrollView,
   StyleSheet,
@@ -15,6 +14,7 @@ import {
   emergencyContactsService,
   type EmergencyContact,
 } from '../../services/emergencyContactsService';
+import Toast, { type ToastHandle } from '../Toast';
 import OfflineActionModal from '../OfflineActionModal';
 import { isConnectionError } from '../../services/offlineStatusService';
 
@@ -31,6 +31,11 @@ function createContact(): EmergencyContact {
   };
 }
 
+function isValidPhilippineMobile(phone: string): boolean {
+  const digits = phone.replace(/\D/g, '');
+  return /^09\d{9}$/.test(digits) || /^639\d{9}$/.test(digits);
+}
+
 export default function EmergencyContactFeature({
   visible,
 }: EmergencyContactFeatureProps) {
@@ -41,6 +46,7 @@ export default function EmergencyContactFeature({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [offlineAction, setOfflineAction] = useState<'load' | 'save' | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
 
   const loadContacts = useCallback(async () => {
     setIsLoading(true);
@@ -101,7 +107,19 @@ export default function EmergencyContactFeature({
       (contact) => !contact.name || !contact.phone,
     );
     if (incompleteContact) {
-      Alert.alert('Contact details required', 'Enter a name and phone number for each contact.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Contact details required',
+        message: 'Enter a name and phone number for each contact.',
+      });
+      return;
+    }
+    if (normalizedContacts.some((contact) => !isValidPhilippineMobile(contact.phone))) {
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Invalid phone number',
+        message: 'Enter a complete Philippine mobile number starting with 09 or +639.',
+      });
       return;
     }
 
@@ -111,7 +129,11 @@ export default function EmergencyContactFeature({
       await emergencyContactsService.save(normalizedContacts);
       setContacts(normalizedContacts);
       setOfflineAction(null);
-      Alert.alert('Contacts saved', 'Your emergency contacts are saved to your account.');
+      toastRef.current?.show({
+        type: 'success',
+        title: 'Contacts saved',
+        message: 'Your emergency contacts are saved to your account.',
+      });
     } catch (error) {
       if (isConnectionError(error)) {
         setOfflineAction('save');
@@ -128,7 +150,11 @@ export default function EmergencyContactFeature({
     try {
       await Linking.openURL(`tel:${phone.trim()}`);
     } catch {
-      Alert.alert('Unable to call', 'This device could not open the phone dialer.');
+      toastRef.current?.show({
+        type: 'error',
+        title: 'Unable to call',
+        message: 'This device could not open the phone dialer.',
+      });
     }
   };
 
@@ -183,6 +209,7 @@ export default function EmergencyContactFeature({
         }}
         onDismiss={() => setOfflineAction(null)}
       />
+      <Toast ref={toastRef} topOffset={10} widthRatio={0.82} />
 
       {isLoading ? (
         <View style={styles.loading}>
@@ -201,96 +228,114 @@ export default function EmergencyContactFeature({
               No emergency contacts yet. Add someone you trust to reach in an emergency.
             </Text>
           ) : (
-            contacts.map((contact, index) => (
-              <View key={contact.id} style={styles.contactCard}>
-                <View style={styles.contactTopRow}>
-                  <View style={styles.orderBadge}>
-                    <Text style={styles.orderText}>{index + 1}</Text>
+            contacts.map((contact, index) => {
+              const phoneIsComplete = isValidPhilippineMobile(contact.phone);
+              return (
+                <View key={contact.id} style={styles.contactCard}>
+                  <View style={styles.contactTopRow}>
+                    <View style={styles.orderBadge}>
+                      <Text style={styles.orderText}>{index + 1}</Text>
+                    </View>
+                    <Text style={styles.orderHint}>Contact order</Text>
+                    <View style={styles.orderControls}>
+                      <TouchableOpacity
+                        onPress={() => moveContact(index, -1)}
+                        disabled={index === 0 || isSaving}
+                        style={styles.iconButton}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Move contact ${index + 1} up`}
+                      >
+                        <Ionicons
+                          name="chevron-up"
+                          size={15}
+                          color={index === 0 ? '#59616B' : '#D9E0E7'}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => moveContact(index, 1)}
+                        disabled={index === contacts.length - 1 || isSaving}
+                        style={styles.iconButton}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Move contact ${index + 1} down`}
+                      >
+                        <Ionicons
+                          name="chevron-down"
+                          size={15}
+                          color={index === contacts.length - 1 ? '#59616B' : '#D9E0E7'}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() =>
+                          setContacts((current) => current.filter((item) => item.id !== contact.id))
+                        }
+                        disabled={isSaving}
+                        style={styles.iconButton}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove contact ${index + 1}`}
+                      >
+                        <Ionicons name="trash-outline" size={14} color="#E07070" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <Text style={styles.orderHint}>Contact order</Text>
-                  <View style={styles.orderControls}>
-                    <TouchableOpacity
-                      onPress={() => moveContact(index, -1)}
-                      disabled={index === 0 || isSaving}
-                      style={styles.iconButton}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Move contact ${index + 1} up`}
-                    >
-                      <Ionicons
-                        name="chevron-up"
-                        size={15}
-                        color={index === 0 ? '#59616B' : '#D9E0E7'}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => moveContact(index, 1)}
-                      disabled={index === contacts.length - 1 || isSaving}
-                      style={styles.iconButton}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Move contact ${index + 1} down`}
-                    >
-                      <Ionicons
-                        name="chevron-down"
-                        size={15}
-                        color={index === contacts.length - 1 ? '#59616B' : '#D9E0E7'}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() =>
-                        setContacts((current) => current.filter((item) => item.id !== contact.id))
-                      }
-                      disabled={isSaving}
-                      style={styles.iconButton}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove contact ${index + 1}`}
-                    >
-                      <Ionicons name="trash-outline" size={14} color="#E07070" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
 
-                <TextInput
-                  value={contact.name}
-                  onChangeText={(value) => updateContact(contact.id, 'name', value)}
-                  placeholder="Name"
-                  placeholderTextColor="#7E8995"
-                  style={styles.input}
-                  editable={!isSaving}
-                  accessibilityLabel={`Contact ${index + 1} name`}
-                />
-                <TextInput
-                  value={contact.relationship}
-                  onChangeText={(value) => updateContact(contact.id, 'relationship', value)}
-                  placeholder="Relationship or role (optional)"
-                  placeholderTextColor="#7E8995"
-                  style={styles.input}
-                  editable={!isSaving}
-                  accessibilityLabel={`Contact ${index + 1} relationship or role`}
-                />
-                <View style={styles.phoneRow}>
                   <TextInput
-                    value={contact.phone}
-                    onChangeText={(value) => updateContact(contact.id, 'phone', value)}
-                    placeholder="Phone number"
+                    value={contact.name}
+                    onChangeText={(value) => updateContact(contact.id, 'name', value)}
+                    placeholder="Name"
                     placeholderTextColor="#7E8995"
-                    style={[styles.input, styles.phoneInput]}
-                    keyboardType="phone-pad"
+                    style={styles.input}
                     editable={!isSaving}
-                    accessibilityLabel={`Contact ${index + 1} phone number`}
+                    accessibilityLabel={`Contact ${index + 1} name`}
                   />
-                  <TouchableOpacity
-                    onPress={() => void callContact(contact.phone)}
-                    disabled={!contact.phone.trim()}
-                    style={[styles.callButton, !contact.phone.trim() && styles.disabledButton]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Call ${contact.name || `contact ${index + 1}`}`}
-                  >
-                    <Ionicons name="call-outline" size={13} color="#101923" />
-                    <Text style={styles.callButtonText}>Call</Text>
-                  </TouchableOpacity>
+                  <TextInput
+                    value={contact.relationship}
+                    onChangeText={(value) => updateContact(contact.id, 'relationship', value)}
+                    placeholder="Relationship or role (optional)"
+                    placeholderTextColor="#7E8995"
+                    style={styles.input}
+                    editable={!isSaving}
+                    accessibilityLabel={`Contact ${index + 1} relationship or role`}
+                  />
+                  <View style={styles.phoneRow}>
+                    <TextInput
+                      value={contact.phone}
+                      onChangeText={(value) => updateContact(contact.id, 'phone', value)}
+                      placeholder="Phone number"
+                      placeholderTextColor="#7E8995"
+                      style={[
+                        styles.input,
+                        styles.phoneInput,
+                        contact.phone.trim()
+                          ? phoneIsComplete
+                            ? styles.phoneInputValid
+                            : styles.phoneInputInvalid
+                          : undefined,
+                      ]}
+                      keyboardType="phone-pad"
+                      editable={!isSaving}
+                      accessibilityLabel={`Contact ${index + 1} phone number`}
+                    />
+                    <TouchableOpacity
+                      onPress={() => void callContact(contact.phone)}
+                      disabled={!phoneIsComplete}
+                      style={[styles.callButton, !phoneIsComplete && styles.disabledButton]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Call ${contact.name || `contact ${index + 1}`}`}
+                    >
+                      <Ionicons name="call-outline" size={13} color="#101923" />
+                      <Text style={styles.callButtonText}>Call</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {contact.phone.trim() ? (
+                    <Text style={phoneIsComplete ? styles.phoneValidText : styles.phoneErrorText}>
+                      {phoneIsComplete
+                        ? '✓ Valid Philippine mobile number'
+                        : 'Enter a complete number starting with 09 or +639.'}
+                    </Text>
+                  ) : null}
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -387,8 +432,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
   },
+  phoneInputValid: { borderColor: 'rgba(95,190,135,0.8)' },
+  phoneInputInvalid: { borderColor: '#E07070', shadowColor: '#E07070', shadowOpacity: 0.35, shadowRadius: 4 },
   phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   phoneInput: { flex: 1 },
+  phoneValidText: { color: '#78D49A', fontSize: 9, paddingHorizontal: 2 },
+  phoneErrorText: { color: '#F08A8A', fontSize: 9, paddingHorizontal: 2 },
   callButton: {
     minHeight: 34,
     flexDirection: 'row',
