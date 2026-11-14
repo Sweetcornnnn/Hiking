@@ -136,3 +136,49 @@ export const CHAT_FS_SUBTITLE = 10;
 export const CHAT_FS_BODY     = 12.5;
 export const CHAT_FS_META     = 9;
 export const CHAT_FS_LABEL    = 9;
+
+// ══════════════════════════════════════════════════════════════════════════
+// MOUNTAIN INFO TOKENS — additive. Single source for the Tips & Tricks screen.
+// Nothing above this line changes.
+// ══════════════════════════════════════════════════════════════════════════
+
+/** One colour per topic, plus the illustration colours the scenes draw with. */
+export const TOPIC = {
+  gold:  '#C9A96E',
+  coral: '#E07A5F',
+  blue:  '#7C9CC4',
+  teal:  '#5FB3A6',
+  sage:  '#86B36B',
+  red:   '#E5484D',
+  bark:  '#8B6B4A',
+  ink:   '#1A1A1E',
+  paper: '#F2EFE8',
+} as const;
+
+/** Alert severity colours. The unread badge uses the same red as DANGER. */
+export const ALERT_COLOR = {
+  danger:  TOPIC.red,
+  warning: TOPIC.gold,
+  info:    TOPIC.blue,
+  calm:    TOPIC.sage,
+} as const;
+
+/**
+ * Compact type scale. Floor is 12px for anything a hiker must read
+ * (fares, fees, directions). Only kickers go below, as labels.
+ * Hierarchy comes from weight and colour, not size.
+ */
+export const TYPE = {
+  screenTitle: { fontSize: 22, lineHeight: 28, fontWeight: '800' as const, letterSpacing: -0.4 },
+  title:       { fontSize: 15, lineHeight: 20, fontWeight: '700' as const },
+  headline:    { fontSize: 13, lineHeight: 18, fontWeight: '600' as const },
+  body:        { fontSize: 13, lineHeight: 18, fontWeight: '400' as const },
+  detail:      { fontSize: 12, lineHeight: 16, fontWeight: '400' as const },
+  kicker:      { fontSize: 10, lineHeight: 13, fontWeight: '700' as const, letterSpacing: 1.4 },
+} as const;
+
+export const MI_RADIUS = { card: 16, sheet: 20, thumb: 10, chip: 10 } as const;
+export const MI_SPACE  = { xs: 4, sm: 8, md: 12, lg: 16, screen: 16 } as const;
+
+/** Max width of cards and sheets, so tablets and landscape don't stretch them. */
+export const MI_MAX_WIDTH = 640;

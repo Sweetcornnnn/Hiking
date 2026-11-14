@@ -1,20 +1,23 @@
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Alert, MountainTips } from '../../data/mountainTips';
-import ContourMark from './ContourMark';
-import MergedTile from './MergedTile';
-import AlertsSection from './categories/AlertsSection';
 import { getMountainAlertKey } from '../../services/mountainAlertReadService';
-import SafetySection from './categories/SafetySection';
-import PreparationSection from './categories/PreparationSection';
-import TransportationSection from './categories/TransportationSection';
-import TrailTipsSection from './categories/TrailTipsSection';
-import EtiquetteSection from './categories/EtiquetteSection';
+import ContourMark from './ContourMark';
+import DetailSheet from './DetailSheet';
+import AlertsScene from './scenes/AlertsScene';
+import { AlertsDetail } from './GuideDetails';
+import { AlertBanner, HeroCard, TopicRow, sortAlerts } from './TopicTiles';
+import { buildTopics, type TopicKey } from './topics';
+import { SERIF } from '../events/TrailKit';
 import {
   ACCENT_GOLD,
+  ALERT_COLOR,
   BG_CARD,
   BORDER_DEFAULT,
+  MI_MAX_WIDTH,
+  MI_SPACE,
   TEXT_MUTED,
   TEXT_PRIMARY,
 } from '../../theme/designTokens';
@@ -26,170 +29,118 @@ export interface TipsAndTricksProps {
   onBack?: () => void;
 }
 
-/**
- * A fixed, non-scrolling dashboard.
- *  - Header: back button, mountain name, and the small alerts button (red badge = unread).
- *  - Top row: Trail Tips & Navigation and Transportation Guide, sharing one wide card.
- *  - Bottom row: Safety, Preparation & Requirements, Environmental Etiquette.
- * Each tile opens its full guide on tap.
- *
- * The screen is full-bleed: it ignores safe-area insets and pads itself instead.
- */
-export default function TipsAndTricks({
-  mountainTips,
-  unreadAlertKeys,
-  onAlertViewed,
-  onBack,
-}: TipsAndTricksProps) {
-  const { width, height } = useWindowDimensions();
-  const landscape = width > height;
+type OpenKey = TopicKey | 'alerts' | null;
 
-  // Rows are sized from the space that is actually free, then capped, so they stay
-  // compact instead of stretching to fill the screen. Rows can never overflow.
-  const [gridHeight, setGridHeight] = useState(0);
-  const ROW_COUNT = 2;
-  const maxRowHeight = landscape ? 128 : 156;
-  const rowHeight = gridHeight > 0
-    ? Math.min(maxRowHeight, (gridHeight - GRID_PAD_BOTTOM - GRID_GAP * (ROW_COUNT - 1)) / ROW_COUNT)
-    : maxRowHeight;
+/**
+ * Scrolling, compact guide. Order follows what hikers need, most urgent first:
+ * alerts, then Trail + Transport (hero card), Preparation, and Safety / Etiquette rows.
+ * Every card previews its key fact; tapping opens the full guide in a scrolling sheet.
+ */
+export default function TipsAndTricks({ mountainTips, unreadAlertKeys, onAlertViewed, onBack }: TipsAndTricksProps) {
+  const insets = useSafeAreaInsets();
+  const [open, setOpen] = useState<OpenKey>(null);
+
+  const topics = useMemo(() => buildTopics(mountainTips), [mountainTips]);
+  const sorted = useMemo(() => sortAlerts(mountainTips.alerts), [mountainTips.alerts]);
+  const unread = useMemo(
+    () => sorted.filter((a) => unreadAlertKeys.has(getMountainAlertKey(mountainTips, a))),
+    [sorted, unreadAlertKeys, mountainTips],
+  );
+
+  const openAlerts = () => {
+    unread.forEach((a) => onAlertViewed(a)); // opening the list counts as reading it
+    setOpen('alerts');
+  };
+
+  const active = open && open !== 'alerts' ? topics[open] : null;
+  const alertAccent = sorted.length > 0 ? ALERT_COLOR[sorted[0].type] : ALERT_COLOR.calm;
 
   return (
     <View style={styles.screen}>
-      <View style={[styles.header, landscape && styles.headerLandscape]}>
-        <ContourMark size={landscape ? 150 : 170} summit fade={0.85} style={styles.headerContour} />
-
-        {onBack ? (
-          <Pressable
-            onPress={onBack}
-            hitSlop={8}
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Close tips and tricks"
-          >
-            <Ionicons name="chevron-back" size={22} color={ACCENT_GOLD} />
-          </Pressable>
-        ) : null}
-
-        <View style={styles.headerText}>
-          <Text style={styles.mountainName} numberOfLines={1} accessibilityRole="header">
-            {mountainTips.mountainName}
-          </Text>
-          <Text style={styles.subtitle} numberOfLines={1}>Tap a tile for the full guide</Text>
-        </View>
-
-        <AlertsSection
-          alerts={mountainTips.alerts}
-          mountain={mountainTips}
-          unreadAlertKeys={unreadAlertKeys}
-          getAlertKey={getMountainAlertKey}
-          onAlertViewed={onAlertViewed}
-        />
-      </View>
-
-      <View
-        style={styles.grid}
-        onLayout={(e) => setGridHeight(e.nativeEvent.layout.height)}
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: insets.top, paddingBottom: insets.bottom + MI_SPACE.lg }]}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Top row: two tiles, one card, a line between them */}
-        <View style={[styles.row, { height: rowHeight }]}>
-          <MergedTile
-            left={<TrailTipsSection items={mountainTips.trailTips} guide={mountainTips.trailGuide} bare />}
-            right={
-              <TransportationSection
-                items={mountainTips.transportation}
-                guide={mountainTips.transportGuide}
-                bare
-              />
-            }
-          />
+        <View style={styles.header}>
+          <ContourMark size={150} summit fade={0.85} style={styles.headerContour} />
+          {onBack ? (
+            <Pressable
+              onPress={onBack}
+              hitSlop={8}
+              style={({ pressed }) => [styles.headerBack, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Back to mountain"
+            >
+              <Ionicons name="home-outline" size={18} color={ACCENT_GOLD} />
+            </Pressable>
+          ) : <View style={styles.headerBackSpacer} />}
+          <View style={styles.headerText}>
+            <Text style={styles.mountainName} numberOfLines={1} accessibilityRole="header">
+              {mountainTips.mountainName} Hiking Guide
+            </Text>
+            <Text style={styles.subtitle} numberOfLines={2}>
+              Trail, transport, preparation, safety and etiquette
+            </Text>
+          </View>
+          <View style={styles.headerBackSpacer} />
         </View>
 
-        {/* Bottom row: three separate cards */}
-        <View style={[styles.row, { height: rowHeight }]}>
-          <View style={styles.cell}>
-            <SafetySection items={mountainTips.safety} guide={mountainTips.safetyGuide} />
-          </View>
-          <View style={styles.cell}>
-            <PreparationSection items={mountainTips.preparation} guide={mountainTips.preparationGuide} />
-          </View>
-          <View style={styles.cell}>
-            <EtiquetteSection items={mountainTips.etiquette} guide={mountainTips.etiquetteGuide} />
-          </View>
+        <View style={styles.column}>
+          <AlertBanner sorted={sorted} unread={unread.length} onOpen={openAlerts} />
+          <HeroCard left={topics.trail} right={topics.transport} onOpen={(t) => setOpen(t.key)} />
+          <TopicRow topic={topics.preparation} onOpen={() => setOpen('preparation')} />
+          <TopicRow compact topic={topics.safety} onOpen={() => setOpen('safety')} />
+          <TopicRow compact topic={topics.etiquette} onOpen={() => setOpen('etiquette')} />
         </View>
-      </View>
+      </ScrollView>
+
+      {active ? (
+        <DetailSheet
+          visible
+          title={active.title}
+          subtitle={active.subtitle}
+          accent={active.accent}
+          scene={active.scene}
+          onClose={() => setOpen(null)}
+        >
+          {active.detail}
+        </DetailSheet>
+      ) : null}
+
+      <DetailSheet
+        visible={open === 'alerts'}
+        title="Events & Alerts"
+        subtitle={sorted.length === 0 ? 'All clear for now.' : 'Closures and hazards, most urgent first.'}
+        accent={alertAccent}
+        scene={<AlertsScene accent={alertAccent} calm={sorted.length === 0} />}
+        onClose={() => setOpen(null)}
+      >
+        <AlertsDetail alerts={sorted} />
+      </DetailSheet>
     </View>
   );
 }
 
-const GRID_GAP = 10;
-const GRID_PAD_BOTTOM = 16;
-
 const styles = StyleSheet.create({
-  // Full-bleed on purpose: no safe-area insets, so the layout runs behind the camera
-  // cutout and rounded corners. Spacing comes from the fixed padding below.
-  screen: {
-    flex: 1,
-    backgroundColor: BG_CARD,
-  },
+  screen: { flex: 1, backgroundColor: BG_CARD },
+  content: { alignItems: 'stretch', gap: MI_SPACE.sm },
+  column: { width: '100%', maxWidth: MI_MAX_WIDTH + MI_SPACE.screen * 2, alignSelf: 'center', paddingHorizontal: MI_SPACE.screen, gap: MI_SPACE.sm },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 14,
+    marginHorizontal: MI_SPACE.screen,
+    minHeight: 40,
+    paddingTop: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER_DEFAULT,
     overflow: 'hidden',
   },
-  headerLandscape: {
-    paddingBottom: 8,
-  },
-  headerContour: {
-    position: 'absolute',
-    right: -30,
-    top: -34,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
-  },
-  headerText: {
-    flex: 1,
-  },
-  mountainName: {
-    color: TEXT_PRIMARY,
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-  },
-  subtitle: {
-    color: TEXT_MUTED,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 1,
-  },
-  grid: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: GRID_GAP,
-    paddingHorizontal: 20,
-    paddingBottom: GRID_PAD_BOTTOM,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: GRID_GAP,
-  },
-  cell: {
-    flex: 1,
-    minWidth: 0,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
+  headerContour: { position: 'absolute', right: -30, top: -34 },
+  headerBack: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', transform: [{ translateX: 24 }] },
+  headerBackSpacer: { width: 36 },
+  headerText: { flex: 1, alignItems: 'center', gap: 2 },
+  mountainName: { color: TEXT_PRIMARY, fontFamily: SERIF, fontSize: 20, textAlign: 'center' },
+  subtitle: { marginTop: 1, color: TEXT_MUTED, fontSize: 12, textAlign: 'center' },
+  pressed: { opacity: 0.7 },
 });

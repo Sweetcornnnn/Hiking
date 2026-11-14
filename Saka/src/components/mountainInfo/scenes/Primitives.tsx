@@ -8,23 +8,14 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { MI_RADIUS, TOPIC } from '../../../theme/designTokens';
 
 /** Every scene is drawn on this fixed canvas, then scaled to fit its tile. */
 export const CANVAS_W = 140;
 export const CANVAS_H = 90;
 
-/** One colour per topic. Gold stays the brand colour; the others give each scene its own personality. */
-export const PALETTE = {
-  gold: '#C9A96E',
-  coral: '#E07A5F',
-  blue: '#7C9CC4',
-  teal: '#5FB3A6',
-  sage: '#86B36B',
-  red: '#E5484D',
-  bark: '#8B6B4A',
-  ink: '#1A1A1E',
-  paper: '#F2EFE8',
-};
+/** Topic colours now live in designTokens (TOPIC). Re-exported so the scenes keep working. */
+export const PALETTE = TOPIC;
 
 /** Adds an alpha channel to a 6-digit hex colour. */
 export function withAlpha(hex: string, alpha: number) {
@@ -145,3 +136,22 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 });
+/** Small scene tile for cards and headers. Keeps the canvas aspect ratio (140:90). */
+export function SceneThumb({
+  accent,
+  width = 60,
+  children,
+}: {
+  accent: string;
+  width?: number;
+  children: ReactNode;
+}) {
+  return (
+    <SceneFrame
+      accent={accent}
+      style={{ width, height: Math.round((width * CANVAS_H) / CANVAS_W), borderRadius: MI_RADIUS.thumb }}
+    >
+      {children}
+    </SceneFrame>
+  );
+}
