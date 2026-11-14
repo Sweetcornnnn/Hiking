@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
 
@@ -64,7 +64,6 @@ export default function WildTrackScreen() {
     selectedMountainId,
     setSelectedMountainId,
     featuredSpecies,
-    discoveries,
     stats,
     isLoading,
     fetchFeaturedSpecies,
@@ -114,9 +113,21 @@ export default function WildTrackScreen() {
     };
   }, [selectedMountainId, setSelectedMountainId]);
 
-  useEffect(() => {
-    if (selectedMountainId) loadWildTrackData();
-  }, [selectedMountainId]);
+  const loadWildTrackData = useCallback(async () => {
+    if (!selectedMountainId) return;
+
+    await Promise.all([
+      fetchFeaturedSpecies(selectedMountainId),
+      fetchDiscoveries(selectedMountainId),
+      fetchStats(selectedMountainId),
+    ]);
+  }, [selectedMountainId, fetchFeaturedSpecies, fetchDiscoveries, fetchStats]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadWildTrackData();
+    }, [loadWildTrackData]),
+  );
 
   useEffect(() => {
     if (!selectedMountainId) return;
@@ -139,14 +150,6 @@ export default function WildTrackScreen() {
     };
   }, [selectedMountainId, selectedMountainBiodiversity, fetchMountainBiodiversity]);
 
-  const loadWildTrackData = async () => {
-    await Promise.all([
-      fetchFeaturedSpecies(selectedMountainId),
-      fetchDiscoveries(selectedMountainId),
-      fetchStats(selectedMountainId),
-    ]);
-  };
-
   const handleSpeciesPress = (species: Species) => {
     setImageError(false);
     setDiscoveryError(null);
@@ -163,55 +166,81 @@ export default function WildTrackScreen() {
     setShowLockedModal(true);
   };
 
+  const saveSpeciesDiscovery = async (
+    species: Species,
+    discovered: boolean,
+  ): Promise<string | null> => {
+    if (!selectedMountainId) return 'Select a mountain before recording a discovery.';
+
+    if (discovered) {
+      return (await createDiscovery(species.id, selectedMountainId)).error;
+    }
+
+    let discovery = useWildTrackStore.getState().discoveries.find(
+      (item) =>
+        item.species_id === species.id &&
+        item.mountain_id === selectedMountainId,
+    );
+    if (!discovery) {
+      await fetchDiscoveries(selectedMountainId);
+      discovery = useWildTrackStore.getState().discoveries.find(
+        (item) =>
+          item.species_id === species.id &&
+          item.mountain_id === selectedMountainId,
+      );
+    }
+    if (!discovery) return 'Could not find this discovery to remove. Please try again.';
+
+    return (await removeDiscovery(discovery.id)).error;
+  };
+
+  const handlePulledDiscovery = async (
+    species: Species,
+    discovered: boolean,
+  ): Promise<boolean> => {
+    const speciesName = species.common_name || species.scientific_name;
+    const error = await saveSpeciesDiscovery(species, discovered);
+    if (error) {
+      toastRef.current?.show({
+        type: 'error',
+        title: discovered ? 'Discovery not saved' : 'Discovery not removed',
+        message: error,
+      });
+      return false;
+    }
+
+    toastRef.current?.show({
+      type: 'success',
+      title: discovered ? 'Discovery recorded' : 'Discovery removed',
+      message: discovered
+        ? `${speciesName} added to your discoveries.`
+        : `${speciesName} removed from your discoveries.`,
+    });
+    return true;
+  };
+
   const handleDiscoverSpecies = async () => {
     if (!selectedSpecies) return;
     const speciesName = selectedSpecies.common_name || selectedSpecies.scientific_name;
     setIsDiscoveryActionLoading(true);
     try {
-      if (selectedSpecies.discovered) {
-        const discovery = discoveries.find(
-          (item) =>
-            item.species_id === selectedSpecies.id &&
-            item.mountain_id === selectedMountainId,
-        );
-        if (!discovery) {
-          setDiscoveryError('Could not find this discovery to remove. Please try again.');
-          await fetchDiscoveries(selectedMountainId);
-          return;
-        }
-
-        const { error } = await removeDiscovery(discovery.id);
-        if (error) {
-          setDiscoveryError(error);
-          return;
-        }
-
-        setDiscoveryError(null);
-        setShowLockedModal(false);
-        setSelectedSpecies(null);
-        toastRef.current?.show({
-          type: 'success',
-          title: 'Discovery removed',
-          message: `${speciesName} removed from your discoveries.`,
-        });
-      } else {
-        const { error } = await createDiscovery(selectedSpecies.id, selectedMountainId);
-        if (error) {
-          setDiscoveryError(error);
-          return;
-        }
-
-        setDiscoveryError(null);
-        setShowLockedModal(false);
-        setSelectedSpecies(null);
-        toastRef.current?.show({
-          type: 'success',
-          title: 'Discovery recorded',
-          message: `${speciesName} added to your discoveries.`,
-        });
+      const wasDiscovered = selectedSpecies.discovered;
+      const error = await saveSpeciesDiscovery(selectedSpecies, !wasDiscovered);
+      if (error) {
+        setDiscoveryError(error);
+        return;
       }
 
-      await loadWildTrackData();
+      setDiscoveryError(null);
+      setShowLockedModal(false);
+      setSelectedSpecies(null);
+      toastRef.current?.show({
+        type: 'success',
+        title: wasDiscovered ? 'Discovery removed' : 'Discovery recorded',
+        message: wasDiscovered
+          ? `${speciesName} removed from your discoveries.`
+          : `${speciesName} added to your discoveries.`,
+      });
     } finally {
       setIsDiscoveryActionLoading(false);
     }
@@ -398,6 +427,7 @@ export default function WildTrackScreen() {
             <SpeciesCarousel
               species={featuredSpecies}
               onSpeciesPress={handleSpeciesPress}
+              onDiscoveryChange={handlePulledDiscovery}
               discoveredSpecies={
                 new Set(featuredSpecies.filter((s) => s.discovered).map((s) => s.id))
               }

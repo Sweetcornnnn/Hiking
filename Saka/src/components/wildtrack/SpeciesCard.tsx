@@ -66,9 +66,9 @@ export interface SpeciesCardProps {
   isDiscovered?: boolean;
   showDiscoveryStatus?: boolean;
   /** Fired when the gold bookmark is pulled all the way down. */
-  onDiscover?: () => void;
+  onDiscover?: () => void | boolean | Promise<void | boolean>;
   /** Fired when the green bookmark is pulled all the way down. */
-  onUndiscover?: () => void;
+  onUndiscover?: () => void | boolean | Promise<void | boolean>;
   /**
    * Extra sections shown below the profile hero. Default: none, which gives
    * the plain profile (WildTrack, Discovery). SpeciesSearch passes
@@ -261,10 +261,16 @@ export const SpeciesCard: React.FC<SpeciesCardProps> = ({
 
   const hasImage = !!resolvedImage && !imageError;
 
-  const handleSetDiscovered = (next: boolean) => {
+  const handleSetDiscovered = async (next: boolean): Promise<boolean> => {
     setDiscovered(next);
-    if (next) onDiscover?.();
-    else onUndiscover?.();
+    try {
+      const result = next ? await onDiscover?.() : await onUndiscover?.();
+      if (result === false) setDiscovered(!next);
+      return result !== false;
+    } catch (error) {
+      setDiscovered(!next);
+      throw error;
+    }
   };
 
   return (
@@ -362,13 +368,8 @@ interface SpeciesDetailProps {
   imageUri?: string;
   discovered: boolean;
   showStatus: boolean;
-  onSetDiscovered: (next: boolean) => void;
+  onSetDiscovered: (next: boolean) => void | boolean | Promise<void | boolean>;
   onClose: () => void;
-}
-
-interface DoneToast {
-  text: string;
-  theme: 'gold' | 'red';
 }
 
 const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
@@ -386,7 +387,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
 
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
-  const [done, setDone] = useState<DoneToast | null>(null);
   const [scrollLocked, setScrollLocked] = useState(false);
   const hasImage = !!imageUri && !imageError;
 
@@ -411,7 +411,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
   const entry = useRef(new Animated.Value(0)).current;
   const flashLight = useRef(new Animated.Value(0)).current;
   const flashDark = useRef(new Animated.Value(0)).current;
-  const doneAnim = useRef(new Animated.Value(0)).current;
   const ribbonScale = useRef(new Animated.Value(1)).current;
   // JS-driven (they drive layout / colour props)
   const ribbonPull = useRef(new Animated.Value(0)).current; // 0..1, 1 = "yes"
@@ -421,7 +420,7 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
 
   const busy = useRef(false);
   const committed = useRef(false);
-  const alive = useRef(true);
+  const requestPending = useRef(false);
 
   // latest props/callbacks, so gesture handlers never go stale
   const discoveredRef = useRef(discovered);
@@ -432,16 +431,12 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
   closeRef.current = onClose;
 
   useEffect(() => {
-    alive.current = true;
     Animated.spring(entry, {
       toValue: 1,
       friction: 9,
       tension: 60,
       useNativeDriver: true,
     }).start();
-    return () => {
-      alive.current = false;
-    };
   }, [entry]);
 
   useWiggle(ribbonHint, showStatus);
@@ -466,31 +461,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
       useNativeDriver: true,
     }).start();
   }, [discovered, ribbonScale]);
-
-  const showDone = useCallback(
-    (text: string, theme: DoneToast['theme']) => {
-      setDone({ text, theme });
-      doneAnim.setValue(0);
-      Animated.sequence([
-        Animated.timing(doneAnim, {
-          toValue: 1,
-          duration: 260,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.delay(1500),
-        Animated.timing(doneAnim, {
-          toValue: 0,
-          duration: 300,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        if (alive.current) setDone(null);
-      });
-    },
-    [doneAnim],
-  );
 
   const dismiss = useCallback(() => {
     if (busy.current) return;
@@ -526,6 +496,35 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
     committed.current = true;
     busy.current = true;
     const wasDiscovered = discoveredRef.current;
+    const nextDiscovered = !wasDiscovered;
+    let animationFinished = false;
+    let saveFinished = false;
+    let saveFailed = false;
+    requestPending.current = true;
+
+    const rollbackTone = () => {
+      tone.stopAnimation();
+      tone.setValue(wasDiscovered ? 1 : 0);
+      flashLight.stopAnimation();
+      flashLight.setValue(0);
+      flashDark.stopAnimation();
+      flashDark.setValue(0);
+    };
+
+    const finishIfReady = () => {
+      if (animationFinished) {
+        committed.current = false;
+        busy.current = false;
+      }
+      if (animationFinished && saveFinished) requestPending.current = false;
+    };
+
+    const finishSave = (saved: boolean) => {
+      saveFinished = true;
+      saveFailed = !saved;
+      if (saveFailed && animationFinished) rollbackTone();
+      finishIfReady();
+    };
 
     Animated.timing(promptVis, {
       toValue: 0,
@@ -539,9 +538,21 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
       easing: Easing.out(Easing.quad),
       useNativeDriver: false,
     }).start(() => {
+      try {
+        void Promise.resolve(setDiscoveredRef.current(nextDiscovered)).then(
+          (saved) => finishSave(saved !== false),
+          (error) => {
+            console.error('[SpeciesCard] Failed to update discovery:', error);
+            finishSave(false);
+          },
+        );
+      } catch (error) {
+        console.error('[SpeciesCard] Failed to update discovery:', error);
+        finishSave(false);
+      }
+
       if (wasDiscovered) {
         // YES: remove the discovery. Red blends back to gold.
-        setDiscoveredRef.current(false);
         Animated.timing(tone, {
           toValue: 3,
           duration: 520,
@@ -555,10 +566,8 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }).start();
-        showDone('Removed from discovered', 'red');
       } else {
         // YES: mark as discovered. Gold blends into green.
-        setDiscoveredRef.current(true);
         Animated.timing(tone, {
           toValue: 1,
           duration: 520,
@@ -572,7 +581,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }).start();
-        showDone('Marked as discovered', 'gold');
       }
 
       // ribbon glides back to its resting length
@@ -583,14 +591,16 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
         useNativeDriver: false,
       }).start(() => {
         promptVis.setValue(1);
-        committed.current = false;
-        busy.current = false;
+        animationFinished = true;
+        if (saveFailed) rollbackTone();
+        finishIfReady();
       });
     });
-  }, [ribbonPull, tone, promptVis, flashLight, flashDark, showDone]);
+  }, [ribbonPull, tone, promptVis, flashLight, flashDark]);
 
   const ribbonResponder = useMemo(() => {
-    const canStart = () => showStatus && !busy.current;
+    const canStart = () =>
+      showStatus && !busy.current && !requestPending.current;
 
     return PanResponder.create({
       onStartShouldSetPanResponder: canStart,
@@ -942,41 +952,6 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
             </Animated.View>
           )}
 
-          {/* ===== result toast ===== */}
-          {!!done && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.toast,
-                done.theme === 'red' ? themes.red.box : themes.gold.box,
-                {
-                  opacity: doneAnim,
-                  transform: [
-                    {
-                      translateX: doneAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-10, 0],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
-              <Ionicons
-                name={done.theme === 'red' ? 'remove-circle' : 'checkmark-circle'}
-                size={16}
-                color={done.theme === 'red' ? '#EF4444' : ACCENT_GOLD}
-              />
-              <Text
-                style={[
-                  styles.toastText,
-                  done.theme === 'red' ? themes.red.title : themes.gold.title,
-                ]}
-              >
-                {done.text}
-              </Text>
-            </Animated.View>
-          )}
         </Animated.View>
       </View>
     </Modal>
@@ -1792,27 +1767,4 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
 
-  // result toast
-  toast: {
-    position: 'absolute',
-    left: 52,
-    top: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 12,
-    borderWidth: 1,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-  },
-
-  toastText: {
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWildTrackStore } from '../../store/wildtrackStore';
 import { SpeciesCard } from '../../components/wildtrack/SpeciesCard';
+import Toast, { ToastHandle } from '../../components/Toast';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../../components/ModalScrim';
@@ -43,13 +44,17 @@ export default function FeaturedSpeciesScreen() {
   const {
     featuredSpecies,
     fetchFeaturedSpecies,
+    fetchDiscoveries,
     selectedMountainId,
     createDiscovery,
+    removeDiscovery,
     cacheSpecies,
   } = useWildTrackStore();
 
   const [selectedSpecies, setSelectedSpecies] = useState<any | null>(null);
   const [marking, setMarking] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
 
   useEffect(() => {
     fetchFeaturedSpecies(selectedMountainId);
@@ -58,13 +63,58 @@ export default function FeaturedSpeciesScreen() {
   const cardWidth = (width - H_PADDING * 2 - GRID_GAP * (COLUMNS - 1)) / COLUMNS;
 
   const handleMarkDiscovered = async () => {
-    if (!selectedSpecies) return;
+    if (!selectedSpecies || marking) return;
 
     setMarking(true);
-    const { error } = await createDiscovery(selectedSpecies.id, selectedMountainId);
-    if (!error) await cacheSpecies(selectedSpecies);
-    setMarking(false);
-    setSelectedSpecies(null);
+    setDiscoveryError(null);
+    try {
+      const { error } = await createDiscovery(selectedSpecies.id, selectedMountainId);
+      if (error) {
+        setDiscoveryError(error);
+        return;
+      }
+
+      await cacheSpecies(selectedSpecies);
+      const speciesName = selectedSpecies.common_name || selectedSpecies.scientific_name;
+      setSelectedSpecies(null);
+      toastRef.current?.show({
+        type: 'success',
+        title: 'Discovery recorded',
+        message: `${speciesName} added to your discoveries.`,
+      });
+    } finally {
+      setMarking(false);
+    }
+  };
+
+  const handleDiscoveryChange = async (
+    species: (typeof featuredSpecies)[number],
+    discovered: boolean,
+  ): Promise<boolean> => {
+    if (discovered) {
+      const { error } = await createDiscovery(species.id, selectedMountainId);
+      if (error) return false;
+      await cacheSpecies(species);
+      return true;
+    }
+
+    let discovery = useWildTrackStore.getState().discoveries.find(
+      (item) =>
+        item.species_id === species.id &&
+        item.mountain_id === selectedMountainId,
+    );
+    if (!discovery) {
+      await fetchDiscoveries(selectedMountainId);
+      discovery = useWildTrackStore.getState().discoveries.find(
+        (item) =>
+          item.species_id === species.id &&
+          item.mountain_id === selectedMountainId,
+      );
+    }
+    if (!discovery) return false;
+
+    const { error } = await removeDiscovery(discovery.id);
+    return !error;
   };
 
   return (
@@ -99,8 +149,13 @@ export default function FeaturedSpeciesScreen() {
           <View style={{ width: cardWidth }}>
             <SpeciesCard
               species={item}
-              onPress={() => setSelectedSpecies(item)}
+              onPress={() => {
+                setDiscoveryError(null);
+                setSelectedSpecies(item);
+              }}
               isDiscovered={!!item.discovered}
+              onDiscover={() => handleDiscoveryChange(item, true)}
+              onUndiscover={() => handleDiscoveryChange(item, false)}
             />
           </View>
         )}
@@ -192,12 +247,16 @@ export default function FeaturedSpeciesScreen() {
                       )}
                     </TouchableOpacity>
                   )}
+                  {discoveryError && (
+                    <Text style={styles.discoveryError}>{discoveryError}</Text>
+                  )}
                 </View>
               </>
             )}
           </Pressable>
         </Pressable>
       </Modal>
+      <Toast ref={toastRef} position="top" topOffset={insets.top + 10} />
     </SafeAreaView>
   );
 }
@@ -325,4 +384,5 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   modalButtonText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  discoveryError: { color: '#E07070', fontSize: 11, lineHeight: 15, marginTop: 6 },
 });

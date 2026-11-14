@@ -14,12 +14,14 @@ import { BG_SUBTLE, BORDER_DEFAULT, ACCENT_GOLD } from '../../theme/designTokens
 interface SpeciesCarouselProps {
   species: Species[];
   onSpeciesPress: (species: Species) => void;
+  onDiscoveryChange?: (species: Species, discovered: boolean) => Promise<boolean>;
   discoveredSpecies?: Set<number>;
 }
 
 export const SpeciesCarousel: React.FC<SpeciesCarouselProps> = ({
   species,
   onSpeciesPress,
+  onDiscoveryChange,
   discoveredSpecies = new Set(),
 }) => {
   const { width } = useWindowDimensions();
@@ -73,6 +75,8 @@ export const SpeciesCarousel: React.FC<SpeciesCarouselProps> = ({
               species={item}
               onPress={() => onSpeciesPress(item)}
               isDiscovered={discoveredSpecies.has(item.id)}
+              onDiscover={() => onDiscoveryChange?.(item, true)}
+              onUndiscover={() => onDiscoveryChange?.(item, false)}
               showDiscoveryStatus
             />
           </View>

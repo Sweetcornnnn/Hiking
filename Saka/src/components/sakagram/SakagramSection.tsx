@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Text,
   TouchableOpacity,
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { Alert } from 'react-native';
 import { managerService } from '../../services/managerService';
+import Toast, { type ToastHandle } from '../Toast';
 import {
   fetchSakagramPosts,
   getPendingSakagramLikeIds,
@@ -62,7 +63,7 @@ export default function SakagramSection({
   const [queuedLikeIds, setQueuedLikeIds] = useState<Set<string>>(new Set());
   const [reloadKey, setReloadKey] = useState(0);
   const [canModerate, setCanModerate] = useState(false);
-  const [moderationError, setModerationError] = useState<string | null>(null);
+  const toastRef = useRef<ToastHandle>(null);
 
   useEffect(() => {
     let active = true;
@@ -114,10 +115,22 @@ export default function SakagramSection({
         text: 'Remove',
         style: 'destructive',
         onPress: () => {
-          setModerationError(null);
           void managerService.removeSakagramPost(postId)
-            .then(() => setPosts((current) => current.filter((post) => post.id !== postId)))
-            .catch((error: unknown) => setModerationError(error instanceof Error ? error.message : 'Unable to remove post.'));
+            .then(() => {
+              setPosts((current) => current.filter((post) => post.id !== postId));
+              toastRef.current?.show({
+                type: 'success',
+                title: 'Post removed',
+                message: 'The Sakagram post was removed.',
+              });
+            })
+            .catch((error: unknown) => {
+              toastRef.current?.show({
+                type: 'error',
+                title: 'Could not remove post',
+                message: error instanceof Error ? error.message : 'Unable to remove post.',
+              });
+            });
         },
       },
     ]);
@@ -212,7 +225,6 @@ export default function SakagramSection({
       </View>
 
       {likeError && <Text style={s.inlineError}>{likeError}</Text>}
-      {moderationError && <Text style={s.inlineError}>{moderationError}</Text>}
 
       {isLoading ? (
         <View accessibilityLabel="Loading Sakagram posts">
@@ -267,6 +279,7 @@ export default function SakagramSection({
           ))}
         </View>
       )}
+      <Toast ref={toastRef} />
     </View>
   );
 }

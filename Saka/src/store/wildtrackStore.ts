@@ -86,7 +86,26 @@ interface WildTrackState {
 const CACHE_KEY_PREFIX = 'wildtrack_species_cache_';
 const DISCOVERIES_CACHE_KEY = 'wildtrack_discoveries_cache';
 
-export const useWildTrackStore = create<WildTrackState>((set, get) => ({
+export const useWildTrackStore = create<WildTrackState>((set, get) => {
+  const syncFeaturedDiscoveryStatus = (mountainId: string) => {
+    const state = get();
+    if (state.selectedMountainId !== mountainId) return;
+
+    const discoveredSpeciesIds = new Set(
+      state.discoveries
+        .filter((discovery) => discovery.mountain_id === mountainId)
+        .map((discovery) => discovery.species_id),
+    );
+
+    set({
+      featuredSpecies: state.featuredSpecies.map((species) => ({
+        ...species,
+        discovered: discoveredSpeciesIds.has(species.id),
+      })),
+    });
+  };
+
+  return ({
   species: [],
   discoveries: [],
   featuredSpecies: [],
@@ -175,6 +194,8 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         );
         
         if (existing) {
+          await get().fetchDiscoveries(mountainId);
+          syncFeaturedDiscoveryStatus(mountainId);
           set({ isLoading: false });
           return { error: null };
         }
@@ -201,6 +222,7 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         await AsyncStorage.setItem(DISCOVERIES_CACHE_KEY, JSON.stringify(allDiscoveries));
         
         await get().fetchDiscoveries(mountainId);
+        syncFeaturedDiscoveryStatus(mountainId);
         
         set({ isLoading: false });
         return { error: null };
@@ -220,12 +242,17 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
         notes,
       );
       if (result.error) {
+        if (result.error === 'Species already discovered on this mountain') {
+          await get().fetchDiscoveries(mountainId);
+          syncFeaturedDiscoveryStatus(mountainId);
+        }
         set({ isLoading: false });
         return result;
       }
 
       await get().fetchDiscoveries(mountainId);
       await get().fetchStats(mountainId);
+      syncFeaturedDiscoveryStatus(mountainId);
 
       set({ isLoading: false });
       return { error: null };
@@ -395,6 +422,7 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
           
           await get().fetchDiscoveries(authState.selectedMountainId);
           await get().fetchStats(authState.selectedMountainId);
+          syncFeaturedDiscoveryStatus(authState.selectedMountainId);
           
           set({ isLoading: false });
           return { error: null };
@@ -417,6 +445,7 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
 
       await get().fetchDiscoveries(authState.selectedMountainId);
       await get().fetchStats(authState.selectedMountainId);
+      syncFeaturedDiscoveryStatus(authState.selectedMountainId);
 
       set({ isLoading: false });
       return { error: null };
@@ -431,13 +460,13 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
     try {
       const info = await wildTrackSupabase.fetchMountainBiodiversity(mountainId);
       if (info) {
-        set((state) => ({
+        set({
           mountainBiodiversity: info,
           mountainBiodiversityById: {
-            ...state.mountainBiodiversityById,
+            ...get().mountainBiodiversityById,
             [mountainId]: info,
           },
-        }));
+        });
       }
     } catch (error) {
       console.error('[WildTrack] Network error fetching mountain biodiversity:', error);
@@ -473,4 +502,5 @@ export const useWildTrackStore = create<WildTrackState>((set, get) => ({
       return null;
     }
   },
-}));
+  });
+});

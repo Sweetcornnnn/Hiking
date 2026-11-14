@@ -141,6 +141,17 @@ export default function DiscoveriesScreen() {
                 setSelectedDiscovery(item);
               }}
               isDiscovered
+              onUndiscover={async () => {
+                const { error } = await removeDiscovery(item.id);
+                const removedName =
+                  item.common_name || item.scientific_name || 'Species';
+                toastRef.current?.show({
+                  type: error ? 'error' : 'success',
+                  title: error ? 'Discovery not removed' : 'Discovery removed',
+                  message: error || `${removedName} removed from your discoveries.`,
+                });
+                return !error;
+              }}
             />
           </View>
         )}
