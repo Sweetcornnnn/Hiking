@@ -17,9 +17,14 @@ import { useHikeSafetyStore } from '../../store/hikeSafetyStore';
 const GOLD = '#C9A96E';
 const GOLD_SOFT = '#F3DDA8';
 const INK = '#0E1520';
+const SUCCESS = '#6FAF8A';
 const DANGER_TEXT = '#EE9A9A';
 
 type Answer = 'got_home' | 'not_home_yet';
+interface FeedbackState {
+  answer: Answer;
+  reminderScheduled: boolean;
+}
 
 function formatDate(value: string | null, fallback: string): string {
   if (!value) return fallback;
@@ -45,16 +50,19 @@ function formatFinish(value: string): { date: string; time: string } {
  *  1. The question and its two real answers (Got home / Not home yet)
  *  2. When you planned to be back, the fact that prompted the check
  *  3. Which activity and mountain it is about
- *  4. "Remind me later", a quiet text link rather than a button
+ *  4. Repeat reminders while the hiker remains out
  */
 export default function HomeCheckPrompt() {
-  const { prompt, busy, respondToPrompt, dismissPrompt } = useHikeSafetyStore();
+  const { prompt, busy, respondToPrompt } = useHikeSafetyStore();
   const { width, height } = useWindowDimensions();
   const wide = width > height;
 
   const [reduceMotion, setReduceMotion] = useState(false);
   const [pending, setPending] = useState<Answer | null>(null);
+  const [responseError, setResponseError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const enter = useRef(new Animated.Value(0)).current;
+  const feedbackEnter = useRef(new Animated.Value(0)).current;
   const open = !!prompt;
 
   useEffect(() => {
@@ -77,12 +85,176 @@ export default function HomeCheckPrompt() {
     if (!busy) setPending(null);
   }, [busy]);
 
-  if (!prompt) return null;
+  useEffect(() => {
+    if (!feedback) return;
+    feedbackEnter.setValue(0);
+    if (reduceMotion) {
+      Animated.timing(feedbackEnter, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+    } else {
+      Animated.spring(feedbackEnter, { toValue: 1, friction: 8, tension: 80, useNativeDriver: true }).start();
+    }
+  }, [feedback, reduceMotion, feedbackEnter]);
 
-  const answer = (value: Answer) => {
-    setPending(value);
-    void respondToPrompt(value);
+  const closeFeedback = () => {
+    Animated.timing(feedbackEnter, {
+      toValue: 0,
+      duration: 170,
+      useNativeDriver: true,
+    }).start(() => setFeedback(null));
   };
+
+  const answer = async (value: Answer) => {
+    setPending(value);
+    setResponseError(null);
+    try {
+      const result = await respondToPrompt(value);
+      if (result.saved) setFeedback({
+        answer: value,
+        reminderScheduled: result.reminderScheduled,
+      });
+      else setResponseError('Unable to update your safety status. Please try again.');
+    } catch (error) {
+      console.warn('[HomeCheck] Unable to save safety response:', error);
+      setResponseError('Unable to update your safety status. Please try again.');
+    }
+  };
+
+  if (!prompt) {
+    if (!feedback) return null;
+    const answer = feedback.answer;
+    const feedbackColor =
+      answer === 'got_home' ? SUCCESS : DANGER_TEXT;
+    const feedbackAccent =
+      answer === 'got_home' ? 'rgba(111,175,138,' : 'rgba(238,154,154,';
+    const feedbackTitle =
+      answer === 'got_home'
+        ? 'You’re home safe!'
+        : 'Check-in recorded';
+    const feedbackMessage =
+      answer === 'got_home'
+        ? 'Your safety status has been updated.'
+        : feedback.reminderScheduled
+          ? 'Your response was recorded as not home yet. Saka will remind you every 30 minutes until you confirm you’re home.'
+          : 'Your response was recorded as not home yet. Enable notifications for phone reminders; the in-app check will return when you reopen Saka.';
+    return (
+      <Modal
+        transparent={false}
+        visible
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+        onRequestClose={closeFeedback}
+      >
+        <View style={styles.feedbackRoot}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.successScrim, { opacity: feedbackEnter }]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={closeFeedback}
+              accessibilityRole="button"
+              accessibilityLabel="Close safety check confirmation"
+            />
+          </Animated.View>
+
+          <Animated.View
+            accessibilityViewIsModal
+            style={[
+              styles.successCard,
+              {
+                width: Math.min(width - 48, 330),
+                opacity: feedbackEnter.interpolate({
+                  inputRange: [0, 0.6],
+                  outputRange: [0, 1],
+                  extrapolate: 'clamp',
+                }),
+                transform: [
+                  {
+                    translateY: feedbackEnter.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [reduceMotion ? 0 : 24, 0],
+                    }),
+                  },
+                  {
+                    scale: feedbackEnter.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [reduceMotion ? 1 : 0.94, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View pointerEvents="none" style={styles.successContourAnchor}>
+              {[96, 150, 210, 280].map((w, i) => (
+                <View
+                  key={w}
+                  style={{
+                    position: 'absolute',
+                    left: -w / 2,
+                    top: -(w * 0.62) / 2,
+                    width: w,
+                    height: w * 0.62,
+                    borderRadius: w / 2,
+                    borderWidth: 1,
+                    borderColor: `${feedbackAccent}${0.14 - i * 0.03})`,
+                    transform: [{ rotate: `${i % 2 === 0 ? -8 : 6}deg` }],
+                  }}
+                />
+              ))}
+            </View>
+
+            <View
+              style={[
+                styles.successIconRing,
+                {
+                  backgroundColor: `${feedbackAccent}0.08)`,
+                  borderColor: `${feedbackAccent}0.22)`,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.successIconCircle,
+                  {
+                    backgroundColor: `${feedbackAccent}0.14)`,
+                    borderColor: `${feedbackAccent}0.45)`,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    answer === 'got_home' ? 'checkmark' : 'alert-circle-outline'
+                  }
+                  size={26}
+                  color={feedbackColor}
+                />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle} accessibilityRole="header">{feedbackTitle}</Text>
+            <Text style={styles.successMessage}>{feedbackMessage}</Text>
+
+            <View style={styles.successPerf} />
+
+            <Pressable
+              onPress={closeFeedback}
+              accessibilityRole="button"
+              accessibilityLabel="Close safety check confirmation"
+              style={({ pressed }) => [
+                styles.successConfirm,
+                { backgroundColor: feedbackColor },
+                pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+              ]}
+            >
+              <Text style={styles.successConfirmText}>
+                Continue
+              </Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </Modal>
+    );
+  }
 
   const finish = formatFinish(prompt.plannedFinishAt);
   const activityDate = formatDate(prompt.activityDate, finish.date);
@@ -164,8 +336,10 @@ export default function HomeCheckPrompt() {
   const actions = (
     <>
       <Text style={styles.helper}>
-        Still on the trail? Choose “Not home yet.” You can update your status later.
+        Still out? Choose “Not home yet” and we’ll check in again every 30 minutes until you
+        confirm you’re home.
       </Text>
+      {responseError ? <Text style={styles.responseError}>{responseError}</Text> : null}
 
       <View style={styles.row}>
         <Pressable
@@ -213,28 +387,18 @@ export default function HomeCheckPrompt() {
         </Pressable>
       </View>
 
-      <Pressable
-        onPress={dismissPrompt}
-        disabled={busy}
-        hitSlop={8}
-        style={({ pressed }) => [styles.later, pressed && { opacity: 0.6 }]}
-        accessibilityRole="button"
-        accessibilityLabel="Remind me later"
-      >
-        <Text style={styles.laterText}>Remind me later</Text>
-      </Pressable>
     </>
   );
 
   return (
     <Modal
-      transparent
+      transparent={false}
       visible
-      animationType="none"
+      animationType="fade"
       statusBarTranslucent
       navigationBarTranslucent
       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
-      onRequestClose={dismissPrompt}
+      onRequestClose={() => {}}
     >
       <View style={styles.overlay}>
         <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: enter }]} />
@@ -243,11 +407,11 @@ export default function HomeCheckPrompt() {
           style={[
             styles.card,
             {
-              width: Math.min(width - 36, wide ? 660 : 420),
+              width: Math.min(width, 960),
+              flex: 1,
               opacity: enter.interpolate({ inputRange: [0, 0.6], outputRange: [0, 1], extrapolate: 'clamp' }),
               transform: [
-                { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [reduceMotion ? 0 : 22, 0] }) },
-                { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [reduceMotion ? 1 : 0.95, 1] }) },
+                { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [reduceMotion ? 0 : 12, 0] }) },
               ],
             },
           ]}
@@ -278,28 +442,19 @@ const SERIF = Platform.select({ ios: 'Times New Roman', default: 'serif' });
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 18,
+    backgroundColor: INK,
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(4,8,13,0.72)',
   },
   card: {
+    alignSelf: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 22,
-    paddingTop: 28,
-    paddingBottom: 18,
-    borderRadius: 0,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 28,
     backgroundColor: INK,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.5,
-    shadowRadius: 28,
-    elevation: 24,
   },
 
   // Landscape: header on the left, answer on the right
@@ -441,6 +596,81 @@ const styles = StyleSheet.create({
   btnGotHomeText: { color: INK, fontSize: 15, fontWeight: '800' },
   btnDim: { opacity: 0.4 },
   btnPressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
-  later: { alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 12, marginTop: 2 },
-  laterText: { color: 'rgba(255,255,255,0.5)', fontSize: 13.5, fontWeight: '600' },
+  responseError: { marginTop: 10, color: DANGER_TEXT, fontSize: 12.5, textAlign: 'center' },
+  feedbackRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: INK },
+  successScrim: { backgroundColor: 'rgba(4,8,13,0.7)' },
+  successCard: {
+    alignItems: 'center',
+    paddingTop: 30,
+    borderRadius: 24,
+    backgroundColor: INK,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
+    elevation: 24,
+  },
+  successContourAnchor: { position: 'absolute', left: '50%', top: 58, width: 0, height: 0 },
+  successIconRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(111,175,138,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(111,175,138,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successIconCircle: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(111,175,138,0.14)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(111,175,138,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successTitle: {
+    marginTop: 18,
+    color: '#FFFFFF',
+    fontFamily: SERIF,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  successMessage: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 14.5,
+    lineHeight: 21,
+    textAlign: 'center',
+    paddingHorizontal: 28,
+  },
+  successPerf: {
+    alignSelf: 'stretch',
+    marginHorizontal: 16,
+    marginTop: 22,
+    borderTopWidth: 1.5,
+    borderStyle: 'dotted',
+    borderColor: 'rgba(201,169,110,0.28)',
+  },
+  successConfirm: {
+    alignSelf: 'stretch',
+    height: 48,
+    marginHorizontal: 22,
+    marginTop: 16,
+    marginBottom: 22,
+    borderRadius: 14,
+    backgroundColor: SUCCESS,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successConfirmText: { color: INK, fontSize: 15, fontWeight: '800' },
 });

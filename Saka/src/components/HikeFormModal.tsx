@@ -565,9 +565,11 @@ export default function HikeFormModal({
               </View>
               <Text style={styles.popupTitle}>Get home on time</Text>
               <Text style={styles.popupBody}>
-                Please make sure you get home by your end time
-                {formData.end_time ? ` (${formatDisplayTime(formData.end_time)})` : ''}. If you
-                don't, an emergency “Did you get home?” alert will appear.
+                At your planned end time
+                {formData.end_time ? ` (${formatDisplayTime(formData.end_time)})` : ''}, Saka will
+                show a safety check so you can confirm you made it home. If you choose “Not home
+                yet,” Saka will check in every 30 minutes until you confirm you’re home. Phone
+                notifications require notification permission.
               </Text>
               <TouchableOpacity style={styles.popupBtn} onPress={closeOverlay}>
                 <Text style={styles.popupBtnText}>Got it</Text>

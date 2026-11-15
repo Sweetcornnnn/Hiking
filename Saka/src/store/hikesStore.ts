@@ -3,7 +3,7 @@ import { useAuthStore } from './authStore';
 import { Hike } from '../types';
 import { supabase } from '../lib/supabase';
 import { hikeSafetyService } from '../services/hikeSafetyService';
-import { cancelCheck, scheduleCheck } from '../services/hikeSafetyNotifications';
+import { cancelCheck, cancelFollowUp, scheduleCheck } from '../services/hikeSafetyNotifications';
 import { isISODate } from '../utils/dateRange';
 
 interface HikesState {
@@ -95,6 +95,7 @@ async function syncHikeSafetyCheck(args: {
   date: string;
   endTime: string;
   endDate?: string | null;
+  title?: string;
 }): Promise<void> {
   try {
     const plannedFinishAt = plannedFinishFromHike(args.date, args.endTime, args.endDate);
@@ -110,7 +111,10 @@ async function syncHikeSafetyCheck(args: {
         return;
       }
 
-      if (check?.id) await cancelCheck(check.id);
+      if (check?.id) {
+        await cancelCheck(check.id);
+        await cancelFollowUp(check.id);
+      }
       await hikeSafetyService.deleteHikeCheck(args.hikeId);
       return;
     }
@@ -127,7 +131,14 @@ async function syncHikeSafetyCheck(args: {
     }
 
     await cancelCheck(checkId);
-    await scheduleCheck({ checkId, kind: 'hike', plannedFinishAt });
+    await cancelFollowUp(checkId);
+    await scheduleCheck({
+      checkId,
+      kind: 'hike',
+      plannedFinishAt,
+      title: args.title ?? 'Hike',
+      activityDate: args.date,
+    });
   } catch (error) {
     console.warn('[HikesStore] Could not synchronize hike safety check:', error);
   }
@@ -328,6 +339,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         date: hikeData.date,
         endTime: hikeData.end_time,
         endDate: hikeData.end_date,
+        title: hikeData.mountain_name,
       });
 
       const mountainId = hikeData.mountain_id;
@@ -396,6 +408,7 @@ export const useHikesStore = create<HikesState>((set, get) => ({
           date: nextDate,
           endTime: nextEndTime,
           endDate: nextEndDate,
+          title: hikeData.mountain_name ?? existingHike?.mountain_name,
         });
       }
 
@@ -442,7 +455,10 @@ export const useHikesStore = create<HikesState>((set, get) => ({
         return { error: error.message || 'Failed to delete hike' };
       }
 
-      if (safetyCheck?.id) await cancelCheck(safetyCheck.id);
+      if (safetyCheck?.id) {
+        await cancelCheck(safetyCheck.id);
+        await cancelFollowUp(safetyCheck.id);
+      }
       await hikeSafetyService.deleteHikeCheck(id);
 
       const mountainId = get().hikes.find((hike) => hike.id === id)?.mountain_id;

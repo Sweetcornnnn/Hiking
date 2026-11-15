@@ -26,7 +26,7 @@ import {
   type EventAttendee,
 } from '../../services/eventService';
 import { hikeSafetyService } from '../../services/hikeSafetyService';
-import { cancelCheck, scheduleCheck } from '../../services/hikeSafetyNotifications';
+import { cancelCheck, cancelFollowUp, scheduleCheck } from '../../services/hikeSafetyNotifications';
 import { supabase } from '../../lib/supabase';
 import { useRequireAuth } from '../../hooks/useRoleGuard';
 import OfflineActionModal from '../../components/OfflineActionModal';
@@ -775,8 +775,17 @@ export default function HikerEventDetail() {
             if (error || !checkId) {
               console.warn('[HikerEventDetail] Could not save event safety check:', error);
             } else {
-              if (rsvp.safety_check_id) await cancelCheck(rsvp.safety_check_id);
-              await scheduleCheck({ checkId, kind: 'event', plannedFinishAt });
+              if (rsvp.safety_check_id) {
+                await cancelCheck(rsvp.safety_check_id);
+                await cancelFollowUp(rsvp.safety_check_id);
+              }
+              await scheduleCheck({
+                checkId,
+                kind: 'event',
+                plannedFinishAt,
+                title: event.title,
+                activityDate: event.event_date,
+              });
             }
           }
         } catch (safetyError) {
@@ -816,7 +825,10 @@ export default function HikerEventDetail() {
       const details = buildPermitForEvent(event);
       permit.show('cancelled', details);
 
-      if (myRsvp.safety_check_id) await cancelCheck(myRsvp.safety_check_id);
+      if (myRsvp.safety_check_id) {
+        await cancelCheck(myRsvp.safety_check_id);
+        await cancelFollowUp(myRsvp.safety_check_id);
+      }
       await hikeSafetyService.deleteEventCheck(myRsvp.id);
       await fetchAll();
     } catch (err: any) {
