@@ -20,8 +20,10 @@ import {
   Text,
   StyleSheet,
   Animated,
+  BackHandler,
   Easing,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -765,10 +767,80 @@ function Streak({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-//  Credits house (sits beside the mountain; tap it to open the credits)
+//  Credits house: appears once the opening animation is done, tap to open the credits
 // ─────────────────────────────────────────────────────────────────────────
 const CREDITS_TITLE = 'Credits';
-const CREDITS_FOOTER = 'All rights reserved by the owners listed above.';
+const CREDITS_FOOTER = 'All content remains the property of its respective owners.';
+const CREDITS_BLURB = 'With thanks to the people and organizations whose work and information appear in Saka. Tap a link to visit their page.';
+
+type CreditLink = { kind: 'youtube' | 'facebook' | 'website'; label: string; url: string };
+type CreditItem = {
+  name: string;
+  /** Organization they belong to (optional). */
+  org?: string;
+  /** What we used from them. */
+  work: string;
+  /** Their channels / pages / sites. Leave out any they don't have. */
+  links: CreditLink[];
+};
+
+// Placeholder names and links: replace with the real people, organizations and sources the app uses.
+const CREDITS_LIST: CreditItem[] = [
+  {
+    name: 'Maria Santos',
+    work: 'Mountain and trail photography',
+    links: [{ kind: 'youtube', label: 'Maria Santos', url: 'https://www.youtube.com/@mariasantos' }],
+  },
+  {
+    name: 'Juan Dela Cruz',
+    org: 'Aklan Hiking Society',
+    work: 'Trail route and distance data',
+    links: [
+      { kind: 'facebook', label: 'Aklan Hiking Society', url: 'https://www.facebook.com/aklanhikingsociety' },
+      { kind: 'website', label: 'aklanhiking.example', url: 'https://aklanhiking.example' },
+    ],
+  },
+  {
+    name: 'Ana Reyes',
+    work: 'Illustrations and artwork',
+    links: [{ kind: 'facebook', label: 'Ana Reyes Art', url: 'https://www.facebook.com/anareyesart' }],
+  },
+  {
+    name: 'Provincial Tourism Office',
+    work: 'Mountain information and local guidelines',
+    links: [
+      { kind: 'website', label: 'tourism.example.gov.ph', url: 'https://tourism.example.gov.ph' },
+      { kind: 'facebook', label: 'Tourism Office', url: 'https://www.facebook.com/tourismoffice' },
+    ],
+  },
+  {
+    name: 'Miguel Torres',
+    org: 'Peak Trails PH',
+    work: 'Map data and navigation guides',
+    links: [
+      { kind: 'youtube', label: 'Peak Trails PH', url: 'https://www.youtube.com/@peaktrailsph' },
+      { kind: 'website', label: 'peaktrails.example', url: 'https://peaktrails.example' },
+    ],
+  },
+  {
+    name: 'Sofia Mendoza',
+    work: 'Written trail descriptions',
+    links: [{ kind: 'website', label: 'sofiahikes.example', url: 'https://sofiahikes.example' }],
+  },
+  {
+    name: 'Mountain Safety Council',
+    work: 'Safety and preparation guidance',
+    links: [
+      { kind: 'website', label: 'safety.example.org', url: 'https://safety.example.org' },
+      { kind: 'youtube', label: 'Mountain Safety Council', url: 'https://www.youtube.com/@mountainsafety' },
+    ],
+  },
+  {
+    name: 'Rafael Bautista',
+    work: 'Music and sound',
+    links: [{ kind: 'youtube', label: 'Rafael Bautista', url: 'https://www.youtube.com/@rafaelbautista' }],
+  },
+];
 const HOUSE_X = 352; // x position on the NEAR ridge (scene units), beside the mountain
 const HOUSE_H = 26;  // house height before screen scaling
 
@@ -786,203 +858,341 @@ function HouseIcon({ height }: { height: number }) {
   );
 }
 
-function CreditsHouse({ px, py, h, onPress }: { px: number; py: number; h: number; onPress: () => void }) {
+function CreditsHouse({
+  px, py, h, ready, onPress,
+}: { px: number; py: number; h: number; ready: boolean; onPress: () => void }) {
   const w = (h * 30) / 26;
+  const ringSize = w * 1.9;
+  const appear = useRef(new Animated.Value(0)).current;
+  const beckon = useRef(new Animated.Value(0)).current;
+
+  // Pops in when the intro is ready, then sends out a soft ring now and then to say "tap me".
+  useEffect(() => {
+    if (!ready) return;
+    Animated.spring(appear, { toValue: 1, friction: 4.5, tension: 120, useNativeDriver: true }).start();
+    const loop = Animated.loop(
+      Animated.timing(beckon, { toValue: 1, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [ready]);
+
   return (
-    <View style={[styles.anchor, { left: px, top: py, zIndex: Math.round(py) }]}>
-      <Text pointerEvents="none" style={creditsStyles.houseLabel}>{CREDITS_TITLE}</Text>
+    <View
+      pointerEvents={ready ? 'box-none' : 'none'}
+      style={[styles.anchor, { left: px, top: py, zIndex: Math.round(py) }]}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: -ringSize / 2,
+          top: -h / 2 - ringSize / 2,
+          width: ringSize,
+          height: ringSize,
+          borderRadius: ringSize / 2,
+          borderWidth: 1,
+          borderColor: GOLD,
+          opacity: beckon.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.55, 0] }),
+          transform: [{ scale: beckon.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1.5] }) }],
+        }}
+      />
+      <Animated.Text pointerEvents="none" style={[creditsStyles.houseLabel, { opacity: appear }]}>
+        {CREDITS_TITLE}
+      </Animated.Text>
       <Pressable
         onPress={onPress}
+        disabled={!ready}
         hitSlop={12}
         accessibilityRole="button"
         accessibilityLabel="Show credits"
         style={{ position: 'absolute', left: -w / 2, top: -h, width: w, height: h }}
       >
-        <HouseIcon height={h} />
+        <Animated.View
+          style={{
+            opacity: appear,
+            transform: [
+              { scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) },
+              { translateY: appear.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
+            ],
+          }}
+        >
+          <HouseIcon height={h} />
+        </Animated.View>
       </Pressable>
     </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-//  Credits popup: layered gold frame, corner ornaments, staggered name reveal
+//  Credits screen: full screen, opens from the house. Shows the people whose
+//  content is used in the app. Edit CREDITS_LIST above to change who appears.
 // ─────────────────────────────────────────────────────────────────────────
-function Corner({ style }: { style: object }) {
+function LinkIcon({ kind }: { kind: CreditLink['kind'] }) {
+  const common = { stroke: GOLD, strokeWidth: 1.2, fill: 'none' as const };
   return (
-    <Svg width={18} height={18} viewBox="0 0 18 18" style={[{ position: 'absolute' }, style]} pointerEvents="none">
-      <Path d="M1 17 L1 5 Q1 1 5 1 L17 1" stroke={GOLD} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-      <Circle cx={6} cy={6} r={1.2} fill={GOLD} />
+    <Svg width={14} height={14} viewBox="0 0 14 14">
+      {kind === 'youtube' ? (
+        <>
+          <Rect x={1} y={3} width={12} height={8} rx={2.5} {...common} />
+          <Path d="M5.7 5.2 L9 7 L5.7 8.8 Z" fill={GOLD} />
+        </>
+      ) : kind === 'facebook' ? (
+        <>
+          <Circle cx={7} cy={7} r={6} {...common} />
+          <Path
+            d="M7.8 12 V7.6 H9.2 L9.4 6 H7.8 V5.1 C7.8 4.6 8 4.4 8.6 4.4 H9.4 V3 C9.2 3 8.7 2.9 8.2 2.9 C6.9 2.9 6.2 3.6 6.2 4.9 V6 H4.9 V7.6 H6.2 V12 Z"
+            fill={GOLD}
+          />
+        </>
+      ) : (
+        <>
+          <Circle cx={7} cy={7} r={6} {...common} />
+          <Path d="M7 1 C4.4 3.4 4.4 10.6 7 13 C9.6 10.6 9.6 3.4 7 1 Z" {...common} />
+          <Line x1={1} y1={7} x2={13} y2={7} stroke={GOLD} strokeWidth={1.2} />
+        </>
+      )}
     </Svg>
   );
 }
 
-function CreditsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+const LINK_KIND_NAME: Record<CreditLink['kind'], string> = {
+  youtube: 'YouTube',
+  facebook: 'Facebook page',
+  website: 'Website',
+};
+
+function LinkChip({ link }: { link: CreditLink }) {
+  return (
+    <Pressable
+      onPress={() => { Linking.openURL(link.url).catch(() => {}); }}
+      hitSlop={6}
+      accessibilityRole="link"
+      accessibilityLabel={`${LINK_KIND_NAME[link.kind]}: ${link.label}`}
+      style={({ pressed }) => [creditsStyles.chip, pressed && { opacity: 0.65 }]}
+    >
+      <LinkIcon kind={link.kind} />
+      <Text style={creditsStyles.chipText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{link.label}</Text>
+    </Pressable>
+  );
+}
+
+function CreditEntry({
+  item, index, content, wide,
+}: {
+  item: CreditItem;
+  index: number;
+  content: Animated.Value;
+  wide: boolean;
+}) {
+  const s = 0.12 + index * 0.06;
+  const e = s + 0.24;
+  const clamp = 'clamp' as const;
+  return (
+    <Animated.View
+      style={[
+        { width: wide ? '50%' : '100%', paddingRight: wide ? 24 : 0 },
+        {
+          opacity: content.interpolate({ inputRange: [s, e], outputRange: [0, 1], extrapolate: clamp }),
+          transform: [
+            { translateY: content.interpolate({ inputRange: [s, e], outputRange: [18, 0], extrapolate: clamp }) },
+          ],
+        },
+      ]}
+    >
+      <View style={creditsStyles.entryInner}>
+        <Animated.View
+          style={[
+            creditsStyles.entryBar,
+            { transform: [{ scaleY: content.interpolate({ inputRange: [s + 0.04, e + 0.1], outputRange: [0, 1], extrapolate: clamp }) }] },
+          ]}
+        />
+        <View style={creditsStyles.entryText}>
+          <Text style={creditsStyles.entryName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>{item.name}</Text>
+          {item.org ? <Text style={creditsStyles.entryOrg} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{item.org}</Text> : null}
+          <Text style={creditsStyles.entryWork} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8}>{item.work}</Text>
+        </View>
+        {item.links.length > 0 ? (
+          <View style={creditsStyles.linkCol}>
+            {item.links.map((l) => (
+              <LinkChip key={l.url} link={l} />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </Animated.View>
+  );
+}
+
+function CreditsScreen({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const landscape = width > height;
-  const cardWidth = landscape ? Math.min(width - 48, 560) : Math.min(width - 32, 360);
   const [mounted, setMounted] = useState(visible);
-  const anim = useRef(new Animated.Value(0)).current;
+
+  const fade = useRef(new Animated.Value(0)).current;
+  const content = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
+
+  const clamp = 'clamp' as const;
+  const seg = (a: number, b: number, from = 0, to = 1) =>
+    content.interpolate({ inputRange: [a, b], outputRange: [from, to], extrapolate: clamp });
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      anim.setValue(0);
-      Animated.timing(anim, { toValue: 1, duration: 750, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      fade.setValue(0);
+      content.setValue(0);
+      Animated.parallel([
+        Animated.timing(fade, { toValue: 1, duration: 350, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(content, { toValue: 1, duration: 2000, delay: 200, easing: Easing.linear, useNativeDriver: true }),
+      ]).start();
     } else {
-      Animated.timing(anim, { toValue: 0, duration: 200, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(
-        ({ finished }) => { if (finished) setMounted(false); }
-      );
+      Animated.timing(fade, { toValue: 0, duration: 220, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) setMounted(false);
+      });
     }
   }, [visible]);
 
+  // soft twinkle and glow, only while the screen is open
   useEffect(() => {
     if (!mounted) return;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ])
     );
     loop.start();
     return () => loop.stop();
   }, [mounted]);
 
-  const clamp = 'clamp' as const;
-  const backdropOpacity = anim.interpolate({ inputRange: [0, 0.35], outputRange: [0, 1], extrapolate: clamp });
-  const cardStyle = {
-    opacity: anim.interpolate({ inputRange: [0, 0.3], outputRange: [0, 1], extrapolate: clamp }),
-    transform: [
-      { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [26, 0], extrapolate: clamp }) },
-      { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1], extrapolate: clamp }) },
-    ],
-  };
-  const reveal = (i: number) => {
-    const start = 0.35 + i * 0.08;
-    return {
-      opacity: anim.interpolate({ inputRange: [0, start, start + 0.3], outputRange: [0, 0, 1], extrapolate: clamp }),
-      transform: [
-        { translateY: anim.interpolate({ inputRange: [0, start, start + 0.3], outputRange: [10, 10, 0], extrapolate: clamp }) },
-      ],
-    };
-  };
+  // Android back button closes the credits instead of leaving the intro
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible]);
+
+  if (!mounted) return null;
+
+  const padL = landscape ? 32 : 22;
+  const padR = landscape ? 32 : 22;
+  const leftW = Math.min(210, Math.round(width * 0.23));
+  const rightW = width - leftW - padL - padR - 20;
+  const twoCols = landscape && rightW >= 760;
+  const glow = Math.round(Math.max(width, height) * 0.9);
+
+  const backButton = (
+    <Pressable
+      onPress={onClose}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel="Close credits"
+      style={({ pressed }) => [creditsStyles.backBtn, pressed && { opacity: 0.7 }]}
+    >
+      <Svg width={14} height={14} viewBox="0 0 14 14">
+        <Path d="M9 1.5 L3.5 7 L9 12.5" stroke={GOLD} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      </Svg>
+      <Text style={creditsStyles.backText}>Back</Text>
+    </Pressable>
+  );
+
+  const heading = (
+    <View style={landscape ? undefined : { alignItems: 'center' }}>
+      <Animated.Text
+        style={[creditsStyles.title, !landscape && { textAlign: 'center' }, { opacity: seg(0, 0.2), transform: [{ translateY: seg(0, 0.2, 12, 0) }] }]}
+      >
+        {CREDITS_TITLE}
+      </Animated.Text>
+      <Animated.View style={[creditsStyles.rule, { opacity: seg(0.06, 0.22), transform: [{ scaleX: seg(0.06, 0.22, 0.2, 1) }] }]} />
+      <Animated.Text
+        style={[creditsStyles.blurb, !landscape && { textAlign: 'center' }, { opacity: seg(0.1, 0.3) }]}
+      >
+        {CREDITS_BLURB}
+      </Animated.Text>
+    </View>
+  );
+
+  const entries = CREDITS_LIST.map((item, i) => (
+    <CreditEntry key={item.name} item={item} index={i} content={content} wide={twoCols} />
+  ));
+
+  const footer = <Animated.Text style={[creditsStyles.footer, { opacity: seg(0.8, 1) }]}>{CREDITS_FOOTER}</Animated.Text>;
 
   return (
-    <Modal
-      visible={mounted}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      navigationBarTranslucent
-      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
-      onRequestClose={onClose}
-    >
-      <View style={creditsStyles.root}>
+    <Animated.View style={[StyleSheet.absoluteFill, creditsStyles.screen, { opacity: fade }]}>
+      {/* quiet background: a few stars and one soft glow */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <Animated.View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, creditsStyles.backdrop, { opacity: backdropOpacity }]}
-        />
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Close credits"
-        />
-
-        <Animated.View style={[creditsStyles.card, { width: cardWidth }, cardStyle]}>
-          {/* soft top-lit background */}
-          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
+          style={{
+            position: 'absolute',
+            left: -glow * 0.35,
+            top: -glow * 0.45,
+            width: glow,
+            height: glow,
+            opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }),
+          }}
+        >
+          <Svg width={glow} height={glow}>
             <Defs>
-              <LinearGradient id="creditsBg" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor="#14213A" />
-                <Stop offset="0.45" stopColor="#0C1523" />
-                <Stop offset="1" stopColor={INK} />
-              </LinearGradient>
+              <RadialGradient id="creditsGlow" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor={GOLD} stopOpacity={0.14} />
+                <Stop offset="100%" stopColor={GOLD} stopOpacity={0} />
+              </RadialGradient>
             </Defs>
-            <Rect x={0} y={0} width="100%" height="100%" fill="url(#creditsBg)" />
+            <Circle cx={glow / 2} cy={glow / 2} r={glow / 2} fill="url(#creditsGlow)" />
           </Svg>
-
-          {/* thin inner frame + corner ornaments = double border */}
-          <View pointerEvents="none" style={creditsStyles.innerFrame} />
-          <Corner style={{ top: 13, left: 13 }} />
-          <Corner style={{ top: 13, right: 13, transform: [{ scaleX: -1 }] }} />
-          <Corner style={{ bottom: 13, left: 13, transform: [{ scaleY: -1 }] }} />
-          <Corner style={{ bottom: 13, right: 13, transform: [{ scaleX: -1 }, { scaleY: -1 }] }} />
-
-          <ScrollView
-            style={creditsStyles.cardScroll}
-            contentContainerStyle={creditsStyles.cardContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            <Animated.View style={[creditsStyles.header, reveal(-3)]}>
-              <Svg width={150} height={46} viewBox="0 0 150 46">
-                <Defs>
-                  <RadialGradient id="creditsSun" cx="50%" cy="50%" r="50%">
-                    <Stop offset="0%" stopColor="#F3DDA8" stopOpacity={0.55} />
-                    <Stop offset="100%" stopColor={GOLD} stopOpacity={0} />
-                  </RadialGradient>
-                </Defs>
-                <Circle cx={75} cy={20} r={22} fill="url(#creditsSun)" />
-                <Path
-                  d="M4 44 L40 22 L56 32 L75 8 L98 30 L112 22 L146 44 Z"
-                  fill={GOLD}
-                  fillOpacity={0.14}
-                  stroke={GOLD}
-                  strokeWidth={1.2}
-                  strokeLinejoin="round"
-                />
-                <Path d="M75 8 L68.5 18.5 L72.5 17 L75 20.5 L77.5 17 L81.5 18.5 Z" fill={GOLD} />
-                <Line x1={0} y1={44.6} x2={150} y2={44.6} stroke={GOLD} strokeOpacity={0.5} strokeWidth={0.8} strokeLinecap="round" />
-              </Svg>
-              <Animated.Text
-                style={[
-                  creditsStyles.spark,
-                  { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.2] }) }] },
-                ]}
-              >
-                ✦
-              </Animated.Text>
-            </Animated.View>
-
-            <Animated.View style={[{ alignItems: 'center' }, reveal(-2)]}>
-              <Text style={creditsStyles.title}>{CREDITS_TITLE}</Text>
-              <View style={creditsStyles.dividerRow}>
-                <View style={creditsStyles.dividerLine} />
-                <View style={creditsStyles.dividerDiamond} />
-                <View style={creditsStyles.dividerLine} />
-              </View>
-              <Text style={creditsStyles.app}>Saka</Text>
-              <Text style={creditsStyles.appSub}>{SUBTITLE}</Text>
-            </Animated.View>
-
-            <View style={creditsStyles.memberList}>
-              {MEMBERS.map((m, i) => (
-                <Animated.View
-                  key={m}
-                  style={[
-                    creditsStyles.memberRow,
-                    i < MEMBERS.length - 1 && creditsStyles.memberRowDivider,
-                    reveal(i),
-                  ]}
-                >
-                  <Text style={creditsStyles.name}>{m}</Text>
-                </Animated.View>
-              ))}
-            </View>
-
-            <Animated.View style={[{ alignItems: 'center' }, reveal(MEMBERS.length)]}>
-              <View style={[creditsStyles.dividerRow, { marginTop: 22, marginBottom: 12 }]}>
-                <View style={creditsStyles.dividerLine} />
-                <View style={creditsStyles.dividerDiamond} />
-                <View style={creditsStyles.dividerLine} />
-              </View>
-              <Text style={creditsStyles.footer}>{CREDITS_FOOTER}</Text>
-            </Animated.View>
-          </ScrollView>
+        </Animated.View>
+        <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
+          {STARS.filter((s) => !s.twinkle).map((st, i) => (
+            <Circle key={i} cx={st.x * width} cy={st.y * height} r={st.r} fill="#FFFFFF" fillOpacity={0.28} />
+          ))}
+        </Svg>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: pulse }]}>
+          <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
+            {STARS.filter((s) => s.twinkle).map((st, i) => (
+              <Circle key={i} cx={st.x * width} cy={st.y * height} r={st.r + 0.3} fill={GOLD} fillOpacity={0.7} />
+            ))}
+          </Svg>
         </Animated.View>
       </View>
-    </Modal>
+
+      {landscape ? (
+        <View style={[creditsStyles.landscapeRow, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 16, paddingLeft: padL, paddingRight: padR }]}>
+          <View style={[creditsStyles.leftCol, { width: leftW }]}>
+            {backButton}
+            <View style={creditsStyles.leftMid}>{heading}</View>
+            {footer}
+          </View>
+          <ScrollView
+            style={creditsStyles.rightCol}
+            contentContainerStyle={creditsStyles.grid}
+            showsVerticalScrollIndicator={false}
+          >
+            {entries}
+          </ScrollView>
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={[
+            creditsStyles.portraitContent,
+            { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28, paddingLeft: padL, paddingRight: padR },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={{ alignSelf: 'flex-start' }}>{backButton}</View>
+          <View style={{ height: 24 }} />
+          {heading}
+          <View style={{ height: 22 }} />
+          <View style={creditsStyles.portraitList}>{entries}</View>
+          {footer}
+        </ScrollView>
+      )}
+    </Animated.View>
   );
 }
 
@@ -1631,12 +1841,13 @@ export default function IntroScreen() {
               px={HOUSE_X * scale}
               py={ridgeY(NEAR, HOUSE_X) * scale}
               h={HOUSE_H * figureScale}
+              ready={ready}
               onPress={() => setCreditsOpen(true)}
             />
           </Animated.View>
         </View>
       </ScrollView>
-      <CreditsModal visible={creditsOpen} onClose={() => setCreditsOpen(false)} />
+      <CreditsScreen visible={creditsOpen} onClose={() => setCreditsOpen(false)} />
 
     </View>
   );
@@ -1784,116 +1995,86 @@ const creditsStyles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
-  root: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 24,
-  },
-  backdrop: {
-    backgroundColor: 'rgba(4,8,13,0.66)',
-  },
-  card: {
-    maxHeight: '90%',
-    borderRadius: 28,
-    backgroundColor: INK,
-    borderWidth: 1.5,
-    borderColor: GOLD,
-    overflow: 'hidden',
-    shadowColor: GOLD,
-    shadowOpacity: 0.35,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 24,
-  },
-  innerFrame: {
-    position: 'absolute',
-    top: 7,
-    left: 7,
-    right: 7,
-    bottom: 7,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(201, 169, 110, 0.28)',
-  },
-  cardScroll: { flexGrow: 0 },
-  cardContent: { alignItems: 'center', paddingTop: 34, paddingBottom: 32, paddingHorizontal: 30 },
-  header: { alignItems: 'center', marginBottom: 14 },
-  spark: { position: 'absolute', top: 0, right: 8, color: '#F3DDA8', fontSize: 14 },
-  title: {
-    color: GOLD,
-    fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 9,
-    marginRight: -9,
-    textTransform: 'uppercase',
-  },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 14 },
-  dividerLine: { width: 44, height: 1, backgroundColor: 'rgba(201, 169, 110, 0.55)' },
-  dividerDiamond: {
-    width: 5,
-    height: 5,
-    marginHorizontal: 9,
-    backgroundColor: GOLD,
-    transform: [{ rotate: '45deg' }],
-  },
-  app: {
-    color: '#F2E8D5',
-    fontSize: 28,
-    fontWeight: '200',
-    letterSpacing: 12,
-    marginRight: -12,
-    textTransform: 'uppercase',
-  },
-  appSub: {
-    marginTop: 8,
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 8,
-    fontWeight: '400',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
-    textAlign: 'center',
-  },
-  memberList: {
-    width: '100%',
-    marginTop: 10,
-    paddingHorizontal: 6,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(201, 169, 110, 0.18)',
-  },
-  memberRow: {
+
+  screen: { backgroundColor: INK, zIndex: 20, elevation: 20 },
+
+  // ── Layout ──
+  landscapeRow: { flex: 1, flexDirection: 'row' },
+  leftCol: { justifyContent: 'space-between' },
+  leftMid: { flex: 1, justifyContent: 'center' },
+  rightCol: { flex: 1, marginLeft: 20 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingTop: 4, paddingBottom: 8 },
+  portraitContent: { flexGrow: 1 },
+  portraitList: { width: '100%' },
+
+  // ── Header ──
+  backBtn: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
+    gap: 8,
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(201, 169, 110, 0.45)',
+    backgroundColor: 'rgba(201, 169, 110, 0.08)',
   },
-  memberRowDivider: {
+  backText: { color: GOLD, fontSize: 14, fontWeight: '600', letterSpacing: 0.5 },
+  title: {
+    color: '#F2E8D5',
+    fontFamily: SERIF,
+    fontSize: 32,
+    lineHeight: 40,
+    letterSpacing: 0.5,
+  },
+  rule: { width: 36, height: 1.5, marginVertical: 10, backgroundColor: GOLD, borderRadius: 1 },
+  blurb: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+
+  // ── Entries ──
+  entryInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(201, 169, 110, 0.14)',
+    borderBottomColor: 'rgba(201, 169, 110, 0.2)',
   },
-  memberMark: {
-    width: 4,
-    height: 4,
-    marginHorizontal: 12,
-    backgroundColor: GOLD,
-    opacity: 0.75,
-    transform: [{ rotate: '45deg' }],
-  },
-  name: {
-    color: 'rgba(242, 232, 213, 0.92)',
+  entryBar: { width: 2, alignSelf: 'stretch', borderRadius: 1, backgroundColor: GOLD },
+  entryText: { flex: 1, minWidth: 0 },
+  entryName: { color: '#F2E8D5', fontFamily: SERIF, fontWeight: '600', fontSize: 20, lineHeight: 26 },
+  entryOrg: {
+    marginTop: 1,
+    color: GOLD,
     fontSize: 12,
-    fontWeight: '300',
-    letterSpacing: 3.5,
-    marginRight: -3.5,
+    fontWeight: '600',
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
+  entryWork: { marginTop: 4, color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 19 },
+  linkCol: { maxWidth: '46%', flexShrink: 0, alignItems: 'flex-end', gap: 6 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    maxWidth: '100%',
+    paddingVertical: 5,
+    paddingHorizontal: 11,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(201, 169, 110, 0.4)',
+    backgroundColor: 'rgba(201, 169, 110, 0.08)',
+  },
+  chipText: { flexShrink: 1, color: 'rgba(242, 232, 213, 0.92)', fontSize: 13, fontWeight: '500' },
+
   footer: {
-    color: 'rgba(255,255,255,0.38)',
-    fontSize: 9,
-    fontWeight: '300',
-    letterSpacing: 1.2,
+    marginTop: 16,
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
     lineHeight: 15,
-    textAlign: 'center',
   },
 });
