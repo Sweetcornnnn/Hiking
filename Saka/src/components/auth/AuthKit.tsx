@@ -127,6 +127,9 @@ interface AuthShellProps {
   eyebrow: string;
   title: string;
   subtitle: string;
+  useTopSafeAreaInset?: boolean;
+  useHorizontalPadding?: boolean;
+  centerWideContent?: boolean;
   /** Small extra line under the subtitle. */
   note?: string;
   /** Called when a cell of the 3 x 3 logo grid is tapped. cell is 0 to 8, left to right, top to bottom. */
@@ -148,6 +151,9 @@ export function AuthShell({
   eyebrow,
   title,
   subtitle,
+  useTopSafeAreaInset = true,
+  useHorizontalPadding = true,
+  centerWideContent = false,
   note,
   onLogoPress,
   logoGrid,
@@ -187,9 +193,26 @@ export function AuthShell({
   }, [reduce]);
 
   const brandW = Math.min(300, width * 0.38);
+  const centeredFormWidth = Math.max(
+    0,
+    Math.min(
+      410,
+      width -
+        (useHorizontalPadding ? insets.left + insets.right + 40 : 0) -
+        brandW -
+        44 -
+        StyleSheet.hairlineWidth,
+    ),
+  );
   // Bigger logo: scales with the screen height so it never crowds the text.
   // The logo never grows past the space left over after the words, so the text can't be pushed off screen.
-  const room = height - insets.top - insets.bottom - 16 - LOGO.textHeight - LOGO.gap;
+  const room =
+    height -
+    (useTopSafeAreaInset ? insets.top : 0) -
+    insets.bottom -
+    16 -
+    LOGO.textHeight -
+    LOGO.gap;
   const fitSize = room / (1 - 2 * LOGO.trim);
   const logoSize = wide ? Math.round(Math.max(90, Math.min(LOGO.size, fitSize, brandW))) : LOGO.portraitSize;
   const logoBoxH = Math.round(logoSize * (1 - 2 * LOGO.trim));
@@ -200,16 +223,20 @@ export function AuthShell({
       style={shell.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <Backdrop cx={wide ? insets.left + 20 + brandW / 2 : width / 2} cy={wide ? height / 2 : height * 0.16} />
+      <Backdrop
+        cx={wide ? (useHorizontalPadding ? insets.left + 20 : 0) + brandW / 2 : width / 2}
+        cy={wide ? height / 2 : height * 0.16}
+      />
 
       <View
         style={[
           shell.layout,
           wide ? shell.row : shell.column,
+          wide && centerWideContent && shell.centeredRow,
           {
-            paddingLeft: insets.left + 20,
-            paddingRight: insets.right + 20,
-            paddingTop: insets.top + (wide ? 8 : 20),
+            paddingLeft: useHorizontalPadding ? insets.left + 20 : 0,
+            paddingRight: useHorizontalPadding ? insets.right + 20 : 0,
+            paddingTop: (useTopSafeAreaInset ? insets.top : 0) + (wide ? 8 : 20),
             paddingBottom: insets.bottom + 8,
           },
         ]}
@@ -305,7 +332,9 @@ export function AuthShell({
 
           <Text style={shell.eyebrow}>{eyebrow}</Text>
           <Text style={shell.title} accessibilityRole="header">{title}</Text>
-          <Text style={shell.subtitle}>{subtitle}</Text>
+          <Text style={[shell.subtitle, !useHorizontalPadding && { paddingHorizontal: 0 }]}>
+            {subtitle}
+          </Text>
           {note ? <Text style={shell.note}>{note}</Text> : null}
         </Animated.View>
 
@@ -315,6 +344,7 @@ export function AuthShell({
         <Animated.View
           style={[
             shell.formWrap,
+            wide && centerWideContent && { flex: 0, width: centeredFormWidth },
             {
               opacity: enterForm,
               transform: [{ translateY: enterForm.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
@@ -352,6 +382,7 @@ const shell = StyleSheet.create({
   root: { flex: 1, backgroundColor: AUTH.bg, overflow: 'hidden' },
   layout: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'stretch' },
+  centeredRow: { justifyContent: 'center' },
   column: { flexDirection: 'column' },
   brand: { alignItems: 'center', justifyContent: 'center' },
   logoWrap: { alignItems: 'center', justifyContent: 'center' },

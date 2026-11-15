@@ -138,6 +138,9 @@ export default function SignupScreen() {
       <AuthShell
         eyebrow="TRAIL IS CALLING — MUSYON, SAKA!"
         title="Create account"
+        useTopSafeAreaInset={false}
+        useHorizontalPadding={false}
+        centerWideContent
         subtitle="Start tracking your summits."
         note="Your trail. Your adventure. Your SAKA."
         toast={toast}

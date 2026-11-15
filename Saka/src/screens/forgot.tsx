@@ -181,6 +181,9 @@ export default function ForgotPasswordScreen() {
       <AuthShell
         eyebrow="ACCOUNT RECOVERY"
         title={isReset ? 'New password' : 'Forgot password'}
+        useTopSafeAreaInset={false}
+        useHorizontalPadding={false}
+        centerWideContent
         subtitle={
           isReset
             ? 'Choose a strong password to secure your account.'

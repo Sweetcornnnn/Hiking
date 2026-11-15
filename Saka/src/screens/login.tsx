@@ -198,6 +198,9 @@ export default function LoginScreen() {
       <AuthShell
         eyebrow={isAdminLogin ? 'ADMIN ACCESS' : 'TRAIL IS CALLING — MUSYON, SAKA!'}
         title={isAdminLogin ? 'Admin login' : 'Welcome back'}
+        useTopSafeAreaInset={false}
+        useHorizontalPadding={false}
+        centerWideContent
         subtitle={
           isAdminLogin
             ? 'Hidden sign in for administrators only.'
