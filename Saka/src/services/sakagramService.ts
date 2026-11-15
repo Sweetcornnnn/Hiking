@@ -3,9 +3,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchPendingPublicJournalEntries } from './journalService';
 import type { JournalEntry } from '../types/journal';
 
-const SAKAGRAM_CACHE_PREFIX = 'saka.sakagram.posts.v1:';
+const SAKAGRAM_CACHE_PREFIX = 'saka.sakagram.posts.v2:';
 const SAKAGRAM_LIKE_QUEUE_KEY = 'saka.sakagram.likeQueue.v1';
 const syncListeners = new Set<() => void>();
+
+function getSakagramCacheKey(
+  viewpointId: string,
+  currentUserId: string | null,
+  mountainId?: string,
+): string {
+  const scope = mountainId ? `mountain:${mountainId}` : `viewpoint:${viewpointId}`;
+  return `${SAKAGRAM_CACHE_PREFIX}${scope}:${currentUserId ?? 'anonymous'}`;
+}
 
 export function subscribeToSakagramSync(listener: () => void): () => void {
   syncListeners.add(listener);
@@ -63,12 +72,28 @@ export interface SakagramPost extends JournalEntry {
   likedByMe: boolean;
 }
 
+export async function getCachedSakagramPosts(
+  viewpointId: string,
+  currentUserId: string | null,
+  mountainId?: string,
+): Promise<SakagramPost[] | null> {
+  const raw = await AsyncStorage.getItem(
+    getSakagramCacheKey(viewpointId, currentUserId, mountainId),
+  );
+  if (!raw) return null;
+
+  const cached: unknown = JSON.parse(raw);
+  if (!Array.isArray(cached)) throw new Error('Saved Sakagram feed is invalid.');
+  return applyPendingLikes(cached as SakagramPost[], currentUserId);
+}
+
 export async function fetchSakagramPosts(
   viewpointId: string,
   currentUserId: string | null,
   mountainId?: string,
   limit = 20,
 ): Promise<SakagramPost[]> {
+  const cacheKey = getSakagramCacheKey(viewpointId, currentUserId, mountainId);
   let posts: SakagramPost[];
   try {
     let entriesQuery = supabase
@@ -122,14 +147,12 @@ export async function fetchSakagramPosts(
         };
       });
     }
-    await AsyncStorage.setItem(`${SAKAGRAM_CACHE_PREFIX}${viewpointId}`, JSON.stringify(posts));
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(posts));
   } catch (error) {
     console.warn('[Sakagram] Remote feed unavailable; using device cache:', error);
-    const raw = await AsyncStorage.getItem(`${SAKAGRAM_CACHE_PREFIX}${viewpointId}`);
-    if (!raw) throw new Error('Sakagram is unavailable offline until it has been loaded online.');
-    const cached: unknown = JSON.parse(raw);
-    if (!Array.isArray(cached)) throw new Error('Saved Sakagram feed is invalid.');
-    posts = cached as SakagramPost[];
+    const cached = await getCachedSakagramPosts(viewpointId, currentUserId, mountainId);
+    if (!cached) throw new Error('Sakagram is unavailable offline until it has been loaded online.');
+    posts = cached;
   }
 
   if (currentUserId) {
