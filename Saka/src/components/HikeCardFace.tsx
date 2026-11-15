@@ -157,6 +157,22 @@ const paperWeatherColor = (code: string | undefined, fallback: string) => {
 
 const shortNo = (id: string) => `SK-${String(id).replace(/[^a-z0-9]/gi, '').slice(-4).toUpperCase()}`;
 const hasGroupOf = (g?: number | string | null) => Number(g) > 0;
+const broadTimeLabel = (time: string) => {
+  const match = /^(\d{1,2}):\d{2}\s*(AM|PM)$/i.exec(time.trim());
+  if (!match) return 'Hike planned';
+
+  let hour = Number(match[1]);
+  if (match[2]?.toUpperCase() === 'AM') {
+    if (hour === 12) hour = 0;
+  } else if (hour < 12) {
+    hour += 12;
+  }
+
+  if (hour >= 5 && hour < 12) return 'Morning hike';
+  if (hour < 17) return 'Afternoon hike';
+  if (hour < 21) return 'Evening hike';
+  return 'Night hike';
+};
 
 /* ============================ paper texture ======================== */
 
@@ -641,7 +657,9 @@ function StubFace(p: HikeCardFaceProps) {
           {p.dateText}
         </Text>
         {hasGroupOf(p.group) ? (
-          <Text style={[s.stubGroup, { color: pal.label }]}>Group of {p.group}</Text>
+          <Text style={[s.stubGroup, { color: pal.label }]}>
+            {p.canEdit ? `Group of ${p.group}` : 'Group hike'}
+          </Text>
         ) : null}
       </View>
 
@@ -684,7 +702,7 @@ function BlazeFace(p: HikeCardFaceProps) {
               {hasGroupOf(p.group) ? (
                 <View style={s.inline}>
                   <Ionicons name="people-outline" size={11} color="rgba(255,255,255,0.55)" />
-                  <Text style={s.blazeFootText}>{p.group}</Text>
+                  <Text style={s.blazeFootText}>{p.canEdit ? p.group : 'Group hike'}</Text>
                 </View>
               ) : (
                 <View />
@@ -753,7 +771,7 @@ function ContourFace(p: HikeCardFaceProps) {
           {hasGroupOf(p.group) ? (
             <View style={s.inline}>
               <Ionicons name="people-outline" size={11} color="rgba(255,255,255,0.5)" />
-              <Text style={s.contourFootText}>{p.group}</Text>
+              <Text style={s.contourFootText}>{p.canEdit ? p.group : 'Group hike'}</Text>
             </View>
           ) : null}
           {!p.canEdit ? <Text style={[s.contourFootText, { color: '#9DBBFF' }]}>Shared</Text> : null}
@@ -766,13 +784,21 @@ function ContourFace(p: HikeCardFaceProps) {
 /* ============================ entry ================================ */
 
 export function HikeCardFace(props: HikeCardFaceProps) {
-  switch (props.variant) {
+  const cardProps = props.canEdit
+    ? props
+    : {
+        ...props,
+        timePrimary: broadTimeLabel(props.timePrimary),
+        timeSecondary: 'Exact time hidden',
+      };
+
+  switch (cardProps.variant) {
     case 'blaze':
-      return <BlazeFace {...props} />;
+      return <BlazeFace {...cardProps} />;
     case 'contour':
-      return <ContourFace {...props} />;
+      return <ContourFace {...cardProps} />;
     default:
-      return <StubFace {...props} />;
+      return <StubFace {...cardProps} />;
   }
 }
 
