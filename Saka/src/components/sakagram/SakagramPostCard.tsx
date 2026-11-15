@@ -1,20 +1,26 @@
-import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Image as NativeImage,
+  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import type { SakagramPost } from '../../services/sakagramService';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../ModalScrim';
 import {
   ACCENT_GOLD,
   BG_AVATAR,
+  BG_GOLD_TINT,
+  BORDER_GOLD_SOFT,
   BORDER_SUBTLE,
   RADIUS_BTN,
   TEXT_DANGER,
@@ -31,12 +37,16 @@ interface Props {
   onPressAuthor?: (userId: string) => void;
   isLikePending?: boolean;
   isLikeQueued?: boolean;
+  isOwnPost: boolean;
   locationLabel?: string;
   focused?: boolean;
 }
 
 const DOUBLE_TAP_MS = 300;
 const LONG_CAPTION_CHARS = 90;
+const VIEWER_HEADER_HEIGHT = 46;
+const VIEWER_ASPECT_RATIO = 16 / 9;
+const VIEWER_RADIUS = 12;
 
 export default function SakagramPostCard({
   post,
@@ -45,17 +55,24 @@ export default function SakagramPostCard({
   onPressAuthor,
   isLikePending = false,
   isLikeQueued = false,
+  isOwnPost,
   locationLabel,
   focused = false,
 }: Props) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const s = useMemo(() => makeStyles(focused), [focused]);
 
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const lastTap = useRef(0);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerSize, setViewerSize] = useState({ width: 0, height: 0 });
+  const lastTap = useRef({ time: 0, index: -1 });
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewerPagerRef = useRef<ScrollView | null>(null);
   const heartAnim = useRef(new Animated.Value(0)).current;
 
   const initials = getInitials(post.authorName);
@@ -68,6 +85,25 @@ export default function SakagramPostCard({
   const isMulti = images.length > 1;
   const photoMaxHeight = windowHeight * 0.72;
   const hasLongCaption = (post.content?.length ?? 0) > LONG_CAPTION_CHARS;
+  const maxViewerWidth = Math.max(1, Math.min(windowWidth - insets.left - insets.right - 32, 720));
+  const maxViewerHeight = Math.max(
+    1,
+    Math.min(windowHeight - insets.top - insets.bottom - 48 - VIEWER_HEADER_HEIGHT, 760),
+  );
+  const viewerWidth = Math.min(maxViewerWidth, maxViewerHeight * VIEWER_ASPECT_RATIO);
+  const viewerHeight = viewerWidth / VIEWER_ASPECT_RATIO;
+
+  useEffect(() => () => {
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (!viewerVisible || viewerSize.width <= 0) return;
+    const frame = requestAnimationFrame(() => {
+      viewerPagerRef.current?.scrollTo({ x: viewerIndex * viewerSize.width, animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [viewerIndex, viewerSize.width, viewerVisible]);
 
   const popHeart = () => {
     heartAnim.setValue(0);
@@ -78,27 +114,34 @@ export default function SakagramPostCard({
     ]).start();
   };
 
-  const handlePhotoPress = () => {
+  const handlePhotoPress = (index: number) => {
     const now = Date.now();
-    if (now - lastTap.current < DOUBLE_TAP_MS) {
-      lastTap.current = 0;
+    if (
+      now - lastTap.current.time < DOUBLE_TAP_MS &&
+      index === lastTap.current.index
+    ) {
+      if (tapTimer.current) clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+      lastTap.current = { time: 0, index: -1 };
       popHeart();
       if (!post.likedByMe && !isLikePending) {
         void onToggleLike(post.id, true);
       }
     } else {
-      lastTap.current = now;
+      if (tapTimer.current) clearTimeout(tapTimer.current);
+      lastTap.current = { time: now, index };
+      tapTimer.current = setTimeout(() => {
+        tapTimer.current = null;
+        lastTap.current = { time: 0, index: -1 };
+        setViewerIndex(index);
+        setViewerVisible(true);
+      }, DOUBLE_TAP_MS);
     }
   };
 
   const pressRef = useRef(handlePhotoPress);
   pressRef.current = handlePhotoPress;
-  const stablePhotoPress = useCallback(() => pressRef.current(), []);
-
-  const likesLabel =
-    post.likeCount === 0
-      ? 'Be the first to like this'
-      : `${post.likeCount} ${post.likeCount === 1 ? 'like' : 'likes'}`;
+  const stablePhotoPress = useCallback((index: number) => pressRef.current(index), []);
 
   return (
     <View style={s.card}>
@@ -131,40 +174,25 @@ export default function SakagramPostCard({
           </View>
         </TouchableOpacity>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {onRemove && (
-            <Pressable
-              onPress={() => onRemove(post.id)}
-              style={s.likeButton}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Remove inappropriate Sakagram post"
-            >
-              <Ionicons name="trash-outline" size={focused ? 23 : 18} color={TEXT_DANGER} />
-            </Pressable>
-          )}
+        {onRemove && (
           <Pressable
-            onPress={() => void onToggleLike(post.id, !post.likedByMe)}
-            disabled={isLikePending}
+            onPress={() => onRemove(post.id)}
             style={s.likeButton}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={post.likedByMe ? 'Unlike journal entry' : 'Like journal entry'}
-            accessibilityState={{ selected: post.likedByMe, disabled: isLikePending }}
+            accessibilityLabel="Remove inappropriate Sakagram post"
           >
-            <Ionicons
-              name={post.likedByMe ? 'heart' : 'heart-outline'}
-              size={focused ? 28 : 22}
-              color={post.likedByMe ? TEXT_DANGER : TEXT_PRIMARY}
-            />
+            <Ionicons name="trash-outline" size={focused ? 23 : 18} color={TEXT_DANGER} />
           </Pressable>
-        </View>
+        )}
       </View>
 
       {images.length === 0 || (!isMulti && photoFailed) ? (
         <View style={[s.photoPlaceholder, { maxHeight: photoMaxHeight }]}>
-          <Ionicons name="image-outline" size={focused ? 32 : 24} color={TEXT_MUTED} />
-          <Text style={s.placeholderText}>Photo unavailable</Text>
+          <Ionicons name="camera-outline" size={focused ? 54 : 41} color={TEXT_MUTED} />
+          <Text style={s.placeholderText}>
+            {isOwnPost ? 'You forgot to pack a photo, trailblazer.' : 'This hiker forgot to pack a photo.'}
+          </Text>
         </View>
       ) : (
         <View>
@@ -184,7 +212,7 @@ export default function SakagramPostCard({
               authorName={post.authorName}
               maxHeight={photoMaxHeight}
               fallbackWidth={windowWidth - 40}
-              onPress={stablePhotoPress}
+              onPress={() => stablePhotoPress(0)}
               onError={() => setPhotoFailed(true)}
               radius={s.carouselRadius.borderRadius}
             />
@@ -221,15 +249,33 @@ export default function SakagramPostCard({
         </View>
       )}
 
-      <Text style={s.likes}>{likesLabel}</Text>
+      <View style={s.postDetails}>
+        <Pressable
+          onPress={() => void onToggleLike(post.id, !post.likedByMe)}
+          disabled={isLikePending}
+          style={s.likeButton}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={post.likedByMe ? 'Unlike post' : 'Like post'}
+          accessibilityState={{ selected: post.likedByMe, disabled: isLikePending }}
+        >
+          <Ionicons
+            name={post.likedByMe ? 'heart' : 'heart-outline'}
+            size={focused ? 28 : 22}
+            color={post.likedByMe ? TEXT_DANGER : TEXT_PRIMARY}
+          />
+        </Pressable>
+        <Text style={s.likes} accessibilityLabel={`${post.likeCount} likes`}>
+          {post.likeCount}
+        </Text>
+      </View>
       {isLikeQueued ? <Text style={s.pendingSync}>Like saved; waiting to sync</Text> : null}
 
-      <Text style={s.caption} numberOfLines={expanded ? undefined : 2}>
-        <Text style={s.captionName}>{post.authorName}</Text>
-        {'  '}
-        <Text style={s.captionTitle}>{post.title}</Text>
-        {!!post.content && <Text style={s.captionBody}>{`\n${post.content}`}</Text>}
-      </Text>
+      {!!post.content && (
+        <Text style={s.caption} numberOfLines={expanded ? undefined : 2}>
+          {post.content}
+        </Text>
+      )}
       {hasLongCaption && !expanded && (
         <TouchableOpacity
           onPress={() => setExpanded(true)}
@@ -241,6 +287,77 @@ export default function SakagramPostCard({
       )}
 
       <Text style={s.timestamp}>{formatRelativeTime(post.created_at)}</Text>
+
+      <Modal
+        {...FULLSCREEN_MODAL_PROPS}
+        visible={viewerVisible}
+        animationType="fade"
+        onRequestClose={() => setViewerVisible(false)}
+      >
+        <View style={viewerStyles.root}>
+          <ModalScrim color="rgba(4,8,13,0.82)" />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setViewerVisible(false)}
+            accessible={false}
+          />
+          <View style={[viewerStyles.card, { width: viewerWidth, height: viewerHeight + VIEWER_HEADER_HEIGHT }]}>
+            <View style={viewerStyles.header}>
+              <View style={viewerStyles.headerInfo}>
+                <Text style={viewerStyles.title} numberOfLines={1}>
+                  {post.title || 'Photo'}
+                </Text>
+              </View>
+              <View style={viewerStyles.headerActions}>
+                <View
+                  style={viewerStyles.counter}
+                  accessibilityLabel={`Image ${viewerIndex + 1} of ${images.length}`}
+                >
+                  <Text style={viewerStyles.counterText}>
+                    {viewerIndex + 1} of {images.length}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            <View
+              style={viewerStyles.imageArea}
+              onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
+                setViewerSize({ width, height });
+              }}
+            >
+              <ScrollView
+                ref={viewerPagerRef}
+                style={viewerStyles.pager}
+                horizontal
+                pagingEnabled
+                decelerationRate="fast"
+                scrollEnabled={images.length > 1}
+                bounces={false}
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={(event) => {
+                  if (viewerSize.width > 0) {
+                    setViewerIndex(Math.round(event.nativeEvent.contentOffset.x / viewerSize.width));
+                  }
+                }}
+              >
+                {images.map((uri, index) => (
+                  <View
+                    key={`${uri}-${index}`}
+                    style={[viewerStyles.imagePage, { width: viewerSize.width, height: viewerSize.height }]}
+                  >
+                    <ExpoImage
+                      source={{ uri }}
+                      contentFit="cover"
+                      style={viewerStyles.image}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -283,7 +400,7 @@ function SingleImage({
       <Pressable
         onPress={onPress}
         accessibilityRole="imagebutton"
-        accessibilityLabel={`Photo shared by ${authorName}. Double tap to like.`}
+        accessibilityLabel={`Photo shared by ${authorName}. Tap to view, double tap to like.`}
       >
         <ExpoImage
           source={{ uri }}
@@ -319,7 +436,7 @@ const ImageCarousel = memo(function ImageCarousel({
   authorName: string;
   maxHeight: number;
   fallbackWidth: number;
-  onPressImage: () => void;
+  onPressImage: (index: number) => void;
   onIndexChange: (index: number) => void;
   radius: number;
 }) {
@@ -403,10 +520,10 @@ const ImageCarousel = memo(function ImageCarousel({
               }}
             >
               <Pressable
-                onPress={onPressImage}
+                onPress={() => onPressImage(index)}
                 style={{ flex: 1 }}
                 accessibilityRole="imagebutton"
-                accessibilityLabel={`Photo ${index + 1} of ${images.length} shared by ${authorName}. Double tap to like.`}
+                accessibilityLabel={`Photo ${index + 1} of ${images.length} shared by ${authorName}. Tap to view, double tap to like.`}
               >
                 {failed.has(index) ? (
                   <View style={[carouselStyles.fallback, { borderRadius: radius }]}>
@@ -436,6 +553,22 @@ const ImageCarousel = memo(function ImageCarousel({
 const carouselStyles = StyleSheet.create({
   fallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG_AVATAR },
   singleWrap: { width: '100%', alignItems: 'center' },
+});
+
+const viewerStyles = StyleSheet.create({
+  root: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  card: { overflow: 'hidden', borderRadius: VIEWER_RADIUS, borderWidth: 1, borderColor: BORDER_SUBTLE, backgroundColor: '#05080D' },
+  header: { height: VIEWER_HEADER_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 12, paddingVertical: 4, backgroundColor: BG_AVATAR, borderBottomWidth: 1, borderBottomColor: BORDER_SUBTLE },
+  headerInfo: { flex: 1, minWidth: 0, gap: 3 },
+  title: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '800' },
+  subtitle: { color: TEXT_MUTED, fontSize: 10, lineHeight: 13 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  counter: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: BG_GOLD_TINT, borderWidth: 1, borderColor: BORDER_GOLD_SOFT },
+  counterText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '700' },
+  imageArea: { flex: 1, width: '100%', overflow: 'hidden', borderBottomLeftRadius: VIEWER_RADIUS, borderBottomRightRadius: VIEWER_RADIUS, backgroundColor: '#000000' },
+  pager: { flex: 1, overflow: 'hidden', borderBottomLeftRadius: VIEWER_RADIUS, borderBottomRightRadius: VIEWER_RADIUS },
+  imagePage: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderBottomLeftRadius: VIEWER_RADIUS, borderBottomRightRadius: VIEWER_RADIUS },
+  image: { width: '100%', height: '100%', borderBottomLeftRadius: VIEWER_RADIUS, borderBottomRightRadius: VIEWER_RADIUS },
 });
 
 function getInitials(name: string): string {
@@ -481,8 +614,8 @@ function makeStyles(focused: boolean) {
     authorName: { color: TEXT_PRIMARY, fontSize: f(11), fontWeight: '700' },
     location: { color: TEXT_SECONDARY, fontSize: f(9), marginTop: 1 },
     photo: { width: '100%', aspectRatio: 1, borderRadius: RADIUS_BTN, backgroundColor: BG_AVATAR },
-    photoPlaceholder: { width: '100%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: RADIUS_BTN, backgroundColor: BG_AVATAR },
-    placeholderText: { color: TEXT_MUTED, fontSize: f(9) },
+    photoPlaceholder: { width: '100%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', gap: 8, transform: [{ translateX: 110 }] },
+    placeholderText: { color: TEXT_MUTED, fontSize: f(15), textAlign: 'center' },
     carouselRadius: { borderRadius: f(12) },
     counter: { position: 'absolute', top: f(8), right: f(8), paddingHorizontal: f(8), paddingVertical: f(3), borderRadius: 999, backgroundColor: 'rgba(14,21,32,0.7)' },
     counterText: { color: TEXT_PRIMARY, fontSize: f(9), fontWeight: '700' },
@@ -490,13 +623,11 @@ function makeStyles(focused: boolean) {
     dot: { width: f(6), height: f(6), borderRadius: f(3), backgroundColor: 'rgba(255,255,255,0.25)' },
     dotActive: { backgroundColor: ACCENT_GOLD },
     heartBurst: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+    postDetails: { flexDirection: 'row', alignItems: 'center', gap: f(7), marginTop: f(7) },
     likeButton: { minWidth: 36, minHeight: 34, alignItems: 'flex-end', justifyContent: 'center' },
-    likes: { color: TEXT_PRIMARY, fontSize: f(10), fontWeight: '800', marginTop: f(8) },
+    likes: { color: TEXT_PRIMARY, fontSize: f(10), fontWeight: '800' },
     pendingSync: { color: ACCENT_GOLD, fontSize: f(9), marginTop: 3 },
     caption: { color: TEXT_SECONDARY, fontSize: f(10), lineHeight: f(15), marginTop: f(4) },
-    captionName: { color: TEXT_PRIMARY, fontWeight: '800' },
-    captionTitle: { color: TEXT_PRIMARY, fontWeight: '600' },
-    captionBody: { color: TEXT_SECONDARY, fontWeight: '400' },
     more: { color: TEXT_FAINT, fontSize: f(10), marginTop: 2 },
     timestamp: { color: TEXT_FAINT, fontSize: f(8), letterSpacing: 0.4, textTransform: 'uppercase', marginTop: f(6) },
   });
