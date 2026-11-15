@@ -2,25 +2,30 @@ import React from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   Image,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  TouchableWithoutFeedback,
-  useWindowDimensions,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ACCENT_GOLD,
   BG_AVATAR,
+  BG_GOLD_TINT,
+  BG_PANEL,
+  BORDER_GOLD_SOFT,
   BORDER_SUBTLE,
   TEXT_FAINT,
+  TEXT_MUTED,
+  TEXT_PRIMARY,
 } from '../../theme/designTokens';
 import { supabase } from '../../lib/supabase';
 import type { Mountain } from '../../services/mountainService';
 import type { JournalEntry } from '../../types/journal';
+import { PhotoViewerModal } from './MyJournalFeed';
 
 interface JournalShowcaseProps {
   entries: JournalEntry[];
@@ -31,6 +36,7 @@ interface JournalShowcaseProps {
 interface ShowcasePhoto {
   entry: JournalEntry;
   image: string;
+  imageIndex: number;
 }
 
 const getImageUrl = (image: string): string => {
@@ -41,16 +47,74 @@ const getImageUrl = (image: string): string => {
   return supabase.storage.from('journal-images').getPublicUrl(image).data.publicUrl;
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Empty states (these are meant to get a smile)
+// ─────────────────────────────────────────────────────────────────────────
+const FUNNY_EMPTY: { title: string; body: (mountain: string) => string }[] = [
+  { title: 'Zero photos. Suspicious.', body: (m) => `Did you really climb ${m}, or just stare at it from the parking lot?` },
+  { title: 'Nothing to see here (yet)', body: (m) => `${m} is still waiting for its glamour shots.` },
+  { title: 'This gallery is on a snack break', body: () => 'Add a journal entry with a photo and it will get right back to work.' },
+  { title: 'Your camera roll called', body: (m) => `It misses ${m}. Please send photos.` },
+  { title: 'No proof, no pics', body: () => 'The mountain says you were never there. Prove it.' },
+];
+
+// Same mountain always gets the same joke, so the card doesn't change on every re-render
+const pickJoke = (seed: string) => {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return FUNNY_EMPTY[hash % FUNNY_EMPTY.length];
+};
+
+function EmptyCard({ title, body }: { title: string; body: string }) {
+  const bob = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(bob, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bob]);
+
+  return (
+    <View style={styles.emptyCard}>
+      <Animated.View
+        style={[
+          styles.emptyIcon,
+          {
+            transform: [
+              { translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) },
+              { rotate: bob.interpolate({ inputRange: [0, 1], outputRange: ['-7deg', '7deg'] }) },
+            ],
+          },
+        ]}
+      >
+        <Ionicons name="camera-outline" size={20} color={ACCENT_GOLD} />
+      </Animated.View>
+      <View style={styles.emptyText}>
+        <Text style={styles.emptyTitle}>{title}</Text>
+        <Text style={styles.emptyBody}>{body}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Showcase
+// ─────────────────────────────────────────────────────────────────────────
 export default function JournalShowcase({ entries, mountains, isLoading = false }: JournalShowcaseProps) {
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const [selectedPhotoUri, setSelectedPhotoUri] = React.useState<string | null>(null);
-  const [photoAspectRatio, setPhotoAspectRatio] = React.useState(1);
+  const [selectedPhoto, setSelectedPhoto] = React.useState<ShowcasePhoto | null>(null);
   const imagesByMountain = new Map<string, ShowcasePhoto[]>();
   entries.forEach((entry) => {
     const mountainKey = entry.mountain_id || '__unassigned__';
     imagesByMountain.set(mountainKey, [
       ...(imagesByMountain.get(mountainKey) || []),
-      ...(entry.images || []).map((image) => ({ entry, image })),
+      ...(entry.images || [])
+        .filter(Boolean)
+        .map((image, imageIndex) => ({ entry, image, imageIndex })),
     ]);
   });
   const mountainPriority = (name: string) => {
@@ -71,86 +135,120 @@ export default function JournalShowcase({ entries, mountains, isLoading = false 
     groups.push({ id: '__unassigned__', name: 'Mountain not selected', images: unassignedImages });
   }
 
-  if (isLoading) return <ActivityIndicator color={ACCENT_GOLD} size="small" />;
-  if (!mountains.length && !unassignedImages.length) {
-    return <Text style={styles.empty}>Your saved journal photos will appear here.</Text>;
+  if (isLoading) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={ACCENT_GOLD} size="small" />
+        <Text style={styles.loadingText}>Developing your photos…</Text>
+      </View>
+    );
   }
-
-  const maxWidth = windowWidth * 0.9;
-  const maxHeight = windowHeight * 0.85;
-  let photoWidth = maxWidth;
-  let photoHeight = photoWidth / photoAspectRatio;
-  if (photoHeight > maxHeight) {
-    photoHeight = maxHeight;
-    photoWidth = photoHeight * photoAspectRatio;
+  if (!mountains.length && !unassignedImages.length) {
+    return (
+      <EmptyCard
+        title="No mountains, no photos"
+        body="Go climb something. This page will be right here, looking very empty."
+      />
+    );
   }
 
   const closePhoto = () => {
-    setSelectedPhotoUri(null);
-    setPhotoAspectRatio(1);
+    setSelectedPhoto(null);
   };
+  const selectedEntry = selectedPhoto?.entry ?? null;
+  const viewerImages = selectedEntry
+    ? selectedEntry.images.filter(Boolean).map(getImageUrl).filter(Boolean)
+    : [];
+  const selectedMountainName = selectedEntry?.mountain_id
+    ? mountains.find((mountain) => mountain.id === selectedEntry.mountain_id)?.name
+    : undefined;
 
   return <>
     <ScrollView style={styles.scroll} contentContainerStyle={styles.groups} showsVerticalScrollIndicator={false}>
       {groups.map((group) => (
-        <View key={group.id} style={styles.group}>
-          <Text style={styles.mountainName}>{group.name}</Text>
-          {group.images.length ? (
-            <MountainPhotoCarousel
-              mountainName={group.name}
-              photos={group.images}
-              onSelect={(photo) => {
-                setPhotoAspectRatio(1);
-                setSelectedPhotoUri(getImageUrl(photo.image));
-              }}
-            />
-          ) : (
-            <Text style={styles.emptySection}>No photos yet.</Text>
-          )}
-        </View>
+        <MountainSection
+          key={group.id}
+          id={group.id}
+          name={group.name}
+          photos={group.images}
+          onSelect={setSelectedPhoto}
+        />
       ))}
     </ScrollView>
-    <Modal
-      visible={selectedPhotoUri !== null}
-      transparent
-      animationType="fade"
-      presentationStyle="overFullScreen"
-      statusBarTranslucent
-      onRequestClose={closePhoto}
-    >
-      {selectedPhotoUri && (
-        <TouchableWithoutFeedback onPress={closePhoto}>
-          <View style={styles.modalBackdrop}>
-            <Image
-              source={{ uri: selectedPhotoUri }}
-              style={[styles.lightboxImage, { width: photoWidth, height: photoHeight }]}
-              resizeMode="contain"
-              onLoad={({ nativeEvent }) => {
-                const { width, height } = nativeEvent.source;
-                if (width > 0 && height > 0) setPhotoAspectRatio(width / height);
-              }}
-            />
-          </View>
-        </TouchableWithoutFeedback>
-      )}
-    </Modal>
+    <PhotoViewerModal
+      visible={selectedPhoto !== null && viewerImages.length > 0}
+      images={viewerImages}
+      entry={selectedEntry}
+      locationLabel={selectedMountainName}
+      startIndex={selectedPhoto?.imageIndex ?? 0}
+      dateOnlyHeader
+      onClose={closePhoto}
+    />
   </>;
 }
 
-const CAROUSEL_IMAGE_WIDTH = 180;
-const CAROUSEL_IMAGE_HEIGHT = 125;
-const CAROUSEL_IMAGE_GAP = 2;
+const CAROUSEL_IMAGE_WIDTH = 200;
+const CAROUSEL_IMAGE_HEIGHT = 136;
+const CAROUSEL_IMAGE_GAP = 10;
+const MAX_DOTS = 8;
 
-function MountainPhotoCarousel({
-  mountainName,
+function MountainSection({
+  id,
+  name,
   photos,
   onSelect,
 }: {
-  mountainName: string;
+  id: string;
+  name: string;
   photos: ShowcasePhoto[];
   onSelect: (photo: ShowcasePhoto) => void;
 }) {
   const [activeIndex, setActiveIndex] = React.useState(0);
+  const count = photos.length;
+  const joke = React.useMemo(() => pickJoke(id), [id]);
+
+  return (
+    <View style={styles.group}>
+      <View style={styles.header}>
+        <View style={styles.headerName}>
+          <Ionicons name="triangle" size={9} color={ACCENT_GOLD} />
+          <Text style={styles.mountainName} numberOfLines={1}>{name}</Text>
+        </View>
+        <View style={[styles.countPill, count === 0 && styles.countPillEmpty]}>
+          <Text style={[styles.countText, count === 0 && styles.countTextEmpty]}>
+            {count === 0 ? 'no photos' : count === 1 ? '1 photo' : `${count} photos`}
+          </Text>
+        </View>
+      </View>
+
+      {count > 0 ? (
+        <MountainPhotoCarousel
+          mountainName={name}
+          photos={photos}
+          activeIndex={activeIndex}
+          onActiveChange={setActiveIndex}
+          onSelect={onSelect}
+        />
+      ) : (
+        <EmptyCard title={joke.title} body={joke.body(name)} />
+      )}
+    </View>
+  );
+}
+
+function MountainPhotoCarousel({
+  mountainName,
+  photos,
+  activeIndex,
+  onActiveChange,
+  onSelect,
+}: {
+  mountainName: string;
+  photos: ShowcasePhoto[];
+  activeIndex: number;
+  onActiveChange: (index: number) => void;
+  onSelect: (photo: ShowcasePhoto) => void;
+}) {
   const [viewportWidth, setViewportWidth] = React.useState(0);
   const [scrollX] = React.useState(() => new Animated.Value(0));
   const cardWidth = viewportWidth ? Math.min(CAROUSEL_IMAGE_WIDTH, viewportWidth * 0.72) : CAROUSEL_IMAGE_WIDTH;
@@ -172,7 +270,7 @@ function MountainPhotoCarousel({
         snapToInterval={itemStride}
         snapToAlignment="start"
         contentContainerStyle={{
-          paddingHorizontal: Math.max(0, (viewportWidth - cardWidth) / 2),
+          paddingHorizontal: Math.max(0, (viewportWidth - itemStride) / 2),
         }}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -180,7 +278,7 @@ function MountainPhotoCarousel({
         )}
         onMomentumScrollEnd={(event) => {
           const index = Math.round(event.nativeEvent.contentOffset.x / itemStride);
-          setActiveIndex(Math.max(0, Math.min(index, photos.length - 1)));
+          onActiveChange(Math.max(0, Math.min(index, photos.length - 1)));
         }}
         scrollEventThrottle={16}
         renderItem={({ item: photo, index }) => {
@@ -191,64 +289,146 @@ function MountainPhotoCarousel({
           ];
           const scale = scrollX.interpolate({
             inputRange,
-            outputRange: [0.72, 1, 0.72],
+            outputRange: [0.8, 1, 0.8],
             extrapolate: 'clamp',
           });
           const opacity = scrollX.interpolate({
             inputRange,
-            outputRange: [0.3, 1, 0.3],
+            outputRange: [0.35, 1, 0.35],
+            extrapolate: 'clamp',
+          });
+          // Gold frame and expand badge fade in only on the centred photo
+          const focus = scrollX.interpolate({
+            inputRange,
+            outputRange: [0, 1, 0],
             extrapolate: 'clamp',
           });
           const imageUrl = getImageUrl(photo.image);
 
           return (
-            <Animated.View style={{ width: itemStride, height: cardHeight, transform: [{ scale }], opacity }}>
+            <Animated.View
+              style={{
+                width: itemStride,
+                height: cardHeight,
+                alignItems: 'center',
+                transform: [{ scale }],
+                opacity,
+              }}
+            >
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel={`Open photo from ${mountainName}`}
+                accessibilityLabel={`Open photo ${index + 1} of ${photos.length} from ${mountainName}`}
                 onPress={() => onSelect(photo)}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
+                style={[styles.imageFrame, { width: cardWidth, height: cardHeight }]}
               >
                 <Image
                   source={{ uri: imageUrl }}
-                  style={[styles.image, { width: cardWidth, height: cardHeight }]}
+                  style={styles.image}
                   onError={(event) => {
                     console.error('[JournalShowcase] Image failed:', imageUrl, event.nativeEvent.error);
                   }}
                 />
+                <Animated.View pointerEvents="none" style={[styles.focusRing, { opacity: focus }]} />
+                <Animated.View pointerEvents="none" style={[styles.expandBadge, { opacity: focus }]}>
+                  <Ionicons name="expand-outline" size={13} color="#FFFFFF" />
+                </Animated.View>
               </TouchableOpacity>
             </Animated.View>
           );
         }}
       />
-      <Text style={styles.carouselPosition}>
-        {activeIndex + 1} / {photos.length}
-      </Text>
+
+      <View style={styles.indicator} accessible accessibilityLabel={`Photo ${activeIndex + 1} of ${photos.length}`}>
+        {photos.length <= MAX_DOTS ? (
+          photos.map((_, i) => (
+            <View key={i} style={[styles.dot, i === activeIndex && styles.dotActive]} />
+          ))
+        ) : (
+          <Text style={styles.carouselPosition}>
+            {activeIndex + 1} / {photos.length}
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: { width: '100%' },
-  groups: { gap: 16, width: '100%', paddingBottom: 8 },
-  group: { gap: 7, width: '100%' },
-  mountainName: { color: ACCENT_GOLD, fontSize: 11, fontWeight: '700' },
-  carouselContainer: { gap: 6 },
-  image: { width: CAROUSEL_IMAGE_WIDTH, height: CAROUSEL_IMAGE_HEIGHT, borderRadius: 6, backgroundColor: BG_AVATAR, borderWidth: 1, borderColor: BORDER_SUBTLE },
-  carouselPosition: { alignSelf: 'flex-end', color: TEXT_FAINT, fontSize: 10 },
-  empty: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
-  emptySection: { color: TEXT_FAINT, fontSize: 10, lineHeight: 14 },
+  groups: { gap: 18, width: '100%', paddingBottom: 8 },
+  group: { gap: 10, width: '100%' },
 
-  // Photo-only lightbox
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+  // Section header
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  headerName: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 },
+  mountainName: { flexShrink: 1, color: TEXT_PRIMARY, fontSize: 13, fontWeight: '700', letterSpacing: 0.2 },
+  countPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: BG_GOLD_TINT,
+    borderWidth: 1,
+    borderColor: BORDER_GOLD_SOFT,
+  },
+  countPillEmpty: { backgroundColor: 'transparent', borderColor: BORDER_SUBTLE },
+  countText: { color: ACCENT_GOLD, fontSize: 10, fontWeight: '700' },
+  countTextEmpty: { color: TEXT_FAINT },
+
+  // Carousel
+  carouselContainer: { gap: 8 },
+  imageFrame: { borderRadius: 12, overflow: 'hidden', backgroundColor: BG_AVATAR },
+  image: { width: '100%', height: '100%' },
+  focusRing: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: ACCENT_GOLD,
+  },
+  expandBadge: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    backgroundColor: 'rgba(8,13,20,0.65)',
   },
-  lightboxImage: {
-    borderRadius: 8,
-    backgroundColor: '#000',
+  indicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 10 },
+  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.2)' },
+  dotActive: { width: 16, backgroundColor: ACCENT_GOLD },
+  carouselPosition: { color: TEXT_FAINT, fontSize: 11, fontWeight: '600' },
+
+  // Loading
+  loading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 14 },
+  loadingText: { color: TEXT_MUTED, fontSize: 12 },
+
+  // Empty
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: BORDER_GOLD_SOFT,
+    backgroundColor: BG_PANEL,
   },
+  emptyIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BG_GOLD_TINT,
+    borderWidth: 1,
+    borderColor: BORDER_GOLD_SOFT,
+  },
+  emptyText: { flex: 1, minWidth: 0 },
+  emptyTitle: { color: TEXT_PRIMARY, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  emptyBody: { marginTop: 2, color: TEXT_MUTED, fontSize: 12, lineHeight: 17 },
 });
