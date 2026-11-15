@@ -65,7 +65,7 @@ export interface SpeciesCardProps {
   onPress?: () => void;
   isDiscovered?: boolean;
   showDiscoveryStatus?: boolean;
-  /** Fired when the gold bookmark is pulled all the way down. */
+  /** Fired when the discovery bookmark is pulled all the way down. */
   onDiscover?: () => void | boolean | Promise<void | boolean>;
   /** Fired when the green bookmark is pulled all the way down. */
   onUndiscover?: () => void | boolean | Promise<void | boolean>;
@@ -415,7 +415,7 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
   // JS-driven (they drive layout / colour props)
   const ribbonPull = useRef(new Animated.Value(0)).current; // 0..1, 1 = "yes"
   const ribbonHint = useRef(new Animated.Value(0)).current; // wiggle
-  const tone = useRef(new Animated.Value(discovered ? 1 : 0)).current; // 0 gold,1 green,2 red,3 gold
+  const tone = useRef(new Animated.Value(discovered ? 1 : 0)).current; // 0 undiscovered,1 discovered,2 remove,3 reset
   const promptVis = useRef(new Animated.Value(1)).current; // hides prompt on commit
 
   const busy = useRef(false);
@@ -670,12 +670,12 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
-  const goldPresence = tone.interpolate({
+  const accentPresence = tone.interpolate({
     inputRange: [0, 0.4, 2.6, 3],
     outputRange: [1, 0, 0, 1],
   });
-  const iconBookmark = Animated.multiply(goldPresence, restFactor);
-  const iconGoldCheck = Animated.multiply(goldPresence, yesFactor);
+  const iconBookmark = Animated.multiply(accentPresence, restFactor);
+  const iconAccentCheck = Animated.multiply(accentPresence, yesFactor);
   const iconGreenCheck = tone.interpolate({
     inputRange: [0.4, 0.8, 1.2, 1.6],
     outputRange: [0, 1, 1, 0],
@@ -707,7 +707,7 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
     extrapolate: 'clamp',
   });
 
-  const theme = discovered ? themes.red : themes.gold;
+  const theme = discovered ? themes.red : themes.discover;
   const question = discovered
     ? 'Remove this discovery?'
     : 'Did you discover this species?';
@@ -792,85 +792,32 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
                     style={[styles.washDark, { opacity: flashDark }]}
                   />
 
-                  {/* BOOKMARK: the only status control */}
-                  {showStatus && (
-                    <>
-                      <Animated.View
-                        pointerEvents="none"
-                        style={[
-                          styles.ribbonWrap,
-                          { transform: [{ scale: ribbonScale }] },
-                        ]}
-                      >
-                        <Animated.View
-                          style={[
-                            styles.ribbonBody,
-                            { height: ribbonH, backgroundColor: ribbonColor },
-                          ]}
-                        >
-                          <Animated.View
-                            style={[styles.ribbonIcon, { opacity: iconBookmark }]}
-                          >
-                            <Ionicons
-                              name="bookmark-outline"
-                              size={14}
-                              color="#1C1917"
-                            />
-                          </Animated.View>
-                          <Animated.View
-                            style={[styles.ribbonIcon, { opacity: iconGoldCheck }]}
-                          >
-                            <Ionicons name="checkmark" size={15} color="#1C1917" />
-                          </Animated.View>
-                          <Animated.View
-                            style={[styles.ribbonIcon, { opacity: iconGreenCheck }]}
-                          >
-                            <Ionicons name="checkmark" size={15} color="#F0FDF4" />
-                          </Animated.View>
-                          <Animated.View
-                            style={[styles.ribbonIcon, { opacity: iconTrash }]}
-                          >
-                            <Ionicons name="trash" size={14} color="#FEF2F2" />
-                          </Animated.View>
-                        </Animated.View>
-                        <Animated.View
-                          style={[styles.ribbonTip, { borderTopColor: ribbonColor }]}
-                        />
-                      </Animated.View>
-
-                      <Animated.View
-                        style={[styles.ribbonHandle, { height: ribbonHandleH }]}
-                        accessible
-                        accessibilityRole="button"
-                        accessibilityLabel={
-                          discovered
-                            ? `Remove ${commonName} from discovered`
-                            : `Mark ${commonName} as discovered`
-                        }
-                        accessibilityHint="Pull down to confirm"
-                        onAccessibilityTap={commitRibbon}
-                        {...ribbonResponder.panHandlers}
-                      />
-                    </>
-                  )}
                 </View>
 
                 <View
                   style={[
                     styles.sheetInfoPanel,
-                    noInfoMode && styles.sheetInfoPanelCentered,
+                    styles.sheetInfoPanelCentered,
                   ]}
                 >
                   <View style={styles.infoTop}>
                     <Text
-                      style={[styles.sheetName, noInfoMode && styles.sheetNameBig]}
+                      style={[
+                        styles.sheetName,
+                        noInfoMode && styles.sheetNameBig,
+                        hasDescription && styles.sheetNameCompact,
+                      ]}
                       numberOfLines={3}
                     >
                       {commonName}
                     </Text>
                     {!!scientificName && (
                       <Text
-                        style={[styles.sheetSci, noInfoMode && styles.sheetSciBig]}
+                        style={[
+                          styles.sheetSci,
+                          noInfoMode && styles.sheetSciBig,
+                          hasDescription && styles.sheetSciCompact,
+                        ]}
                         numberOfLines={2}
                       >
                         {scientificName}
@@ -881,6 +828,7 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
                       style={[
                         styles.sheetDescription,
                         !hasDescription && styles.sheetDescriptionEmpty,
+                        hasDescription && styles.sheetDescriptionCompact,
                       ]}
                       numberOfLines={hasDescription ? 6 : 3}
                     >
@@ -906,22 +854,72 @@ const SpeciesDetail: React.FC<SpeciesDetailProps> = ({
                         </View>
                       )}
                   </View>
+                  {/* BOOKMARK: the only status control */}
+                  {showStatus && (
+                    <>
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          styles.ribbonWrap,
+                          { transform: [{ scale: ribbonScale }] },
+                        ]}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.ribbonBody,
+                            { height: ribbonH, backgroundColor: ribbonColor },
+                          ]}
+                        >
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconBookmark }]}
+                          >
+                            <Ionicons
+                              name="bookmark-outline"
+                              size={18}
+                              color="#2B1B12"
+                            />
+                          </Animated.View>
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconAccentCheck }]}
+                          >
+                            <Ionicons name="checkmark" size={18} color="#2B1B12" />
+                          </Animated.View>
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconGreenCheck }]}
+                          >
+                            <Ionicons name="checkmark" size={18} color="#F0FDF4" />
+                          </Animated.View>
+                          <Animated.View
+                            style={[styles.ribbonIcon, { opacity: iconTrash }]}
+                          >
+                            <Ionicons name="trash" size={16} color="#FEF2F2" />
+                          </Animated.View>
+                        </Animated.View>
+                        <Animated.View
+                          style={[styles.ribbonTip, { borderTopColor: ribbonColor }]}
+                        />
+                      </Animated.View>
+
+                      <Animated.View
+                        style={[styles.ribbonHandle, { height: ribbonHandleH }]}
+                        accessible
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          discovered
+                            ? `Remove ${commonName} from discovered`
+                            : `Mark ${commonName} as discovered`
+                        }
+                        accessibilityHint="Pull down to confirm"
+                        onAccessibilityTap={commitRibbon}
+                        {...ribbonResponder.panHandlers}
+                      />
+                    </>
+                  )}
                 </View>
               </View>
 
             </ScrollView>
           </View>
-
-          {/* close button stays visible while the profile scrolls */}
-          <Pressable
-            onPress={dismiss}
-            hitSlop={10}
-            style={styles.closeBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <Ionicons name="close" size={16} color={TEXT_MUTED} />
-          </Pressable>
 
           {/* ===== confirmation card: fixed spot beside the ribbon ===== */}
           {showStatus && (
@@ -1270,7 +1268,7 @@ const SpeciesFullProfile: React.FC<SpeciesFullProfileProps> = ({
 
 // black base with a gold (discover) or red (remove) accent
 const themes = {
-  gold: StyleSheet.create({
+  discover: StyleSheet.create({
     box: { backgroundColor: '#0A0A0A', borderColor: ACCENT_GOLD },
     title: { color: ACCENT_GOLD },
     fill: { backgroundColor: ACCENT_GOLD },
@@ -1445,37 +1443,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
 
-  // bookmark ribbon (top-left)
+  // bookmark ribbon (top-right of the info panel)
   ribbonWrap: {
     position: 'absolute',
     top: 0,
-    left: 14,
-    width: 26,
+    right: 14,
+    width: 38,
     alignItems: 'center',
+    shadowColor: '#020617',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 6,
   },
 
   ribbonBody: {
-    width: 26,
+    width: 38,
     overflow: 'hidden',
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
   },
 
   ribbonTip: {
     width: 0,
     height: 0,
     borderStyle: 'solid',
-    borderLeftWidth: 13,
-    borderRightWidth: 13,
-    borderTopWidth: 12,
+    borderLeftWidth: 19,
+    borderRightWidth: 19,
+    borderTopWidth: 15,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
   },
 
   ribbonIcon: {
     position: 'absolute',
-    top: 9,
+    top: 11,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -1484,13 +1484,14 @@ const styles = StyleSheet.create({
   ribbonHandle: {
     position: 'absolute',
     top: 0,
-    left: 8,
-    width: 42,
+    right: 4,
+    width: 58,
   },
 
   // right panel (description)
   sheetInfoPanel: {
     flex: 1,
+    position: 'relative',
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
@@ -1499,22 +1500,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  closeBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BG_SUBTLE,
-    zIndex: 5,
-  },
-
   infoTop: {
     gap: 3,
-    paddingRight: 22,
+    paddingRight: 40,
   },
 
   sheetName: {
@@ -1531,6 +1519,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
 
+  sheetNameCompact: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+
   sheetSci: {
     fontSize: 12.5,
     color: TEXT_MUTED,
@@ -1542,11 +1535,21 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
+  sheetSciCompact: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
+
   sheetDescription: {
     marginTop: 8,
     fontSize: 12.5,
     lineHeight: 18,
     color: TEXT_MUTED,
+  },
+
+  sheetDescriptionCompact: {
+    fontSize: 11.5,
+    lineHeight: 16,
   },
 
   sheetDescriptionEmpty: {
@@ -1715,7 +1718,7 @@ const styles = StyleSheet.create({
   /* ---------- confirmation card (single column, auto height, fixed position) ---------- */
   prompt: {
     position: 'absolute',
-    left: 52,
+    right: 52,
     top: 14,
     paddingHorizontal: 14,
     paddingTop: 12,
@@ -1758,13 +1761,13 @@ const styles = StyleSheet.create({
   // small pointer toward the ribbon
   tail: {
     position: 'absolute',
-    left: -6,
+    right: -6,
     top: 18,
     width: 10,
     height: 10,
-    borderLeftWidth: 1,
+    borderRightWidth: 1,
     borderBottomWidth: 1,
-    transform: [{ rotate: '45deg' }],
+    transform: [{ rotate: '-45deg' }],
   },
 
 });
