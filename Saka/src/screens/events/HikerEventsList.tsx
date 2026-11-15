@@ -295,7 +295,7 @@ export default function HikerEventsList() {
     'Find a hike that matches your pace, discover new trails, and make a day of it.';
   const currentDescriptionLayout =
     mountainDescriptionLayout?.text === mountainDescription ? mountainDescriptionLayout : null;
-  const mountainDescriptionHasMore = currentDescriptionLayout?.hasMore ?? mountainDescription.length > 180;
+  const mountainDescriptionHasMore = currentDescriptionLayout?.hasMore ?? mountainDescription.length > 140;
   const mountainDescriptionPreview =
     currentDescriptionLayout?.preview ?? mountainDescription.slice(0, 140).trimEnd();
 
@@ -320,7 +320,7 @@ export default function HikerEventsList() {
     const precedingLineLength = lines.slice(0, 4).reduce((length, line) => length + line.text.length, 0);
     const lastVisibleLine = lines[4];
     const averageCharacterWidth = lastVisibleLine.width / Math.max(lastVisibleLine.text.length, 1);
-    const reservedCharacters = Math.ceil(180 / Math.max(averageCharacterWidth, 1));
+    const reservedCharacters = Math.ceil(100 / Math.max(averageCharacterWidth, 1));
     const lastLineLength = Math.max(lastVisibleLine.text.length - reservedCharacters, 0);
     const previewLength = precedingLineLength + lastLineLength;
     const preview = mountainDescription.slice(0, previewLength).trimEnd();
@@ -565,7 +565,7 @@ export default function HikerEventsList() {
                           accessibilityRole="button"
                           accessibilityLabel="Read more mountain description"
                         >
-                          …
+                          {' '}Read more
                         </Text>
                       ) : null}
                     </Text>
@@ -696,8 +696,8 @@ const styles = StyleSheet.create({
   },
   mountainDescriptionMeasure: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: 18,
+    right: 18,
     top: 0,
     opacity: 0,
     color: T.body,
