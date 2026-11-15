@@ -39,7 +39,7 @@ import { useTutorial, TutorialHelpButton } from '../components/TutorialModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const LEFT_COLUMN_WIDTH = SCREEN_WIDTH * 0.35;
+const LEFT_COLUMN_WIDTH = SCREEN_WIDTH * 0.4;
 
 // ── ProfileCard design tokens ─────────────────────────────────────────────
 export const PC = {
@@ -431,18 +431,6 @@ export default function ViewpointScreen() {
     setImageModalVisible(true);
   };
 
-  const rawModalDimensions = getModalDimensions(modalMedia);
-  const availableModalWidth = SCREEN_WIDTH - insets.left - insets.right - 20;
-  const availableModalHeight = SCREEN_HEIGHT - insets.top - insets.bottom - 32;
-  const modalScale = Math.min(
-    1,
-    availableModalWidth / rawModalDimensions.width,
-    availableModalHeight / rawModalDimensions.height,
-  );
-  const modalDimensions = {
-    width: rawModalDimensions.width * modalScale,
-    height: rawModalDimensions.height * modalScale,
-  };
   const modalImageSource = modalMedia?.type === 'image'
     ? (modalMedia.key
         ? (IMAGE_MAP[modalMedia.key] ?? FALLBACK_IMAGE)
@@ -667,43 +655,29 @@ export default function ViewpointScreen() {
         onRequestClose={() => setImageModalVisible(false)}
       >
         <TouchableWithoutFeedback onPress={() => setImageModalVisible(false)}>
-          <View
-            style={[
-              styles.imageModalBackdrop,
-              {
-                paddingLeft: insets.left + 10,
-                paddingRight: insets.right + 10,
-                paddingTop: insets.top + 16,
-                paddingBottom: insets.bottom + 16,
-              },
-            ]}
-          >
+          <View style={styles.imageModalBackdrop}>
             <ModalScrim color="rgba(0,0,0,0.72)" />
             <TouchableWithoutFeedback>
-              <View
-                style={[
-                  styles.imageModalShadowWrap,
-                  { width: modalDimensions.width, height: modalDimensions.height },
-                ]}
-              >
-                <View style={styles.imageModalCard}>
-                  {modalMedia?.type === 'video' ? (
-                    <View style={styles.imageModalPlaceholder}>
-                      <Ionicons name="videocam-outline" size={28} color={PC.gold} />
-                      <Text style={styles.imageModalPlaceholderText}>Video unavailable</Text>
-                    </View>
-                  ) : modalImageSource ? (
-                    <Image source={modalImageSource} style={styles.imageModalImage} resizeMode="cover" />
-                  ) : null}
-                  <TouchableOpacity
-                    style={styles.imageModalClose}
-                    onPress={() => setImageModalVisible(false)}
-                    accessibilityLabel="Close media viewer"
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="close" size={18} color={PC.textPrimary} />
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.imageModalCard}>
+                {modalMedia?.type === 'video' ? (
+                  <View style={styles.imageModalPlaceholder}>
+                    <Ionicons name="videocam-outline" size={28} color={PC.gold} />
+                    <Text style={styles.imageModalPlaceholderText}>Video unavailable</Text>
+                  </View>
+                ) : modalImageSource ? (
+                  <Image source={modalImageSource} style={styles.imageModalImage} resizeMode="cover" />
+                ) : null}
+                <TouchableOpacity
+                  style={[
+                    styles.imageModalClose,
+                    { top: insets.top + 12, right: insets.right + 12 },
+                  ]}
+                  onPress={() => setImageModalVisible(false)}
+                  accessibilityLabel="Close media viewer"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="close" size={18} color={PC.textPrimary} />
+                </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -735,28 +709,6 @@ export default function ViewpointScreen() {
       )}
     </View>
   );
-}
-
-// ── Modal sizing helper ─────────────────────────────────────────────────────
-function getModalDimensions(item: MediaItem | null): { width: number; height: number } {
-  if (!item) {
-    return { width: SCREEN_WIDTH * 0.92, height: SCREEN_HEIGHT * 0.72 };
-  }
-
-  if (item.type === 'image') {
-    const local = item.key ? (IMAGE_MAP[item.key] ?? FALLBACK_IMAGE) : null;
-    if (local) {
-      const src = Image.resolveAssetSource(local);
-      const ratio = src.width / src.height;
-      const w = Math.min(SCREEN_WIDTH * 0.92, src.width);
-      const h = Math.min(SCREEN_HEIGHT * 0.84, w / ratio);
-      return { width: w, height: h };
-    }
-  }
-
-  const w = SCREEN_WIDTH * 0.92;
-  const h = Math.min(SCREEN_HEIGHT * 0.7, w * (9 / 16));
-  return { width: w, height: h };
 }
 
 // ── Card-stack vertical carousel (left column) ──────────────────────────────
@@ -1119,27 +1071,19 @@ const styles = StyleSheet.create({
   difficultyValue: { fontSize: 10, color: PC.textPrimary, fontWeight: '700', textAlign: 'center' },
   statDividerV: { width: 1, alignSelf: 'stretch', backgroundColor: PC.borderSubtle },
   imageModalBackdrop: {
-    flex: 1, backgroundColor: 'transparent',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  imageModalShadowWrap: {
-    borderRadius: PC.radius,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45, shadowRadius: 16, elevation: 12,
+    flex: 1, backgroundColor: '#000000',
   },
   imageModalCard: {
-    flex: 1, backgroundColor: PC.bgCard, borderRadius: PC.radius,
-    borderWidth: 1, borderColor: PC.gold, overflow: 'hidden',
+    width: '100%', height: '100%', backgroundColor: '#000000', overflow: 'hidden',
   },
   imageModalImage: { width: '100%', height: '100%' },
   imageModalPlaceholder: {
     width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: PC.bgPanel, borderRadius: 18,
-    borderWidth: 1, borderColor: PC.borderGold, gap: 10,
+    backgroundColor: '#000000', gap: 10,
   },
   imageModalPlaceholderText: { color: PC.textSecondary, fontSize: 12, fontWeight: '600' },
   imageModalClose: {
-    position: 'absolute', top: 12, right: 12, width: 34, height: 34, borderRadius: 17,
+    position: 'absolute', width: 34, height: 34, borderRadius: 17, zIndex: 2, elevation: 3,
     backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center', justifyContent: 'center',
   },
