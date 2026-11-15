@@ -4,12 +4,10 @@ import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 
-type AuthFlow = 'recovery' | 'signup';
-
 export default function AuthCallback() {
   const linkingUrl = Linking.useLinkingURL();
   const [status, setStatus] = useState<string>('Waiting for callback...');
-  const [failedFlow, setFailedFlow] = useState<AuthFlow | null>(null);
+  const [canRecover, setCanRecover] = useState(false);
   const lastProcessedUrl = useRef<string | null>(null);
 
   useEffect(() => {
@@ -51,8 +49,8 @@ export default function AuthCallback() {
     const processUrl = async (rawUrl: string | null) => {
       try {
         if (!rawUrl) {
-          setStatus('No authentication callback URL received. Open the latest email link again.');
-          setFailedFlow('recovery');
+          setStatus('No password-reset callback URL received. Open the latest reset email link again.');
+          setCanRecover(true);
           return;
         }
 
@@ -70,33 +68,16 @@ export default function AuthCallback() {
         const code = getParam('code');
         const tokenHash = getParam('token_hash') || getParam('token');
         const otpType = getParam('type');
-        const requestedFlow = getParam('flow');
-        const flow: AuthFlow =
-          requestedFlow === 'signup' || otpType === 'signup' ? 'signup' : 'recovery';
         const authError = getParam('error_description') || getParam('error');
 
-        const completeFlow = () => {
-          if (flow === 'recovery') {
-            setStatus('Recovery session verified. Opening password update...');
-            router.replace('/Forgot?reset=1');
-          } else {
-            setStatus('Email confirmed. Opening SAKA...');
-            router.replace('/Loading');
-          }
-        };
-
         if (authError) {
-          setFailedFlow(flow);
-          setStatus(
-            flow === 'recovery'
-              ? `The reset link could not be verified: ${authError.replace(/\+/g, ' ')}`
-              : `The confirmation link could not be verified: ${authError.replace(/\+/g, ' ')}`,
-          );
+          setCanRecover(true);
+          setStatus(`The reset link could not be verified: ${authError.replace(/\+/g, ' ')}`);
           return;
         }
 
         if (accessToken && refreshToken) {
-          setStatus(flow === 'recovery' ? 'Setting recovery session...' : 'Verifying email confirmation...');
+          setStatus('Setting recovery session...');
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
@@ -104,14 +85,11 @@ export default function AuthCallback() {
           if (!mounted) return;
           if (error) {
             console.warn('[Auth] Callback session setup failed:', error.message);
-            setFailedFlow(flow);
-            setStatus(
-              flow === 'recovery'
-                ? `Could not verify the reset link: ${error.message}`
-                : `Could not confirm your email: ${error.message}`,
-            );
+            setCanRecover(true);
+            setStatus(`Could not verify the reset link: ${error.message}`);
           } else {
-            completeFlow();
+            setStatus('Recovery session verified. Opening password update...');
+            router.replace('/Forgot?reset=1');
           }
         } else if (code) {
           setStatus('Exchanging code for session...');
@@ -119,17 +97,14 @@ export default function AuthCallback() {
           if (!mounted) return;
           if (error) {
             console.warn('[Auth] Callback code exchange failed:', error.message);
-            setFailedFlow(flow);
-            setStatus(
-              flow === 'recovery'
-                ? `Could not verify the reset link: ${error.message}`
-                : `Could not confirm your email: ${error.message}`,
-            );
+            setCanRecover(true);
+            setStatus(`Could not verify the reset link: ${error.message}`);
           } else {
-            completeFlow();
+            setStatus('Recovery session verified. Opening password update...');
+            router.replace('/Forgot?reset=1');
           }
-        } else if (tokenHash && (otpType === 'recovery' || otpType === 'signup')) {
-          setStatus(flow === 'recovery' ? 'Verifying recovery link...' : 'Confirming your email...');
+        } else if (tokenHash && otpType === 'recovery') {
+          setStatus('Verifying recovery link...');
           const { error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
             type: otpType,
@@ -137,28 +112,21 @@ export default function AuthCallback() {
           if (!mounted) return;
           if (error) {
             console.warn('[Auth] Email token verification failed:', error.message);
-            setFailedFlow(flow);
-            setStatus(
-              flow === 'recovery'
-                ? `Could not verify the reset link: ${error.message}`
-                : `Could not confirm your email: ${error.message}`,
-            );
+            setCanRecover(true);
+            setStatus(`Could not verify the reset link: ${error.message}`);
           } else {
-            completeFlow();
+            setStatus('Recovery session verified. Opening password update...');
+            router.replace('/Forgot?reset=1');
           }
         } else {
-          setFailedFlow(flow);
-          setStatus(
-            flow === 'recovery'
-              ? 'This callback did not contain a valid reset token. Request a new reset link and open the newest email.'
-              : 'This callback did not contain a valid confirmation token. Request a new confirmation email and open the newest email.',
-          );
+          setCanRecover(true);
+          setStatus('This callback did not contain a valid reset token. Request a new reset link and open the newest email.');
         }
       } catch (error) {
         if (!mounted) return;
         console.warn('[Auth] Recovery callback processing failed:', error);
-        setStatus('Could not read the authentication link. Request a new link and try opening it again.');
-        setFailedFlow('recovery');
+        setStatus('Could not read the reset link. Request a new link and try opening it again.');
+        setCanRecover(true);
       }
     };
 
@@ -167,8 +135,8 @@ export default function AuthCallback() {
       void processUrl(linkingUrl).catch((error: unknown) => {
         if (!mounted) return;
         console.error('[Auth] Recovery callback failed unexpectedly:', error);
-        setStatus('Could not process the authentication link. Request a new link and try again.');
-        setFailedFlow('recovery');
+        setStatus('Could not process the reset link. Request a new link and try again.');
+        setCanRecover(true);
       });
     }
 
@@ -184,23 +152,19 @@ export default function AuthCallback() {
         <Text style={{ color: '#FFFFFF', fontSize: 13, marginBottom: 6 }}>{status}</Text>
         <Text style={{ color: 'rgba(255,255,255,0.36)', fontSize: 12 }}>If this stays blank, open the email link in your device browser rather than inside an email or social app.</Text>
       </ScrollView>
-      {failedFlow ? (
+      {canRecover ? (
         <View style={{ width: '100%', maxWidth: 360, marginTop: 18, gap: 10 }}>
-          {failedFlow === 'recovery' ? (
-            <Pressable
-              onPress={() => router.replace('/Forgot')}
-              style={{ minHeight: 48, borderRadius: 12, backgroundColor: '#C9A96E', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Text style={{ color: '#0E1520', fontSize: 15, fontWeight: '700' }}>Request a new reset link</Text>
-            </Pressable>
-          ) : null}
           <Pressable
-            onPress={() => router.replace(failedFlow === 'signup' ? '/Signup' : '/Login')}
+            onPress={() => router.replace('/Forgot')}
+            style={{ minHeight: 48, borderRadius: 12, backgroundColor: '#C9A96E', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ color: '#0E1520', fontSize: 15, fontWeight: '700' }}>Request a new reset link</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.replace('/Login')}
             style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: 14 }}>
-              {failedFlow === 'signup' ? 'Back to sign up' : 'Back to login'}
-            </Text>
+            <Text style={{ color: '#FFFFFF', fontSize: 14 }}>Back to login</Text>
           </Pressable>
         </View>
       ) : null}

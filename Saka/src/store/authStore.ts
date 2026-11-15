@@ -42,7 +42,7 @@ interface AuthState {
 
   // Actions
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signUp: (email: string, password: string, fullName: string, contactNumber?: string) => Promise<{ success: boolean; error?: string; needsEmailConfirmation?: boolean }>;
+  signUp: (email: string, password: string, fullName: string, contactNumber?: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   loadSession: () => Promise<void>;
   loadProfile: () => Promise<void>;
@@ -124,7 +124,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         email,
         password,
         options: {
-          emailRedirectTo: 'saka://auth/callback?flow=signup',
           data: {
             full_name: fullName,
             contact_number: contactNumber || null,
@@ -154,14 +153,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
 
-      return {
-        success: true,
-        needsEmailConfirmation: !data.session && !data.user.email_confirmed_at,
-      };
-    } catch (error: any) {
-      console.error('[Auth] Signup failed:', error.message);
-      set({ error: error.message, isLoading: false });
-      return { success: false, error: error.message };
+      return { success: true };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Account creation failed unexpectedly.';
+      console.error('[Auth] Signup failed:', message);
+      set({ error: message, isLoading: false });
+      return { success: false, error: message };
     }
   },
 

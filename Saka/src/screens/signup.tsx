@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
+import { FULLSCREEN_MODAL_PROPS, ModalScrim } from '../components/ModalScrim';
 import { getAuthErrorMessage } from '../utils/authErrorMessage';
 import OfflineActionModal from '../components/OfflineActionModal';
 import { isConnectionError } from '../services/offlineStatusService';
@@ -46,7 +47,6 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
   const [toast, setToast] = useState<ToastConfig | null>(null);
   const { signUp, isLoading } = useAuthStore();
@@ -103,7 +103,7 @@ export default function SignupScreen() {
       return;
     }
     try {
-      const { error, needsEmailConfirmation: confirmationRequired } = await signUp(email, password, name, phone.trim());
+      const { error } = await signUp(email, password, name, phone.trim());
       if (error) {
         if (isConnectionError(error)) {
           setOfflineModalVisible(true);
@@ -117,7 +117,6 @@ export default function SignupScreen() {
         }
       } else {
         setOfflineModalVisible(false);
-        setNeedsEmailConfirmation(confirmationRequired === true);
         setShowSuccessModal(true);
       }
     } catch (error) {
@@ -273,26 +272,22 @@ export default function SignupScreen() {
       </AuthShell>
 
       <Modal
+        {...FULLSCREEN_MODAL_PROPS}
         visible={showSuccessModal}
-        transparent
         animationType="fade"
-        statusBarTranslucent
         onRequestClose={() => setShowSuccessModal(false)}
       >
         <View style={styles.overlay}>
+          <ModalScrim color="rgba(4,8,13,0.72)" />
           <View style={[styles.successCard, { width: Math.min(width - 48, 340) }]}>
             <View style={styles.successRing}>
               <View style={styles.successCircle}>
                 <Ionicons name="checkmark" size={26} color={AUTH.green} />
               </View>
             </View>
-            <Text style={styles.successTitle} accessibilityRole="header">
-              {needsEmailConfirmation ? 'Check your email' : 'Account created'}
-            </Text>
+            <Text style={styles.successTitle} accessibilityRole="header">Account created</Text>
             <Text style={styles.successMessage}>
-              {needsEmailConfirmation
-                ? `We sent a confirmation link to ${email.trim()}. Open it to verify your email before signing in. Check your spam or junk folder if it is not in your inbox.`
-                : 'Your account has been created successfully. Please sign in to continue.'}
+              Your account has been created successfully. Please sign in to continue.
             </Text>
             <Pressable
               onPress={() => {
@@ -361,7 +356,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(4,8,13,0.72)',
+    backgroundColor: 'transparent',
   },
   successCard: {
     alignItems: 'center',
