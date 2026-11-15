@@ -16,16 +16,19 @@ import type { JournalEntry, JournalImage } from '../../types/journal';
 import { ACCENT_GOLD, BG_CARD, BG_PANEL, BG_SUBTLE, BORDER_DEFAULT, BORDER_GOLD, BORDER_SUBTLE, CHAT_BORDER, CHAT_DANGER, CHAT_PANEL, CHAT_RADIUS_BTN, CHAT_RADIUS_MODAL, CHAT_SUBTLE, RADIUS_BTN, RADIUS_CARD, TEXT_FAINT, TEXT_MUTED, TEXT_PRIMARY } from '../../theme/designTokens';
 
 type Mode = 'feed' | 'form';
+const SERIF = Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' });
 
 export default function JournalScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
   const isLandscape = winW > winH;
-  const { viewpointId, mountainId, fromProfile } = useLocalSearchParams<{
+  const { viewpointId, mountainId, fromProfile, fromSakagram, newEntry } = useLocalSearchParams<{
     viewpointId?: string | string[];
     mountainId?: string | string[];
     fromProfile?: string | string[];
+    fromSakagram?: string | string[];
+    newEntry?: string | string[];
   }>();
   const preselectedViewpointId = typeof viewpointId === 'string' ? viewpointId : null;
   const preselectedMountainId = typeof mountainId === 'string' ? mountainId : null;
@@ -42,7 +45,7 @@ export default function JournalScreen() {
     clearError,
     retryPendingSync,
   } = useJournalStore();
-  const [mode, setMode] = useState<Mode>('feed');
+  const [mode, setMode] = useState<Mode>(newEntry === '1' ? 'form' : 'feed');
   const [editingPhoto, setEditingPhoto] = useState<{ entry: JournalEntry; index: number; uri: string } | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -66,6 +69,10 @@ export default function JournalScreen() {
 
   const handleBack = () => {
     if (mode === 'form') {
+      if (fromSakagram === '1') {
+        router.back();
+        return;
+      }
       setMode('feed');
     } else {
       goBackToProfile();
@@ -255,27 +262,48 @@ export default function JournalScreen() {
       edges={mode === 'feed' ? [] : ['top', 'bottom']}
     >
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {mode === 'form' && <View style={[styles.header, isLandscape && styles.headerCompact]}>
-        <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-          <Ionicons name="chevron-back" size={20} color={TEXT_PRIMARY} />
-        </TouchableOpacity>
-        <View style={styles.headerTextWrap}>
-          <Text style={styles.eyebrow}>YOUR TRAIL NOTES</Text>
-          <Text style={styles.title}>New journal entry</Text>
+      {mode === 'form' && (
+        <View style={[styles.header, isLandscape && styles.headerCompact]}>
+          <View style={styles.headerRow}>
+            <TouchableOpacity
+              onPress={handleBack}
+              style={styles.iconButton}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <Ionicons name="chevron-back" size={20} color={ACCENT_GOLD} />
+            </TouchableOpacity>
+            <View style={styles.headerTextWrap}>
+              <Text
+                style={styles.title}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                accessibilityRole="header"
+              >
+                New journal entry
+              </Text>
+              <Text style={styles.headerTagline} numberOfLines={isLandscape ? 1 : 2}>
+                Capture a memory from the trail.
+              </Text>
+            </View>
+            {isLandscape ? (
+              <TouchableOpacity
+                onPress={save}
+                disabled={isLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Save to journal"
+                style={[styles.headerSave, isLoading && styles.disabled]}
+              >
+                <Ionicons name="book-outline" size={16} color={ACCENT_GOLD} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.headerActionPlaceholder} />
+            )}
+          </View>
         </View>
-        <View style={styles.headerSpacer} />
-        {isLandscape && (
-          <TouchableOpacity
-            onPress={save}
-            disabled={isLoading}
-            accessibilityRole="button"
-            style={[styles.headerSave, isLoading && styles.disabled]}
-          >
-            <Ionicons name="book-outline" size={15} color={BG_PANEL} />
-            <Text style={styles.headerSaveText}>{isLoading ? 'Saving...' : 'Save to journal'}</Text>
-          </TouchableOpacity>
-        )}
-      </View>}
+      )}
 
       {mode === 'feed' ? (
         <View style={styles.feedScreen}>
@@ -529,15 +557,15 @@ export default function JournalScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG_PANEL },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: BORDER_DEFAULT },
-  headerCompact: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8 },
-  headerSave: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: ACCENT_GOLD },
-  headerSaveText: { color: BG_PANEL, fontSize: 12, fontWeight: '800' },
-  headerTextWrap: { flexShrink: 1, minWidth: 0 },
-  iconButton: { width: 34, height: 34, borderRadius: RADIUS_BTN, alignItems: 'center', justifyContent: 'center', backgroundColor: BG_SUBTLE, marginRight: 12 },
-  headerSpacer: { flex: 1 },
-  eyebrow: { color: ACCENT_GOLD, fontSize: 9, fontWeight: '700', letterSpacing: 1.2 },
-  title: { color: TEXT_PRIMARY, fontSize: 21, fontWeight: '700', marginTop: 3 },
+  header: { marginHorizontal: 16, paddingHorizontal: 12, paddingTop: 20, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: BORDER_DEFAULT, marginBottom: 8 },
+  headerCompact: { paddingTop: 12, paddingBottom: 6, marginBottom: 4 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', minHeight: 40 },
+  headerSave: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: BG_SUBTLE, borderWidth: 1, borderColor: BORDER_SUBTLE },
+  headerActionPlaceholder: { width: 36, height: 36 },
+  headerTextWrap: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingHorizontal: 6 },
+  iconButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  title: { color: TEXT_PRIMARY, fontFamily: SERIF, fontSize: 20, textAlign: 'center' },
+  headerTagline: { color: TEXT_MUTED, fontSize: 12, textAlign: 'center' },
   newEntryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, backgroundColor: ACCENT_GOLD },
   newEntryButtonText: { color: BG_PANEL, fontSize: 12, fontWeight: '800' },
   feedScreen: { flex: 1, backgroundColor: BG_CARD },
