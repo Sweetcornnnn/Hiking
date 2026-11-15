@@ -869,12 +869,13 @@ function PhotoCollage({ images, onOpen }: { images: string[]; onOpen: (index: nu
 }
 
 /** Centered image-only modal with swipe and edit controls. */
-function PhotoViewerModal({
+export function PhotoViewerModal({
   visible,
   images,
   entry,
   locationLabel,
   startIndex,
+  dateOnlyHeader = false,
   onClose,
   onEdit,
 }: {
@@ -883,8 +884,9 @@ function PhotoViewerModal({
   entry: JournalEntry | null;
   locationLabel?: string;
   startIndex: number;
+  dateOnlyHeader?: boolean;
   onClose: () => void;
-  onEdit: (index: number, uri: string) => void;
+  onEdit?: (index: number, uri: string) => void;
 }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -931,18 +933,33 @@ function PhotoViewerModal({
         <View style={[styles.viewerModal, { width: modalWidth, height: modalHeight + VIEWER_HEADER_HEIGHT }]}>
           <View style={styles.viewerHeader}>
             <View style={styles.viewerHeaderInfo}>
-              <Text style={styles.viewerHeaderTitle} numberOfLines={1}>
-                {entry?.title || 'Untitled entry'}
-              </Text>
-              <View style={styles.viewerHeaderMeta}>
-                <Text style={styles.viewerHeaderDetail} numberOfLines={1}>
-                  {entry ? formatDiaryDate(entry.created_at) : ''}
-                </Text>
-                <Ionicons name="location-outline" size={12} color={TEXT_MUTED} />
-                <Text style={styles.viewerHeaderDetail} numberOfLines={1}>
-                  {locationLabel || 'Mountain not specified'}
-                </Text>
-              </View>
+              {dateOnlyHeader ? (
+                <>
+                  <Text style={styles.viewerHeaderTitle} numberOfLines={1}>
+                    {entry?.title || 'Untitled entry'}
+                  </Text>
+                  <View style={styles.viewerHeaderMeta}>
+                    <Text style={styles.viewerHeaderDetail} numberOfLines={1}>
+                      {entry ? formatDiaryDate(entry.created_at) : ''}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.viewerHeaderTitle} numberOfLines={1}>
+                    {entry?.title || 'Untitled entry'}
+                  </Text>
+                  <View style={styles.viewerHeaderMeta}>
+                    <Text style={styles.viewerHeaderDetail} numberOfLines={1}>
+                      {entry ? formatDiaryDate(entry.created_at) : ''}
+                    </Text>
+                    <Ionicons name="location-outline" size={12} color={TEXT_MUTED} />
+                    <Text style={styles.viewerHeaderDetail} numberOfLines={1}>
+                      {locationLabel || 'Mountain not specified'}
+                    </Text>
+                  </View>
+                </>
+              )}
             </View>
             <View style={styles.viewerCounter} accessibilityLabel={`Image ${index + 1} of ${images.length}`}>
               <Text style={styles.viewerCounterText}>{index + 1} of {images.length}</Text>
@@ -978,12 +995,14 @@ function PhotoViewerModal({
               {images.map((uri, i) => (
                 <Pressable
                   key={`${uri}-${i}`}
-                  onLongPress={() => {
+                  onLongPress={onEdit ? () => {
                     onClose();
                     onEdit(i, uri);
-                  }}
+                  } : undefined}
                   accessibilityRole="imagebutton"
-                  accessibilityLabel={`Photo ${i + 1} of ${images.length}. Long press to edit.`}
+                  accessibilityLabel={onEdit
+                    ? `Photo ${i + 1} of ${images.length}. Long press to edit.`
+                    : `Photo ${i + 1} of ${images.length}.`}
                   style={[styles.viewerImagePage, { width: viewerSize.width, height: viewerSize.height }]}
                 >
                   <Pic
@@ -1002,19 +1021,21 @@ function PhotoViewerModal({
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable
-              onPress={() => {
-                const activeImage = images[index];
-                if (!activeImage) return;
-                onClose();
-                onEdit(index, activeImage);
-              }}
-              style={({ pressed }) => [styles.viewerEditButton, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Edit photo"
-            >
-              <Ionicons name="pencil-outline" size={17} color={ACCENT_GOLD} />
-            </Pressable>
+            {onEdit && (
+              <Pressable
+                onPress={() => {
+                  const activeImage = images[index];
+                  if (!activeImage) return;
+                  onClose();
+                  onEdit(index, activeImage);
+                }}
+                style={({ pressed }) => [styles.viewerEditButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Edit photo"
+              >
+                <Ionicons name="pencil-outline" size={17} color={ACCENT_GOLD} />
+              </Pressable>
+            )}
           </View>
         </View>
       </View>
@@ -1195,8 +1216,8 @@ const styles = StyleSheet.create({
   lsShell: { flex: 1, flexDirection: 'row' },
   lsRoot: { flexDirection: 'row', paddingBottom: 0 },
   lsRow: { gap: 12, paddingHorizontal: 16 },
-  lsNotes: { flex: 1.15 },
-  lsPhoto: { flex: 1 },
+  lsNotes: { flex: 7 },
+  lsPhoto: { flex: 13 },
   lsSkeleton: { flex: 1, paddingBottom: 0 },
   lsEmptyWrap: { flex: 1, justifyContent: 'center', paddingRight: 8 },
   rail: { width: 52, alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, paddingLeft: 6, gap: 8 },
@@ -1215,9 +1236,9 @@ const styles = StyleSheet.create({
   modalBodyInputLs: { minHeight: 90 },
   skeletonHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.gap, paddingHorizontal: SPACING.cardPadH, paddingTop: SPACING.cardPadT, paddingBottom: SPACING.gapLg },
   row: { flexDirection: 'row', alignItems: 'stretch', gap: 10, paddingHorizontal: 16 },
-  notesColumn: { flex: 3 },
-  photoList: { flex: 2 },
-  photoColumn: { flex: 2, justifyContent: 'center' },
+  notesColumn: { flex: 7 },
+  photoList: { flex: 13 },
+  photoColumn: { flex: 13, justifyContent: 'center' },
   noteShadow: { flex: 1, borderRadius: RADIUS_CARD, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 8 },
   notePage: { flex: 1, overflow: 'hidden', borderRadius: RADIUS_CARD, borderWidth: 1, borderColor: BORDER_DEFAULT, backgroundColor: BG_PANEL },
   binder: { position: 'absolute', left: 7, top: 0, bottom: 0, justifyContent: 'space-evenly', alignItems: 'center' },
