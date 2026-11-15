@@ -93,6 +93,12 @@ interface HikeFormData {
   emergency_contact_number: string;
 }
 
+type HikeTextField =
+  | 'tagalongs'
+  | 'contact_number'
+  | 'emergency_contact_name'
+  | 'emergency_contact_number';
+
 const buildInitialForm = (date: string): HikeFormData => ({
   date,
   end_date: '',
@@ -132,13 +138,43 @@ export default function HikeFormModal({
   const [formData, setFormData] = useState<HikeFormData>(buildInitialForm(defaultDate));
   const [overlay, setOverlay] = useState<OverlayKind>('none');
   const toastRef = useRef<ToastHandle>(null);
+  const formWasVisible = useRef(false);
+  const initializedHikeId = useRef<string | null>(null);
+  const requestedTextField = useRef<HikeTextField | null>(null);
+  const endTimeWasSelected = useRef(false);
+  const textFieldRefs = useRef<Record<HikeTextField, TextInput | null>>({
+    tagalongs: null,
+    contact_number: null,
+    emergency_contact_name: null,
+    emergency_contact_number: null,
+  });
+
+  const markTextFieldTouched = (field: HikeTextField) => {
+    requestedTextField.current = field;
+  };
+  const preserveTextFieldFocus = (focusedField: HikeTextField) => {
+    const requestedField = requestedTextField.current;
+    if (!requestedField) {
+      requestedTextField.current = focusedField;
+    } else if (requestedField !== focusedField) {
+      textFieldRefs.current[requestedField]?.focus();
+    }
+  };
 
   // Reset the form fresh every time the modal opens, whether that's a new
   // hike or an existing one being edited.
   useEffect(() => {
     if (!visible) {
+      formWasVisible.current = false;
+      requestedTextField.current = null;
       return;
     }
+    const hikeId = editingHike?.id ?? null;
+    if (formWasVisible.current && initializedHikeId.current === hikeId) return;
+    formWasVisible.current = true;
+    initializedHikeId.current = hikeId;
+    requestedTextField.current = null;
+
     setOverlay('none');
     if (editingHike) {
       const emergencyContact = parseEmergencyContact(editingHike.emergency_contact);
@@ -161,16 +197,27 @@ export default function HikeFormModal({
   }, [visible, editingHike, defaultDate]);
 
   const openOverlay = (kind: OverlayKind) => {
+    requestedTextField.current = null;
     Keyboard.dismiss();
     setOverlay(kind);
   };
-  const closeOverlay = () => setOverlay('none');
+  const closeOverlay = () => {
+    requestedTextField.current = null;
+    setOverlay('none');
+  };
+  const closeEndTimeOverlay = () => {
+    requestedTextField.current = null;
+    const shouldShowInfo = endTimeWasSelected.current;
+    endTimeWasSelected.current = false;
+    setOverlay(shouldShowInfo ? 'info' : 'none');
+  };
   const contactNumberHasInput = formData.contact_number.trim().length > 0;
   const contactNumberIsComplete = isValidPhilippineMobile(formData.contact_number);
   const emergencyNumberHasInput = formData.emergency_contact_number.trim().length > 0;
   const emergencyNumberIsComplete = isValidPhilippineMobile(formData.emergency_contact_number);
 
   const handleSave = async () => {
+    requestedTextField.current = null;
     if (formData.end_date) {
       if (!isISODate(formData.end_date)) {
         toastRef.current?.show({
@@ -299,6 +346,7 @@ export default function HikeFormModal({
             style={styles.bodyScroll}
             contentContainerStyle={styles.modalBody}
             keyboardShouldPersistTaps="handled"
+            removeClippedSubviews={false}
             showsVerticalScrollIndicator={false}
           >
             {/* Row 1: Time | End date */}
@@ -331,7 +379,10 @@ export default function HikeFormModal({
                   <TouchableOpacity
                     activeOpacity={0.8}
                     style={[styles.inputWrap, styles.timeInput]}
-                    onPress={() => openOverlay('endTime')}
+                    onPress={() => {
+                      endTimeWasSelected.current = false;
+                      openOverlay('endTime');
+                    }}
                   >
                     <Text style={styles.inputPrefix}>To</Text>
                     <Text style={styles.timeValue} numberOfLines={1}>
@@ -342,7 +393,9 @@ export default function HikeFormModal({
               </View>
 
               <View style={styles.cell}>
-                <Text style={styles.fieldGroupLabel}>End date (optional)</Text>
+                <Text style={[styles.fieldGroupLabel, styles.endDateLabel]}>
+                  End date (optional)
+                </Text>
                 <TouchableOpacity
                   activeOpacity={0.8}
                   style={styles.inputWrap}
@@ -373,12 +426,17 @@ export default function HikeFormModal({
             <View style={rowStyle}>
               <View style={styles.cell}>
                 <Text style={styles.fieldGroupLabel}>Group</Text>
-                <View style={styles.inputWrap}>
+                <View
+                  style={styles.inputWrap}
+                  onTouchStartCapture={() => markTextFieldTouched('tagalongs')}
+                >
                   <Ionicons name="people-outline" size={14} color={ICON_GOLD} style={styles.inputIcon} />
                   <TextInput
+                    ref={(ref) => { textFieldRefs.current.tagalongs = ref; }}
                     style={styles.input}
                     value={formData.tagalongs}
-                    onChangeText={(text) => setFormData({ ...formData, tagalongs: text })}
+                    onChangeText={(text) => setFormData((previous) => ({ ...previous, tagalongs: text }))}
+                    onFocus={() => preserveTextFieldFocus('tagalongs')}
                     keyboardType="number-pad"
                     placeholder="Number of tagalongs"
                     placeholderTextColor={PLACEHOLDER}
@@ -389,6 +447,7 @@ export default function HikeFormModal({
               <View style={styles.cell}>
                 <Text style={styles.fieldGroupLabel}>Contact *</Text>
                 <View
+                  onTouchStartCapture={() => markTextFieldTouched('contact_number')}
                   style={[
                     styles.inputWrap,
                     contactNumberHasInput
@@ -400,14 +459,16 @@ export default function HikeFormModal({
                 >
                   <Ionicons name="call-outline" size={14} color="rgba(110,175,138,0.7)" style={styles.inputIcon} />
                   <TextInput
+                    ref={(ref) => { textFieldRefs.current.contact_number = ref; }}
                     style={styles.input}
                     value={formData.contact_number}
                     onChangeText={(text) =>
-                      setFormData({
-                        ...formData,
+                      setFormData((previous) => ({
+                        ...previous,
                         contact_number: text.replace(/[^\d+\s()-]/g, ''),
-                      })
+                      }))
                     }
+                    onFocus={() => preserveTextFieldFocus('contact_number')}
                     keyboardType="phone-pad"
                     placeholder="Your contact number"
                     placeholderTextColor={PLACEHOLDER}
@@ -428,12 +489,19 @@ export default function HikeFormModal({
             <View style={[styles.cell, styles.cellLast]}>
               <Text style={styles.fieldGroupLabel}>Emergency contact *</Text>
               <View style={styles.emergencyContactRow}>
-                <View style={[styles.inputWrap, styles.emergencyContactInput]}>
+                <View
+                  style={[styles.inputWrap, styles.emergencyContactInput]}
+                  onTouchStartCapture={() => markTextFieldTouched('emergency_contact_name')}
+                >
                   <Ionicons name="person-outline" size={14} color="rgba(224,112,112,0.75)" style={styles.inputIcon} />
                   <TextInput
+                    ref={(ref) => { textFieldRefs.current.emergency_contact_name = ref; }}
                     style={styles.input}
                     value={formData.emergency_contact_name}
-                    onChangeText={(text) => setFormData({ ...formData, emergency_contact_name: text })}
+                    onChangeText={(text) =>
+                      setFormData((previous) => ({ ...previous, emergency_contact_name: text }))
+                    }
+                    onFocus={() => preserveTextFieldFocus('emergency_contact_name')}
                     placeholder="Contact Name"
                     placeholderTextColor={PLACEHOLDER}
                     accessibilityLabel="Emergency contact name"
@@ -441,6 +509,7 @@ export default function HikeFormModal({
                 </View>
                 <View style={styles.emergencyNumberCell}>
                   <View
+                    onTouchStartCapture={() => markTextFieldTouched('emergency_contact_number')}
                     style={[
                       styles.inputWrap,
                       emergencyNumberHasInput
@@ -452,14 +521,16 @@ export default function HikeFormModal({
                   >
                     <Ionicons name="call-outline" size={14} color="rgba(224,112,112,0.75)" style={styles.inputIcon} />
                     <TextInput
+                      ref={(ref) => { textFieldRefs.current.emergency_contact_number = ref; }}
                       style={styles.input}
                       value={formData.emergency_contact_number}
                       onChangeText={(text) =>
-                        setFormData({
-                          ...formData,
+                        setFormData((previous) => ({
+                          ...previous,
                           emergency_contact_number: text.replace(/[^\d+\s()-]/g, ''),
-                        })
+                        }))
                       }
+                      onFocus={() => preserveTextFieldFocus('emergency_contact_number')}
                       keyboardType="phone-pad"
                       placeholder="Contact Number"
                       placeholderTextColor={PLACEHOLDER}
@@ -528,8 +599,11 @@ export default function HikeFormModal({
           visible={overlay === 'endTime'}
           title="End time"
           value={formData.end_time}
-          onSelect={(v) => setFormData((prev) => ({ ...prev, end_time: v }))}
-          onClose={closeOverlay}
+          onSelect={(v) => {
+            endTimeWasSelected.current = true;
+            setFormData((prev) => ({ ...prev, end_time: v }));
+          }}
+          onClose={closeEndTimeOverlay}
         />
 
         <Toast ref={toastRef} />
@@ -648,6 +722,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
     marginBottom: 4,
   },
+  endDateLabel: { marginBottom: 9 },
   infoBtn: {
     marginBottom: 4,
     marginTop: -1,
@@ -679,8 +754,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 4,
   },
-  emergencyContactRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  emergencyContactInput: { flex: 1, minWidth: 0 },
+  emergencyContactRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  emergencyContactInput: { flex: .9, minWidth: 0 },
   emergencyNumberCell: { flex: 1, minWidth: 0 },
   inputIcon: {
     marginRight: 6,
