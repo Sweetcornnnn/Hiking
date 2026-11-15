@@ -13,6 +13,7 @@ import { managerService } from '../../services/managerService';
 import Toast, { type ToastHandle } from '../Toast';
 import {
   fetchSakagramPosts,
+  getCachedSakagramPosts,
   getPendingSakagramLikeIds,
   subscribeToSakagramSync,
   toggleJournalLike,
@@ -56,7 +57,7 @@ export default function SakagramSection({
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const isManager = useAuthStore((state) => state.profile?.role === 'manager');
   const [posts, setPosts] = useState<SakagramPost[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [likeError, setLikeError] = useState<string | null>(null);
   const [pendingLikeIds, setPendingLikeIds] = useState<Set<string>>(new Set());
@@ -64,29 +65,58 @@ export default function SakagramSection({
   const [reloadKey, setReloadKey] = useState(0);
   const [canModerate, setCanModerate] = useState(false);
   const toastRef = useRef<ToastHandle>(null);
+  const cachedFeedIdentity = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
+    const feedIdentity = `${mountainId ? `mountain:${mountainId}` : `viewpoint:${viewpointId}`}:${currentUserId ?? 'anonymous'}`;
+    const readCache = cachedFeedIdentity.current !== feedIdentity;
+    if (readCache) {
+      setPosts([]);
+      setQueuedLikeIds(new Set());
+    }
     setIsLoading(true);
     setLoadError(null);
 
-    void fetchSakagramPosts(viewpointId, currentUserId, mountainId)
-      .then((nextPosts) => {
-        if (active) {
-          setPosts(nextPosts);
-          void getPendingSakagramLikeIds(currentUserId ?? '').then((ids) => {
-            if (active) setQueuedLikeIds(new Set(ids));
-          });
+    void (async () => {
+      if (readCache) {
+        try {
+          const cachedPosts = await getCachedSakagramPosts(viewpointId, currentUserId, mountainId);
+          if (active && cachedPosts?.length) {
+            setPosts(cachedPosts);
+            setIsLoading(false);
+          }
+        } catch (error) {
+          console.warn('[Sakagram] Unable to read cached feed:', error);
+        } finally {
+          if (active) cachedFeedIdentity.current = feedIdentity;
         }
-      })
-      .catch((error: unknown) => {
+      }
+
+      if (!active) return;
+
+      try {
+        const nextPosts = await fetchSakagramPosts(viewpointId, currentUserId, mountainId);
+        if (active) setPosts(nextPosts);
+
+        if (currentUserId) {
+          try {
+            const ids = await getPendingSakagramLikeIds(currentUserId);
+            if (active) setQueuedLikeIds(new Set(ids));
+          } catch (error) {
+            console.warn('[Sakagram] Unable to load pending like state:', error);
+          }
+        } else if (active) {
+          setQueuedLikeIds(new Set());
+        }
+      } catch (error: unknown) {
         if (active) {
           setLoadError(error instanceof Error ? error.message : 'Unable to load Sakagram.');
         }
-      })
-      .finally(() => {
+      } finally {
         if (active) setIsLoading(false);
-      });
+      }
+    })();
 
     return () => {
       active = false;
@@ -147,7 +177,9 @@ export default function SakagramSection({
     }
     router.push({
       pathname: '/journal',
-      params: mountainId ? { viewpointId, mountainId } : { viewpointId },
+      params: mountainId
+        ? { viewpointId, mountainId, newEntry: '1', fromSakagram: '1' }
+        : { viewpointId, newEntry: '1', fromSakagram: '1' },
     });
   };
 
@@ -205,7 +237,7 @@ export default function SakagramSection({
               <Ionicons name="camera" size={focused ? 15 : 12} color={ACCENT_GOLD} />
             </View>
             <Text style={s.title}>Sakagram</Text>
-            {!isLoading && !loadError && (
+            {(posts.length > 0 || (!isLoading && !loadError)) && (
               <Text style={s.count}>{posts.length}</Text>
             )}
           </View>
@@ -225,8 +257,11 @@ export default function SakagramSection({
       </View>
 
       {likeError && <Text style={s.inlineError}>{likeError}</Text>}
+      {loadError && posts.length > 0 && (
+        <Text style={s.inlineError}>Showing saved posts. {loadError}</Text>
+      )}
 
-      {isLoading ? (
+      {isLoading && posts.length === 0 ? (
         <View accessibilityLabel="Loading Sakagram posts">
           {[0, 1].map((item) => (
             <View key={item} style={s.skeleton}>
@@ -239,7 +274,7 @@ export default function SakagramSection({
             </View>
           ))}
         </View>
-      ) : loadError ? (
+      ) : loadError && posts.length === 0 ? (
         <View style={s.messageState}>
           <Ionicons name="cloud-offline-outline" size={22} color={TEXT_MUTED} />
           <Text style={s.messageText}>{loadError}</Text>
@@ -273,6 +308,7 @@ export default function SakagramSection({
               onPressAuthor={onPressAuthor}
               isLikePending={pendingLikeIds.has(post.id)}
               isLikeQueued={queuedLikeIds.has(post.id)}
+              isOwnPost={post.user_id === currentUserId}
               locationLabel={viewpointName}
               focused={focused}
             />
